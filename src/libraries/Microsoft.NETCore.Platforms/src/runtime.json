@@ -1598,9 +1598,10 @@
         "unix-s390x"
       ]
     },
-    "unix-ppc64le": {
+    "linux-ppc64le": {
       "#import": [
-        "unix"
+        "linux",
+        "unix-ppc64le"
       ]
     },
     "linux-x64": {
@@ -3567,6 +3568,11 @@
       ]
     },
     "unix-s390x": {
+      "#import": [
+        "unix"
+      ]
+    },
+    "unix-ppc64le": {
       "#import": [
         "unix"
       ]
