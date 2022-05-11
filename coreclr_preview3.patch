@@ -1,0 +1,888 @@
+diff --git a/src/coreclr/inc/crosscomp.h b/src/coreclr/inc/crosscomp.h
+index 63a48d0e4ce..3fc8b248f74 100644
+--- a/src/coreclr/inc/crosscomp.h
++++ b/src/coreclr/inc/crosscomp.h
+@@ -568,6 +568,8 @@ typedef struct _T_KNONVOLATILE_CONTEXT_POINTERS {
+ #define DAC_CS_NATIVE_DATA_SIZE 96
+ #elif defined(TARGET_LINUX) && defined(TARGET_LOONGARCH64)
+ #define DAC_CS_NATIVE_DATA_SIZE 96
++#elif defined(TARGET_LINUX) && defined(TARGET_POWERPC64)
++#define DAC_CS_NATIVE_DATA_SIZE 96
+ #elif defined(TARGET_NETBSD) && defined(TARGET_AMD64)
+ #define DAC_CS_NATIVE_DATA_SIZE 96
+ #elif defined(TARGET_NETBSD) && defined(TARGET_ARM)
+diff --git a/src/coreclr/inc/pedecoder.h b/src/coreclr/inc/pedecoder.h
+index 7cd145f4520..2bb79e34b6b 100644
+--- a/src/coreclr/inc/pedecoder.h
++++ b/src/coreclr/inc/pedecoder.h
+@@ -83,6 +83,8 @@ inline CHECK CheckOverflow(RVA value1, COUNT_T value2)
+ #define IMAGE_FILE_MACHINE_NATIVE   IMAGE_FILE_MACHINE_ARM64
+ #elif defined(TARGET_LOONGARCH64)
+ #define IMAGE_FILE_MACHINE_NATIVE   IMAGE_FILE_MACHINE_LOONGARCH64
++#elif defined(TARGET_POWERPC64)
++#define IMAGE_FILE_MACHINE_NATIVE   IMAGE_FILE_MACHINE_POWERPC
+ #elif defined(TARGET_S390X)
+ #define IMAGE_FILE_MACHINE_NATIVE   IMAGE_FILE_MACHINE_UNKNOWN
+ #else
+diff --git a/src/coreclr/inc/switches.h b/src/coreclr/inc/switches.h
+index d3fe1d63644..9ec7e3cf05e 100644
+--- a/src/coreclr/inc/switches.h
++++ b/src/coreclr/inc/switches.h
+@@ -53,7 +53,7 @@
+ #if defined(TARGET_X86) || defined(TARGET_ARM)
+     #define USE_LAZY_PREFERRED_RANGE       0
+ 
+-#elif defined(TARGET_AMD64) || defined(TARGET_ARM64) || defined(TARGET_S390X) || defined(TARGET_LOONGARCH64)
++#elif defined(TARGET_AMD64) || defined(TARGET_ARM64) || defined(TARGET_S390X) || defined(TARGET_LOONGARCH64) || defined(TARGET_POWERPC64)
+ 
+ #if defined(HOST_UNIX)
+     // In PAL we have a smechanism that reserves memory on start up that is
+diff --git a/src/coreclr/inc/volatile.h b/src/coreclr/inc/volatile.h
+index 8df894ee2df..1c14c9aea0f 100644
+--- a/src/coreclr/inc/volatile.h
++++ b/src/coreclr/inc/volatile.h
+@@ -68,8 +68,8 @@
+ #error The Volatile type is currently only defined for Visual C++ and GNU C++
+ #endif
+ 
+-#if defined(__GNUC__) && !defined(HOST_X86) && !defined(HOST_AMD64) && !defined(HOST_ARM) && !defined(HOST_ARM64) && !defined(HOST_LOONGARCH64) && !defined(HOST_S390X)
+-#error The Volatile type is currently only defined for GCC when targeting x86, AMD64, ARM, ARM64, LOONGARCH64, or S390X CPUs
++#if defined(__GNUC__) && !defined(HOST_X86) && !defined(HOST_AMD64) && !defined(HOST_ARM) && !defined(HOST_ARM64) && !defined(HOST_LOONGARCH64) && !defined(HOST_S390X) && !defined(HOST_POWERPC64)
++#error The Volatile type is currently only defined for GCC when targeting x86, AMD64, ARM, ARM64, LOONGARCH64, PPC64LE, or S390X CPUs
+ #endif
+ 
+ #if defined(__GNUC__)
+diff --git a/src/coreclr/pal/inc/pal.h b/src/coreclr/pal/inc/pal.h
+index b74c5b9dde7..9872eeb353e 100644
+--- a/src/coreclr/pal/inc/pal.h
++++ b/src/coreclr/pal/inc/pal.h
+@@ -98,6 +98,8 @@ typedef PVOID NATIVE_LIBRARY_HANDLE;
+ #define _M_LOONGARCH64 1
+ #elif defined(__s390x__) && !defined(_M_S390X)
+ #define _M_S390X 1
++#elif defined(__powerpc__) && !defined(_M_PPC64)
++#define _M_PPC64 1
+ #endif
+ 
+ #if defined(_M_IX86) && !defined(HOST_X86)
+@@ -112,6 +114,8 @@ typedef PVOID NATIVE_LIBRARY_HANDLE;
+ #define HOST_LOONGARCH64
+ #elif defined(_M_S390X) && !defined(HOST_S390X)
+ #define HOST_S390X
++#elif defined(_M_PPC64) && !defined(HOST_POWERPC64)
++#define HOST_POWERPC64
+ #endif
+ 
+ #endif // !_MSC_VER
+@@ -2458,6 +2462,153 @@ typedef struct _KNONVOLATILE_CONTEXT_POINTERS {
+ 
+ } KNONVOLATILE_CONTEXT_POINTERS, *PKNONVOLATILE_CONTEXT_POINTERS;
+ 
++#elif defined(HOST_POWERPC64)
++
++// There is no context for ppc64le defined in winnt.h,
++// so we re-use the amd64 values.
++#define CONTEXT_PPC64   0x100000
++
++#define CONTEXT_CONTROL (CONTEXT_PPC64 | 0x1L)
++#define CONTEXT_INTEGER (CONTEXT_PPC64 | 0x2L)
++#define CONTEXT_FLOATING_POINT  (CONTEXT_PPC64 | 0x4L)
++
++#define CONTEXT_FULL (CONTEXT_CONTROL | CONTEXT_INTEGER | CONTEXT_FLOATING_POINT)
++
++#define CONTEXT_ALL (CONTEXT_CONTROL | CONTEXT_INTEGER | CONTEXT_FLOATING_POINT)
++
++#define CONTEXT_EXCEPTION_ACTIVE 0x8000000
++#define CONTEXT_SERVICE_ACTIVE 0x10000000
++#define CONTEXT_EXCEPTION_REQUEST 0x40000000
++#define CONTEXT_EXCEPTION_REPORTING 0x80000000
++
++typedef struct DECLSPEC_ALIGN(16) _CONTEXT {
++
++    //
++    // Control flags.
++    //
++
++    DWORD ContextFlags;
++
++    // 
++    // Integer  Registers 
++    //
++
++    DWORD64 R0;
++    DWORD64 R1;
++    DWORD64 R2;
++    DWORD64 R3;
++    DWORD64 R4;
++    DWORD64 R5;
++    DWORD64 R6;
++    DWORD64 R7;
++    DWORD64 R8;
++    DWORD64 R9;
++    DWORD64 R10;
++    DWORD64 R11;
++    DWORD64 R12;
++    DWORD64 R13;
++    DWORD64 R14;
++    DWORD64 R15;
++    DWORD64 R16;
++    DWORD64 R17;
++    DWORD64 R18;
++    DWORD64 R19;
++    DWORD64 R20;
++    DWORD64 R21;
++    DWORD64 R22;
++    DWORD64 R23;
++    DWORD64 R24;
++    DWORD64 R25;
++    DWORD64 R26;
++    DWORD64 R27;
++    DWORD64 R28;
++    DWORD64 R29;
++    DWORD64 R30;
++    DWORD64 R31;
++
++    //
++    // Floaring Point Registers
++    //
++
++    DWORD64 F0;
++    DWORD64 F1;
++    DWORD64 F2;
++    DWORD64 F3;
++    DWORD64 F4;
++    DWORD64 F5;
++    DWORD64 F6;
++    DWORD64 F7;
++    DWORD64 F8;
++    DWORD64 F9;
++    DWORD64 F10;
++    DWORD64 F11;
++    DWORD64 F12;
++    DWORD64 F13;
++    DWORD64 F14;
++    DWORD64 F15;
++    DWORD64 F16;
++    DWORD64 F17;
++    DWORD64 F18;
++    DWORD64 F19;
++    DWORD64 F20;
++    DWORD64 F21;
++    DWORD64 F22;
++    DWORD64 F23;
++    DWORD64 F24;
++    DWORD64 F25;
++    DWORD64 F26;
++    DWORD64 F27;
++    DWORD64 F28;
++    DWORD64 F29;
++    DWORD64 F30;
++    DWORD64 F31;
++    DWORD64 Fpscr;
++
++    //
++    // Control Registers
++    //
++
++    DWORD64 Nip;
++    DWORD64 Msr;
++    DWORD64 Ctr;
++    DWORD64 Link;
++
++    DWORD Xer;
++    DWORD Ccr;
++
++
++} CONTEXT, *PCONTEXT, *LPCONTEXT;
++
++//
++// Nonvolatile context pointer record.
++//
++
++typedef struct _KNONVOLATILE_CONTEXT_POINTERS {
++    PDWORD64 R14;
++    PDWORD64 R15;
++    PDWORD64 R16;
++    PDWORD64 R17;
++    PDWORD64 R18;
++    PDWORD64 R19;
++    PDWORD64 R20;
++    PDWORD64 R21;
++    PDWORD64 R22;
++    PDWORD64 R23;
++    PDWORD64 R24;
++    PDWORD64 R25;
++    PDWORD64 R26;
++    PDWORD64 R27;
++    PDWORD64 R28;
++    PDWORD64 R29;
++    PDWORD64 R30;
++    PDWORD64 R31;
++
++    // 
++    // Need to add Floating point non-volatile registers.
++    //
++
++} KNONVOLATILE_CONTEXT_POINTERS, *PKNONVOLATILE_CONTEXT_POINTERS;
++
+ #else
+ #error Unknown architecture for defining CONTEXT.
+ #endif
+@@ -2595,6 +2746,8 @@ PALIMPORT BOOL PALAPI PAL_VirtualUnwindOutOfProc(CONTEXT *context, KNONVOLATILE_
+ #define PAL_CS_NATIVE_DATA_SIZE 96
+ #elif defined(__linux__) && defined(HOST_S390X)
+ #define PAL_CS_NATIVE_DATA_SIZE 96
++#elif defined(__linux__) && defined(HOST_POWERPC64)
++#define PAL_CS_NATIVE_DATA_SIZE 96
+ #elif defined(__NetBSD__) && defined(__amd64__)
+ #define PAL_CS_NATIVE_DATA_SIZE 96
+ #elif defined(__NetBSD__) && defined(__earm__)
+diff --git a/src/coreclr/pal/inc/rt/intsafe.h b/src/coreclr/pal/inc/rt/intsafe.h
+index d793d357a3b..0f44bdebbea 100644
+--- a/src/coreclr/pal/inc/rt/intsafe.h
++++ b/src/coreclr/pal/inc/rt/intsafe.h
+@@ -31,7 +31,7 @@
+ #define LODWORD(_qw)    ((ULONG)(_qw))
+ 
+ #if defined(MIDL_PASS) || defined(RC_INVOKED) || defined(_M_CEE_PURE) \
+-    || defined(_M_AMD64) || defined(__ARM_ARCH) || defined(_M_S390X) || defined(_M_LOONGARCH64)
++    || defined(_M_AMD64) || defined(__ARM_ARCH) || defined(_M_S390X) || defined(_M_LOONGARCH64) || defined(_M_PPC64)
+ 
+ #ifndef UInt32x32To64
+ #define UInt32x32To64(a, b) ((unsigned __int64)((ULONG)(a)) * (unsigned __int64)((ULONG)(b)))
+diff --git a/src/coreclr/pal/inc/rt/palrt.h b/src/coreclr/pal/inc/rt/palrt.h
+index dee82f34446..ca204cc85b4 100644
+--- a/src/coreclr/pal/inc/rt/palrt.h
++++ b/src/coreclr/pal/inc/rt/palrt.h
+@@ -1242,6 +1242,14 @@ typedef struct _DISPATCHER_CONTEXT {
+     DWORD Reserved;
+ } DISPATCHER_CONTEXT, *PDISPATCHER_CONTEXT;
+ 
++#elif defined(HOST_POWERPC64)
++
++typedef struct _DISPATCHER_CONTEXT {
++    // PPC64LE does not build the VM or JIT at this point,
++    // so we only provide a dummy definition.
++    DWORD Reserved;
++} DISPATCHER_CONTEXT, *PDISPATCHER_CONTEXT;
++
+ #else
+ 
+ #error Unknown architecture for defining DISPATCHER_CONTEXT.
+diff --git a/src/coreclr/pal/inc/unixasmmacros.inc b/src/coreclr/pal/inc/unixasmmacros.inc
+index a814c5ab981..cf05fbe3199 100644
+--- a/src/coreclr/pal/inc/unixasmmacros.inc
++++ b/src/coreclr/pal/inc/unixasmmacros.inc
+@@ -19,7 +19,7 @@
+ 
+ #if defined(__APPLE__)
+ #define C_PLTFUNC(name) _##name
+-#elif defined(HOST_ARM64)
++#elif defined(HOST_ARM64) || defined(HOST_POWERPC64)
+ #define C_PLTFUNC(name) name
+ #else
+ #define C_PLTFUNC(name) name@PLT
+@@ -47,4 +47,6 @@
+ #include "unixasmmacross390x.inc"
+ #elif defined(HOST_LOONGARCH64)
+ #include "unixasmmacrosloongarch64.inc"
++#elif defined(HOST_POWERPC64)
++#include "unixasmmacrosppc64le.inc"
+ #endif
+diff --git a/src/coreclr/pal/src/exception/remote-unwind.cpp b/src/coreclr/pal/src/exception/remote-unwind.cpp
+index e8f3ac005e4..a9fba33528c 100644
+--- a/src/coreclr/pal/src/exception/remote-unwind.cpp
++++ b/src/coreclr/pal/src/exception/remote-unwind.cpp
+@@ -124,7 +124,7 @@ typedef BOOL(*UnwindReadMemoryCallback)(PVOID address, PVOID buffer, SIZE_T size
+ #define PRId PRId32
+ #define PRIA "08"
+ #define PRIxA PRIA PRIx
+-#elif defined(TARGET_AMD64) || defined(TARGET_ARM64) || defined(TARGET_S390X) || defined(TARGET_LOONGARCH64)
++#elif defined(TARGET_AMD64) || defined(TARGET_ARM64) || defined(TARGET_S390X) || defined(TARGET_LOONGARCH64) || defined(TARGET_POWERPC64)
+ #define PRIx PRIx64
+ #define PRIu PRIu64
+ #define PRId PRId64
+@@ -1707,6 +1707,25 @@ static void GetContextPointers(unw_cursor_t *cursor, unw_context_t *unwContext,
+     GetContextPointer(cursor, unwContext, UNW_S390X_R13, &contextPointers->R13);
+     GetContextPointer(cursor, unwContext, UNW_S390X_R14, &contextPointers->R14);
+     GetContextPointer(cursor, unwContext, UNW_S390X_R15, &contextPointers->R15);
++#elif defined(TARGET_POWERPC64)
++    GetContextPointer(cursor, unwContext, UNW_PPC64_R14, &contextPointers->R14);
++    GetContextPointer(cursor, unwContext, UNW_PPC64_R15, &contextPointers->R15);
++    GetContextPointer(cursor, unwContext, UNW_PPC64_R16, &contextPointers->R16);
++    GetContextPointer(cursor, unwContext, UNW_PPC64_R17, &contextPointers->R17);
++    GetContextPointer(cursor, unwContext, UNW_PPC64_R18, &contextPointers->R18);
++    GetContextPointer(cursor, unwContext, UNW_PPC64_R19, &contextPointers->R19);
++    GetContextPointer(cursor, unwContext, UNW_PPC64_R20, &contextPointers->R20);
++    GetContextPointer(cursor, unwContext, UNW_PPC64_R21, &contextPointers->R21);
++    GetContextPointer(cursor, unwContext, UNW_PPC64_R22, &contextPointers->R22);
++    GetContextPointer(cursor, unwContext, UNW_PPC64_R23, &contextPointers->R23);
++    GetContextPointer(cursor, unwContext, UNW_PPC64_R24, &contextPointers->R24);
++    GetContextPointer(cursor, unwContext, UNW_PPC64_R25, &contextPointers->R25);
++    GetContextPointer(cursor, unwContext, UNW_PPC64_R26, &contextPointers->R26);
++    GetContextPointer(cursor, unwContext, UNW_PPC64_R27, &contextPointers->R27);
++    GetContextPointer(cursor, unwContext, UNW_PPC64_R28, &contextPointers->R28);
++    GetContextPointer(cursor, unwContext, UNW_PPC64_R29, &contextPointers->R29);
++    GetContextPointer(cursor, unwContext, UNW_PPC64_R30, &contextPointers->R30);
++    GetContextPointer(cursor, unwContext, UNW_PPC64_R31, &contextPointers->R31);
+ #else
+ #error unsupported architecture
+ #endif
+@@ -1794,6 +1813,27 @@ static void UnwindContextToContext(unw_cursor_t *cursor, CONTEXT *winContext)
+     unw_get_reg(cursor, UNW_S390X_R13, (unw_word_t *) &winContext->R13);
+     unw_get_reg(cursor, UNW_S390X_R14, (unw_word_t *) &winContext->R14);
+     TRACE("sp %p pc %p lr %p\n", winContext->R15, winContext->PSWAddr, winContext->R14);
++#elif defined(TARGET_POWERPC64)
++    //TODO
++    unw_get_reg(cursor, UNW_REG_IP, (unw_word_t *) &winContext->Nip);
++    unw_get_reg(cursor, UNW_REG_SP, (unw_word_t *) &winContext->R31);
++    unw_get_reg(cursor, UNW_PPC64_R14, (unw_word_t *) &winContext->R14);
++    unw_get_reg(cursor, UNW_PPC64_R15, (unw_word_t *) &winContext->R15);
++    unw_get_reg(cursor, UNW_PPC64_R16, (unw_word_t *) &winContext->R16);
++    unw_get_reg(cursor, UNW_PPC64_R17, (unw_word_t *) &winContext->R17);
++    unw_get_reg(cursor, UNW_PPC64_R18, (unw_word_t *) &winContext->R18);
++    unw_get_reg(cursor, UNW_PPC64_R19, (unw_word_t *) &winContext->R19);
++    unw_get_reg(cursor, UNW_PPC64_R20, (unw_word_t *) &winContext->R20);
++    unw_get_reg(cursor, UNW_PPC64_R21, (unw_word_t *) &winContext->R21);
++    unw_get_reg(cursor, UNW_PPC64_R22, (unw_word_t *) &winContext->R22);
++    unw_get_reg(cursor, UNW_PPC64_R23, (unw_word_t *) &winContext->R23);
++    unw_get_reg(cursor, UNW_PPC64_R24, (unw_word_t *) &winContext->R24);
++    unw_get_reg(cursor, UNW_PPC64_R25, (unw_word_t *) &winContext->R25);
++    unw_get_reg(cursor, UNW_PPC64_R26, (unw_word_t *) &winContext->R26);
++    unw_get_reg(cursor, UNW_PPC64_R27, (unw_word_t *) &winContext->R27);
++    unw_get_reg(cursor, UNW_PPC64_R28, (unw_word_t *) &winContext->R28);
++    unw_get_reg(cursor, UNW_PPC64_R29, (unw_word_t *) &winContext->R29);
++    unw_get_reg(cursor, UNW_PPC64_R30, (unw_word_t *) &winContext->R30);
+ #else
+ #error unsupported architecture
+ #endif
+@@ -1908,6 +1948,27 @@ access_reg(unw_addr_space_t as, unw_regnum_t regnum, unw_word_t *valp, int write
+     case UNW_S390X_R14:    *valp = (unw_word_t)winContext->R14; break;
+     case UNW_S390X_R15:    *valp = (unw_word_t)winContext->R15; break;
+     case UNW_S390X_IP:     *valp = (unw_word_t)winContext->PSWAddr; break;
++#elif defined(TARGET_POWERPC64)
++    //TODO
++    case UNW_PPC64_R14:    *valp = (unw_word_t)winContext->R14; break;
++    case UNW_PPC64_R15:    *valp = (unw_word_t)winContext->R15; break;
++    case UNW_PPC64_R16:    *valp = (unw_word_t)winContext->R16; break;
++    case UNW_PPC64_R17:    *valp = (unw_word_t)winContext->R17; break;
++    case UNW_PPC64_R18:    *valp = (unw_word_t)winContext->R18; break;
++    case UNW_PPC64_R19:    *valp = (unw_word_t)winContext->R19; break;
++    case UNW_PPC64_R20:    *valp = (unw_word_t)winContext->R20; break;
++    case UNW_PPC64_R21:    *valp = (unw_word_t)winContext->R21; break;
++    case UNW_PPC64_R22:    *valp = (unw_word_t)winContext->R22; break;
++    case UNW_PPC64_R23:    *valp = (unw_word_t)winContext->R23; break;
++    case UNW_PPC64_R24:    *valp = (unw_word_t)winContext->R24; break;
++    case UNW_PPC64_R25:    *valp = (unw_word_t)winContext->R25; break;
++    case UNW_PPC64_R26:    *valp = (unw_word_t)winContext->R26; break;
++    case UNW_PPC64_R27:    *valp = (unw_word_t)winContext->R27; break;
++    case UNW_PPC64_R28:    *valp = (unw_word_t)winContext->R28; break;
++    case UNW_PPC64_R29:    *valp = (unw_word_t)winContext->R29; break;
++    case UNW_PPC64_R30:    *valp = (unw_word_t)winContext->R30; break;
++    case UNW_PPC64_R31:    *valp = (unw_word_t)winContext->R31; break;
++    case UNW_PPC64_NIP:    *valp = (unw_word_t)winContext->Nip; break;
+ #else
+ #error unsupported architecture
+ #endif
+diff --git a/src/coreclr/pal/src/exception/seh-unwind.cpp b/src/coreclr/pal/src/exception/seh-unwind.cpp
+index 1c18329b89f..d0ff0af8de3 100644
+--- a/src/coreclr/pal/src/exception/seh-unwind.cpp
++++ b/src/coreclr/pal/src/exception/seh-unwind.cpp
+@@ -192,6 +192,27 @@ enum
+     ASSIGN_REG(S6)         \
+     ASSIGN_REG(S7)         \
+     ASSIGN_REG(S8)
++#elif (defined(HOST_UNIX) && defined(HOST_POWERPC64))
++#define ASSIGN_UNWIND_REGS \
++    ASSIGN_REG(Nip)        \
++    ASSIGN_REG(R14)        \
++    ASSIGN_REG(R15)        \
++    ASSIGN_REG(R16)        \
++    ASSIGN_REG(R17)        \
++    ASSIGN_REG(R18)        \
++    ASSIGN_REG(R19)        \
++    ASSIGN_REG(R20)        \
++    ASSIGN_REG(R21)        \
++    ASSIGN_REG(R22)        \
++    ASSIGN_REG(R23)        \
++    ASSIGN_REG(R24)        \
++    ASSIGN_REG(R25)        \
++    ASSIGN_REG(R26)        \
++    ASSIGN_REG(R27)        \
++    ASSIGN_REG(R28)        \
++    ASSIGN_REG(R29)        \
++    ASSIGN_REG(R30)        \
++    ASSIGN_REG(R31)        
+ #else
+ #error unsupported architecture
+ #endif
+@@ -435,6 +456,26 @@ void UnwindContextToWinContext(unw_cursor_t *cursor, CONTEXT *winContext)
+     unw_get_reg(cursor, UNW_LOONGARCH64_R29, (unw_word_t *) &winContext->S6);
+     unw_get_reg(cursor, UNW_LOONGARCH64_R30, (unw_word_t *) &winContext->S7);
+     unw_get_reg(cursor, UNW_LOONGARCH64_R31, (unw_word_t *) &winContext->S8);
++#elif (defined(HOST_UNIX) && defined(HOST_POWERPC64))
++    unw_get_reg(cursor, UNW_REG_SP, (unw_word_t *) &winContext->R31);
++    unw_get_reg(cursor, UNW_REG_IP, (unw_word_t *) &winContext->Nip);
++    unw_get_reg(cursor, UNW_PPC64_R14, (unw_word_t *) &winContext->R14);
++    unw_get_reg(cursor, UNW_PPC64_R15, (unw_word_t *) &winContext->R15);
++    unw_get_reg(cursor, UNW_PPC64_R16, (unw_word_t *) &winContext->R16);
++    unw_get_reg(cursor, UNW_PPC64_R17, (unw_word_t *) &winContext->R17);
++    unw_get_reg(cursor, UNW_PPC64_R18, (unw_word_t *) &winContext->R18);
++    unw_get_reg(cursor, UNW_PPC64_R19, (unw_word_t *) &winContext->R19);
++    unw_get_reg(cursor, UNW_PPC64_R20, (unw_word_t *) &winContext->R20);
++    unw_get_reg(cursor, UNW_PPC64_R21, (unw_word_t *) &winContext->R21);
++    unw_get_reg(cursor, UNW_PPC64_R22, (unw_word_t *) &winContext->R22);
++    unw_get_reg(cursor, UNW_PPC64_R23, (unw_word_t *) &winContext->R23);
++    unw_get_reg(cursor, UNW_PPC64_R24, (unw_word_t *) &winContext->R24);
++    unw_get_reg(cursor, UNW_PPC64_R25, (unw_word_t *) &winContext->R25);
++    unw_get_reg(cursor, UNW_PPC64_R26, (unw_word_t *) &winContext->R26);
++    unw_get_reg(cursor, UNW_PPC64_R27, (unw_word_t *) &winContext->R27);
++    unw_get_reg(cursor, UNW_PPC64_R28, (unw_word_t *) &winContext->R28);
++    unw_get_reg(cursor, UNW_PPC64_R29, (unw_word_t *) &winContext->R29);
++    unw_get_reg(cursor, UNW_PPC64_R30, (unw_word_t *) &winContext->R30);
+ #else
+ #error unsupported architecture
+ #endif
+@@ -533,6 +574,25 @@ void GetContextPointers(unw_cursor_t *cursor, unw_context_t *unwContext, KNONVOL
+     GetContextPointer(cursor, unwContext, UNW_LOONGARCH64_R29, &contextPointers->S6);
+     GetContextPointer(cursor, unwContext, UNW_LOONGARCH64_R30, &contextPointers->S7);
+     GetContextPointer(cursor, unwContext, UNW_LOONGARCH64_R31, &contextPointers->S8);
++#elif (defined(HOST_UNIX) && defined(HOST_POWERPC64))
++    GetContextPointer(cursor, unwContext, UNW_PPC64_R14, &contextPointers->R14);
++    GetContextPointer(cursor, unwContext, UNW_PPC64_R15, &contextPointers->R15);
++    GetContextPointer(cursor, unwContext, UNW_PPC64_R16, &contextPointers->R16);
++    GetContextPointer(cursor, unwContext, UNW_PPC64_R17, &contextPointers->R17);
++    GetContextPointer(cursor, unwContext, UNW_PPC64_R18, &contextPointers->R18);
++    GetContextPointer(cursor, unwContext, UNW_PPC64_R19, &contextPointers->R19);
++    GetContextPointer(cursor, unwContext, UNW_PPC64_R20, &contextPointers->R20);
++    GetContextPointer(cursor, unwContext, UNW_PPC64_R21, &contextPointers->R21);
++    GetContextPointer(cursor, unwContext, UNW_PPC64_R22, &contextPointers->R22);
++    GetContextPointer(cursor, unwContext, UNW_PPC64_R23, &contextPointers->R23);
++    GetContextPointer(cursor, unwContext, UNW_PPC64_R24, &contextPointers->R24);
++    GetContextPointer(cursor, unwContext, UNW_PPC64_R25, &contextPointers->R25);
++    GetContextPointer(cursor, unwContext, UNW_PPC64_R26, &contextPointers->R26);
++    GetContextPointer(cursor, unwContext, UNW_PPC64_R27, &contextPointers->R27);
++    GetContextPointer(cursor, unwContext, UNW_PPC64_R28, &contextPointers->R28);
++    GetContextPointer(cursor, unwContext, UNW_PPC64_R29, &contextPointers->R29);
++    GetContextPointer(cursor, unwContext, UNW_PPC64_R30, &contextPointers->R30);
++    GetContextPointer(cursor, unwContext, UNW_PPC64_R31, &contextPointers->R31);
+ #else
+ #error unsupported architecture
+ #endif
+diff --git a/src/coreclr/pal/src/include/pal/context.h b/src/coreclr/pal/src/include/pal/context.h
+index fd37f92693c..fec5139fd5e 100644
+--- a/src/coreclr/pal/src/include/pal/context.h
++++ b/src/coreclr/pal/src/include/pal/context.h
+@@ -75,6 +75,47 @@ using asm_sigcontext::_xstate;
+ #define MCREG_R14(mc)       ((mc).gregs[14])
+ #define MCREG_R15(mc)       ((mc).gregs[15])
+ 
++#elif HOST_POWERPC64
++
++#define MCREG_R0(mc)        ((mc).gp_regs[0])
++#define MCREG_R1(mc)        ((mc).gp_regs[1])
++#define MCREG_R2(mc)        ((mc).gp_regs[2])
++#define MCREG_R3(mc)        ((mc).gp_regs[3])
++#define MCREG_R4(mc)        ((mc).gp_regs[4])
++#define MCREG_R5(mc)        ((mc).gp_regs[5])
++#define MCREG_R6(mc)        ((mc).gp_regs[6])
++#define MCREG_R7(mc)        ((mc).gp_regs[7])
++#define MCREG_R8(mc)        ((mc).gp_regs[8])
++#define MCREG_R9(mc)        ((mc).gp_regs[9])
++#define MCREG_R10(mc)       ((mc).gp_regs[10])
++#define MCREG_R11(mc)       ((mc).gp_regs[11])
++#define MCREG_R12(mc)       ((mc).gp_regs[12])
++#define MCREG_R13(mc)       ((mc).gp_regs[13])
++#define MCREG_R14(mc)       ((mc).gp_regs[14])
++#define MCREG_R15(mc)       ((mc).gp_regs[15])
++#define MCREG_R16(mc)       ((mc).gp_regs[16])
++#define MCREG_R17(mc)       ((mc).gp_regs[17])
++#define MCREG_R18(mc)       ((mc).gp_regs[18])
++#define MCREG_R19(mc)       ((mc).gp_regs[19])
++#define MCREG_R20(mc)       ((mc).gp_regs[20])
++#define MCREG_R21(mc)       ((mc).gp_regs[21])
++#define MCREG_R22(mc)       ((mc).gp_regs[22])
++#define MCREG_R23(mc)       ((mc).gp_regs[23])
++#define MCREG_R24(mc)       ((mc).gp_regs[24])
++#define MCREG_R25(mc)       ((mc).gp_regs[25])
++#define MCREG_R26(mc)       ((mc).gp_regs[26])
++#define MCREG_R27(mc)       ((mc).gp_regs[27])
++#define MCREG_R28(mc)       ((mc).gp_regs[28])
++#define MCREG_R29(mc)       ((mc).gp_regs[29])
++#define MCREG_R30(mc)       ((mc).gp_regs[30])
++#define MCREG_R31(mc)       ((mc).gp_regs[31])
++#define MCREG_Nip(mc)       ((mc).gp_regs[32])
++#define MCREG_Msr(mc)       ((mc).gp_regs[33])
++#define MCREG_Ctr(mc)       ((mc).gp_regs[35])
++#define MCREG_Link(mc)      ((mc).gp_regs[36])
++#define MCREG_Xer(mc)       ((mc).gp_regs[37])
++#define MCREG_Ccr(mc)       ((mc).gp_regs[38])
++
+ #elif HAVE___GREGSET_T
+ 
+ #ifdef HOST_64BIT
+@@ -756,6 +797,47 @@ const VfpSigFrame* GetConstNativeSigSimdContext(const native_context_t *mc)
+ #define PTREG_Pc(ptreg)      ((ptreg).csr_epc)
+ #endif // HOST_LOONGARCH64
+ 
++#if defined(HOST_POWERPC64)
++#define PTREG_R0(ptreg)        ((ptreg).gpr[0])
++#define PTREG_R1(ptreg)        ((ptreg).gpr[1])
++#define PTREG_R2(ptreg)        ((ptreg).gpr[2])
++#define PTREG_R3(ptreg)        ((ptreg).gpr[3])
++#define PTREG_R4(ptreg)        ((ptreg).gpr[4])
++#define PTREG_R5(ptreg)        ((ptreg).gpr[5])
++#define PTREG_R6(ptreg)        ((ptreg).gpr[6])
++#define PTREG_R7(ptreg)        ((ptreg).gpr[7])
++#define PTREG_R8(ptreg)        ((ptreg).gpr[8])
++#define PTREG_R9(ptreg)        ((ptreg).gpr[9])
++#define PTREG_R10(ptreg)       ((ptreg).gpr[10])
++#define PTREG_R11(ptreg)       ((ptreg).gpr[11])
++#define PTREG_R12(ptreg)       ((ptreg).gpr[12])
++#define PTREG_R13(ptreg)       ((ptreg).gpr[13])
++#define PTREG_R14(ptreg)       ((ptreg).gpr[14])
++#define PTREG_R15(ptreg)       ((ptreg).gpr[15])
++#define PTREG_R16(ptreg)       ((ptreg).gpr[16])
++#define PTREG_R17(ptreg)       ((ptreg).gpr[17])
++#define PTREG_R18(ptreg)       ((ptreg).gpr[18])
++#define PTREG_R19(ptreg)       ((ptreg).gpr[19])
++#define PTREG_R20(ptreg)       ((ptreg).gpr[20])
++#define PTREG_R21(ptreg)       ((ptreg).gpr[21])
++#define PTREG_R22(ptreg)       ((ptreg).gpr[22])
++#define PTREG_R23(ptreg)       ((ptreg).gpr[23])
++#define PTREG_R24(ptreg)       ((ptreg).gpr[24])
++#define PTREG_R25(ptreg)       ((ptreg).gpr[25])
++#define PTREG_R26(ptreg)       ((ptreg).gpr[26])
++#define PTREG_R27(ptreg)       ((ptreg).gpr[27])
++#define PTREG_R28(ptreg)       ((ptreg).gpr[28])
++#define PTREG_R29(ptreg)       ((ptreg).gpr[29])
++#define PTREG_R30(ptreg)       ((ptreg).gpr[30])
++#define PTREG_R31(ptreg)       ((ptreg).gpr[31])
++#define PTREG_Nip(ptreg)       ((ptreg).nip)
++#define PTREG_Msr(ptreg)       ((ptreg).msr)
++#define PTREG_Ctr(ptreg)       ((ptreg).ctr)
++#define PTREG_Link(ptreg)      ((ptreg).link)
++#define PTREG_Xer(ptreg)       ((ptreg).xer)
++#define PTREG_Ccr(ptreg)       ((ptreg).ccr)
++#else //HOST_POWERPC64
++
+ #define PTREG_Rbx(ptreg)    ((ptreg).rbx)
+ #define PTREG_Rcx(ptreg)    ((ptreg).rcx)
+ #define PTREG_Rdx(ptreg)    ((ptreg).rdx)
+@@ -776,6 +858,7 @@ const VfpSigFrame* GetConstNativeSigSimdContext(const native_context_t *mc)
+ #define PTREG_R14(ptreg)    ((ptreg).r14)
+ #define PTREG_R15(ptreg)    ((ptreg).r15)
+ 
++#endif //HOST_POWERPC64
+ #else // HOST_64BIT
+ 
+ #if defined(HOST_ARM)
+@@ -881,6 +964,8 @@ inline static DWORD64 CONTEXTGetPC(LPCONTEXT pContext)
+     return pContext->Pc;
+ #elif defined(HOST_S390X)
+     return pContext->PSWAddr;
++#elif defined(HOST_POWERPC64)
++    return pContext->Nip;
+ #else
+ #error "don't know how to get the program counter for this architecture"
+ #endif
+@@ -898,6 +983,8 @@ inline static void CONTEXTSetPC(LPCONTEXT pContext, DWORD64 pc)
+     pContext->Pc = pc;
+ #elif defined(HOST_S390X)
+     pContext->PSWAddr = pc;
++#elif defined(HOST_POWERPC64)
++    pContext->Nip = pc;
+ #else
+ #error "don't know how to set the program counter for this architecture"
+ #endif
+@@ -917,6 +1004,8 @@ inline static DWORD64 CONTEXTGetFP(LPCONTEXT pContext)
+     return pContext->Fp;
+ #elif defined(HOST_S390X)
+     return pContext->R11;
++#elif defined(HOST_POWERPC64)
++    return pContext->R31;
+ #else
+ #error "don't know how to get the frame pointer for this architecture"
+ #endif
+diff --git a/src/coreclr/pal/src/misc/perfjitdump.cpp b/src/coreclr/pal/src/misc/perfjitdump.cpp
+index 76b0924ebbd..1077b050edf 100644
+--- a/src/coreclr/pal/src/misc/perfjitdump.cpp
++++ b/src/coreclr/pal/src/misc/perfjitdump.cpp
+@@ -50,7 +50,7 @@ namespace
+         ELF_MACHINE = EM_LOONGARCH,
+ #elif defined(HOST_S390X)
+         ELF_MACHINE = EM_S390,
+-#elif defined(HOST_POWERPC)
++#elif defined(HOST_POWERPC64)
+        ELF_MACHINE = EM_PPC64,
+ #else
+ #error ELF_MACHINE unsupported for target
+diff --git a/src/coreclr/pal/src/thread/context.cpp b/src/coreclr/pal/src/thread/context.cpp
+index 80a5e3a90ff..64855bf5d89 100644
+--- a/src/coreclr/pal/src/thread/context.cpp
++++ b/src/coreclr/pal/src/thread/context.cpp
+@@ -49,6 +49,8 @@ extern PGET_GCMARKER_EXCEPTION_CODE g_getGcMarkerExceptionCode;
+ #define CONTEXT_ALL_FLOATING CONTEXT_FLOATING_POINT
+ #elif defined(HOST_S390X)
+ #define CONTEXT_ALL_FLOATING CONTEXT_FLOATING_POINT
++#elif defined(HOST_POWERPC64)
++#define CONTEXT_ALL_FLOATING CONTEXT_FLOATING_POINT
+ #else
+ #error Unexpected architecture.
+ #endif
+@@ -236,6 +238,50 @@ typedef int __ptrace_request;
+         ASSIGN_REG(R13)     \
+         ASSIGN_REG(R14)
+ 
++#elif defined(HOST_POWERPC64)
++#define ASSIGN_CONTROL_REGS \
++        ASSIGN_REG(Nip) \
++        ASSIGN_REG(Msr) \
++        ASSIGN_REG(Ctr) \
++        ASSIGN_REG(Link) \
++        ASSIGN_REG(Xer) \
++        ASSIGN_REG(Ccr) \
++        ASSIGN_REG(R31) \
++
++#define ASSIGN_INTEGER_REGS \
++        ASSIGN_REG(R0)      \
++        ASSIGN_REG(R1)      \
++        ASSIGN_REG(R2)      \
++        ASSIGN_REG(R3)      \
++        ASSIGN_REG(R4)      \
++        ASSIGN_REG(R5)      \
++        ASSIGN_REG(R5)      \
++        ASSIGN_REG(R6)      \
++        ASSIGN_REG(R7)      \
++        ASSIGN_REG(R8)      \
++        ASSIGN_REG(R9)      \
++        ASSIGN_REG(R10)     \
++        ASSIGN_REG(R11)     \
++        ASSIGN_REG(R12)     \
++        ASSIGN_REG(R13)     \
++        ASSIGN_REG(R14)     \
++        ASSIGN_REG(R15)     \
++        ASSIGN_REG(R16)     \
++        ASSIGN_REG(R17)     \
++        ASSIGN_REG(R18)     \
++        ASSIGN_REG(R19)     \
++        ASSIGN_REG(R20)     \
++        ASSIGN_REG(R21)     \
++        ASSIGN_REG(R22)     \
++        ASSIGN_REG(R23)     \
++        ASSIGN_REG(R24)     \
++        ASSIGN_REG(R25)     \
++        ASSIGN_REG(R26)     \
++        ASSIGN_REG(R27)     \
++        ASSIGN_REG(R28)     \
++        ASSIGN_REG(R29)     \
++        ASSIGN_REG(R30)     
++
+ #else
+ #error "Don't know how to assign registers on this architecture"
+ #endif
+@@ -503,7 +549,7 @@ void CONTEXTToNativeContext(CONST CONTEXT *lpContext, native_context_t *native)
+ #undef ASSIGN_REG
+ 
+ #if !HAVE_FPREGS_WITH_CW
+-#if (HAVE_GREGSET_T || HAVE___GREGSET_T) && !defined(HOST_S390X) && !defined(HOST_LOONGARCH64)
++#if (HAVE_GREGSET_T || HAVE___GREGSET_T) && !defined(HOST_S390X) && !defined(HOST_LOONGARCH64) && !defined(HOST_POWERPC64)
+ #if HAVE_GREGSET_T
+     if (native->uc_mcontext.fpregs == nullptr)
+ #elif HAVE___GREGSET_T
+@@ -515,7 +561,7 @@ void CONTEXTToNativeContext(CONST CONTEXT *lpContext, native_context_t *native)
+         // whether CONTEXT_FLOATING_POINT is set in the CONTEXT's flags.
+         return;
+     }
+-#endif // (HAVE_GREGSET_T || HAVE___GREGSET_T) && !HOST_S390X && !HOST_LOONGARCH64
++#endif // (HAVE_GREGSET_T || HAVE___GREGSET_T) && !HOST_S390X && !HOST_LOONGARCH64 && !HOST_POWERPC64
+ #endif // !HAVE_FPREGS_WITH_CW
+ 
+     if ((lpContext->ContextFlags & CONTEXT_FLOATING_POINT) == CONTEXT_FLOATING_POINT)
+@@ -638,7 +684,7 @@ void CONTEXTFromNativeContext(const native_context_t *native, LPCONTEXT lpContex
+ #undef ASSIGN_REG
+ 
+ #if !HAVE_FPREGS_WITH_CW
+-#if (HAVE_GREGSET_T || HAVE___GREGSET_T) && !defined(HOST_S390X) && !defined(HOST_LOONGARCH64)
++#if (HAVE_GREGSET_T || HAVE___GREGSET_T) && !defined(HOST_S390X) && !defined(HOST_LOONGARCH64) && !defined(HOST_POWERPC64)
+ #if HAVE_GREGSET_T
+     if (native->uc_mcontext.fpregs == nullptr)
+ #elif HAVE___GREGSET_T
+@@ -660,7 +706,7 @@ void CONTEXTFromNativeContext(const native_context_t *native, LPCONTEXT lpContex
+         // Bail out regardless of whether the caller wanted CONTEXT_FLOATING_POINT or CONTEXT_XSTATE
+         return;
+     }
+-#endif // (HAVE_GREGSET_T || HAVE___GREGSET_T) && !HOST_S390X
++#endif // (HAVE_GREGSET_T || HAVE___GREGSET_T) && !HOST_S390X && !HOST_POWERPC64
+ #endif // !HAVE_FPREGS_WITH_CW
+ 
+     if ((contextFlags & CONTEXT_FLOATING_POINT) == CONTEXT_FLOATING_POINT)
+@@ -789,6 +835,8 @@ LPVOID GetNativeContextPC(const native_context_t *context)
+     return (LPVOID) MCREG_Pc(context->uc_mcontext);
+ #elif defined(HOST_S390X)
+     return (LPVOID) MCREG_PSWAddr(context->uc_mcontext);
++#elif defined(HOST_POWERPC64)
++    return (LPVOID) MCREG_Nip(context->uc_mcontext);
+ #else
+ #   error implement me for this architecture
+ #endif
+@@ -821,6 +869,8 @@ LPVOID GetNativeContextSP(const native_context_t *context)
+     return (LPVOID) MCREG_Sp(context->uc_mcontext);
+ #elif defined(HOST_S390X)
+     return (LPVOID) MCREG_R15(context->uc_mcontext);
++#elif defined(HOST_POWERPC64)
++    return (LPVOID) MCREG_R31(context->uc_mcontext);
+ #else
+ #   error implement me for this architecture
+ #endif
+diff --git a/src/native/external/libunwind.cmake b/src/native/external/libunwind.cmake
+index 0d767ccccdb..7efcb1508d3 100644
+--- a/src/native/external/libunwind.cmake
++++ b/src/native/external/libunwind.cmake
+@@ -333,6 +333,34 @@ set(libunwind_s390x_la_SOURCES_s390x
+     s390x/Gget_proc_info.c s390x/Gregs.c s390x/Gresume.c
+     s390x/Gis_signal_frame.c s390x/Gstep.c
+ )
++# The list of files that go both into libunwind and libunwind-ppc64le:
++set(libunwind_la_SOURCES_ppc64le_common
++    ${libunwind_la_SOURCES_common}
++    ppc64/is_fpreg.c ppc64/regname.c ppc64/get_func_addr.c
++)
++
++# The list of files that go into libunwind:
++set(libunwind_la_SOURCES_ppc64le
++    ${libunwind_la_SOURCES_ppc64le_common}
++    ${libunwind_la_SOURCES_local}
++    ppc64/setcontext.S 
++    ppc64/Lapply_reg_state.c ppc64/Lreg_states_iterate.c
++    ppc64/Lcreate_addr_space.c ppc/Lget_save_loc.c ppc64/Lglobal.c
++    ppc64/Linit.c ppc/Linit_local.c 
++    ppc64/Lregs.c ppc64/Lresume.c
++    ppc/Lis_signal_frame.c ppc64/Lstep.c
++)
++
++# The list of files that go into libunwind-ppc64le:
++set(libunwind_ppc64le_la_SOURCES_ppc64le
++    ${libunwind_la_SOURCES_ppc64le_common}
++    ${libunwind_la_SOURCES_generic}
++    ppc64/Gapply_reg_state.c ppc64/Greg_states_iterate.c
++    ppc64/Gcreate_addr_space.c ppc/Gget_save_loc.c ppc64/Gglobal.c
++    ppc64/Ginit.c ppc/Ginit_local.c
++    ppc64/Gregs.c ppc64/Gresume.c
++    ppc/Gis_signal_frame.c ppc64/Gstep.c
++)
+ 
+ if(CLR_CMAKE_HOST_UNIX)
+     if(CLR_CMAKE_HOST_ARCH_ARM64)
+@@ -364,6 +392,10 @@ if(CLR_CMAKE_HOST_UNIX)
+         set(libunwind_la_SOURCES                    ${libunwind_la_SOURCES_s390x})
+         set(libunwind_remote_la_SOURCES             ${libunwind_s390x_la_SOURCES_s390x})
+         set(libunwind_elf_la_SOURCES                ${libunwind_elf64_la_SOURCES})
++    elseif(CLR_CMAKE_HOST_ARCH_POWERPC64)
++        set(libunwind_la_SOURCES                    ${libunwind_la_SOURCES_ppc64le})
++        set(libunwind_remote_la_SOURCES             ${libunwind_ppc64le_la_SOURCES_ppc64le})
++        set(libunwind_elf_la_SOURCES                ${libunwind_elf64_la_SOURCES})
+     elseif(CLR_CMAKE_HOST_ARCH_LOONGARCH64)
+         set(libunwind_la_SOURCES                    ${libunwind_la_SOURCES_loongarch})
+         set(libunwind_remote_la_SOURCES             ${libunwind_loongarch_la_SOURCES_loongarch})
+@@ -418,6 +450,10 @@ else(CLR_CMAKE_HOST_UNIX)
+         set(libunwind_la_SOURCES                    ${libunwind_la_SOURCES_s390x})
+         set(libunwind_remote_la_SOURCES             ${libunwind_s390x_la_SOURCES_s390x})
+         set(libunwind_elf_la_SOURCES                ${libunwind_elf64_la_SOURCES})
++    elseif(CLR_CMAKE_TARGET_ARCH_POWERPC64)
++        set(libunwind_la_SOURCES                    ${libunwind_la_SOURCES_ppc64le})
++        set(libunwind_remote_la_SOURCES             ${libunwind_ppc64le_la_SOURCES_ppc64le})
++        set(libunwind_elf_la_SOURCES                ${libunwind_elf64_la_SOURCES})
+     endif()
+ 
+     set_source_files_properties(${CLR_DIR}/pal/src/exception/remote-unwind.cpp PROPERTIES COMPILE_FLAGS /TP INCLUDE_DIRECTORIES ${CLR_DIR}/inc)
+diff --git a/src/native/external/libunwind/CMakeLists.txt b/src/native/external/libunwind/CMakeLists.txt
+index 8b542f240d2..b337453596e 100644
+--- a/src/native/external/libunwind/CMakeLists.txt
++++ b/src/native/external/libunwind/CMakeLists.txt
+@@ -35,6 +35,11 @@ elseif ('$ENV{TARGET}' STREQUAL 'loongarch64-linux-gnu')
+   set(arch loongarch64)
+   add_definitions(-D__loongarch64)
+   add_definitions(-D__linux__)
++elseif ('$ENV{TARGET}' STREQUAL 'powerpc64-linux-gnu')
++  set(TARGET_POWERPC64 1)
++  set(arch ppc64le)
++  add_definitions(-D__ppc64le__)
++  add_definitions(-D__linux__)
+ else ()
+   message(FATAL_ERROR "Unrecognize value in environment variable TARGET")
+ endif ()
+diff --git a/src/native/external/libunwind/src/CMakeLists.txt b/src/native/external/libunwind/src/CMakeLists.txt
+index 82ef68a9ec2..3971116eb1b 100644
+--- a/src/native/external/libunwind/src/CMakeLists.txt
++++ b/src/native/external/libunwind/src/CMakeLists.txt
+@@ -297,6 +297,35 @@ SET(libunwind_s390x_la_SOURCES_s390x
+     s390x/Gis_signal_frame.c s390x/Gstep.c
+ )
+ 
++## The list of files that go both into libunwind and libunwind-ppc64le:
++SET(libunwind_la_SOURCES_ppc64le_common
++    ${libunwind_la_SOURCES_common}
++    ppc64/is_fpreg.c ppc64/regname.c ppc64/get_func_addr.c
++)
++
++# The list of files that go into libunwind:
++SET(libunwind_la_SOURCES_ppc64le
++    ${libunwind_la_SOURCES_ppc64le_common}
++    ${libunwind_la_SOURCES_local}
++    ppc64/setcontext.S
++    ppc64/Lapply_reg_state.c ppc64/Lreg_states_iterate.c
++    ppc64/Lcreate_addr_space.c ppc/Lget_save_loc.c ppc64/Lglobal.c
++    ppc64/Linit.c ppc/Linit_local.c
++    ppc64/Lregs.c ppc64/Lresume.c
++    ppc/Lis_signal_frame.c ppc64/Lstep.c
++)
++
++# The list of files that go into libunwind-ppc64le:
++SET(libunwind_ppc64le_la_SOURCES_ppc64le
++    ${libunwind_la_SOURCES_ppc64le_common}
++    ${libunwind_la_SOURCES_generic}
++    ppc64/Gapply_reg_state.c ppc64/Greg_states_iterate.c
++    ppc64/Gcreate_addr_space.c ppc/Gget_save_loc.c ppc64/Gglobal.c
++    ppc64/Ginit.c ppc/Ginit_local.c
++    ppc64/Gregs.c ppc64/Gresume.c
++    ppc/Gis_signal_frame.c ppc64/Gstep.c
++)
++
+ # The list of files that go into libunwind and libunwind-loongarch64:
+ SET(libunwind_la_SOURCES_loongarch_common
+     ${libunwind_la_SOURCES_common}
+@@ -343,6 +372,10 @@ elseif(TARGET_S390X)
+     SET(libunwind_la_SOURCES                    ${libunwind_la_SOURCES_s390x})
+     SET(libunwind_remote_la_SOURCES             ${libunwind_s390x_la_SOURCES_s390x})
+     SET(libunwind_elf_la_SOURCES                ${libunwind_elf64_la_SOURCES})
++elseif(CLR_CMAKE_HOST_ARCH_POWERPC64)
++    SET(libunwind_la_SOURCES                    ${libunwind_la_SOURCES_ppc64le})
++    SET(libunwind_remote_la_SOURCES             ${libunwind_ppc64le_la_SOURCES_ppc64le})
++    SET(libunwind_elf_la_SOURCES                ${libunwind_elf64_la_SOURCES})
+ elseif(TARGET_LOONGARCH64)
+     SET(libunwind_la_SOURCES                    ${libunwind_la_SOURCES_loongarch64})
+     SET(libunwind_remote_la_SOURCES             ${libunwind_loongarch64_la_SOURCES_loongarch})
+diff --git a/src/native/external/libunwind_extras/CMakeLists.txt b/src/native/external/libunwind_extras/CMakeLists.txt
+index 3da5f2c71cb..9f999f0beb7 100644
+--- a/src/native/external/libunwind_extras/CMakeLists.txt
++++ b/src/native/external/libunwind_extras/CMakeLists.txt
+@@ -29,6 +29,8 @@ if(CLR_CMAKE_HOST_UNIX)
+       set(arch s390x)
+     elseif(CLR_CMAKE_HOST_ARCH_LOONGARCH64)
+       set(arch loongarch64)
++    elseif(CLR_CMAKE_HOST_ARCH_POWERPC64)
++      set(arch ppc64le)
+     endif ()
+ 
+     # Disable warning due to incorrect format specifier in debugging printf via the Debug macro
+diff --git a/src/native/libs/System.Native/pal_runtimeinformation.h b/src/native/libs/System.Native/pal_runtimeinformation.h
+index da39ac51d55..431b2ec6d23 100644
+--- a/src/native/libs/System.Native/pal_runtimeinformation.h
++++ b/src/native/libs/System.Native/pal_runtimeinformation.h
+@@ -25,4 +25,5 @@ enum
+     ARCH_S390X,
+     ARCH_LOONGARCH64,
+     ARCH_ARMV6,
++    ARCH_POWERPC64,
+ };
