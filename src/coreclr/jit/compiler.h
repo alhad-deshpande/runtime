@@ -1842,6 +1842,13 @@ struct FuncInfoDsc
     emitLocation* coldStartLoc; // locations for the cold section, if there is one.
     emitLocation* coldEndLoc;
 
+#elif defined(TARGET_POWERPC64)
+
+    emitLocation* startLoc;
+    emitLocation* endLoc;
+    emitLocation* coldStartLoc; // locations for the cold section, if there is one.
+    emitLocation* coldEndLoc;
+
 #endif // TARGET_ARMARCH || TARGET_LOONGARCH64 || TARGET_RISCV64
 
 #if defined(FEATURE_CFI_SUPPORT)
@@ -8033,6 +8040,9 @@ public:
 #elif defined(TARGET_RISCV64)
             reg     = REG_T5;
             regMask = RBM_T5;
+#elif defined(TARGET_POWERPC64)
+            reg     = REG_R2;
+            regMask = RBM_R2;
 #else
 #error Unsupported or unset target architecture
 #endif
@@ -11845,6 +11855,11 @@ const instruction INS_SQRT       = INS_fsqrt_d; // NOTE: default is double.
 #ifdef TARGET_RISCV64
 const instruction INS_BREAKPOINT = INS_ebreak;
 #endif // TARGET_RISCV64
+
+#ifdef TARGET_POWERPC64
+//TO DO for ppc64le
+//const instruction INS_BREAKPOINT = INS_break;
+#endif                                         // TARGET_POWERPC64
 
 /*****************************************************************************/
 

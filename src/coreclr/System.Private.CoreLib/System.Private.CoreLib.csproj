@@ -84,6 +84,10 @@
     <PlatformTarget>AnyCPU</PlatformTarget>
     <DefineConstants>$(DefineConstants);TARGET_RISCV64</DefineConstants>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Platform)' == 'ppc64le'">
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <DefineConstants>$(DefineConstants);TARGET_POWERPC64</DefineConstants>
+  </PropertyGroup>
 
   <!-- Configuration specific properties -->
   <PropertyGroup Condition="'$(Configuration)' == 'Debug' or '$(Configuration)' == 'Checked'">

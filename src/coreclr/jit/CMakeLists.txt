@@ -252,7 +252,7 @@ set( JIT_S390X_SOURCES
 )
 
 set( JIT_POWERPC64_SOURCES
-  # Not supported as JIT target
+  targetppc64le.cpp
 )
 
 set( JIT_LOONGARCH64_SOURCES
@@ -371,6 +371,7 @@ set( JIT_HEADERS
   targetamd64.h
   targetarm.h
   targetarm64.h
+  targetppc64le.h
   tinyarray.h
   treelifeupdater.h
   typelist.h
@@ -421,7 +422,10 @@ set ( JIT_S390X_HEADERS
 )
 
 set ( JIT_POWERPC64_HEADERS
-  # Not supported as JIT target
+  emitppc64le.h
+  emitfmtsppc64le.h
+  instrsppc64le.h
+  registerppc64le.h
 )
 
 set( JIT_LOONGARCH64_HEADERS

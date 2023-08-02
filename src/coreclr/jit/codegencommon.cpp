@@ -4482,6 +4482,8 @@ void CodeGen::genZeroInitFltRegs(const regMaskTP& initFltRegs, const regMaskTP& 
                 GetEmitter()->emitIns_R_R(INS_movgr2fr_d, EA_8BYTE, reg, REG_R0);
 #elif defined(TARGET_RISCV64)
                 NYI_RISCV64("genZeroInitFltRegs is not implemented");
+#elif defined(TARGET_POWERPC64)
+		// TO DO for ppc64le
 #else // TARGET*
 #error Unsupported or unset target architecture
 #endif
@@ -4521,6 +4523,8 @@ void CodeGen::genZeroInitFltRegs(const regMaskTP& initFltRegs, const regMaskTP& 
                 GetEmitter()->emitIns_R_R(INS_movgr2fr_d, EA_8BYTE, reg, REG_R0);
 #elif defined(TARGET_RISCV64)
                 NYI_RISCV64("genZeroInitFltRegs is not implemented.");
+#elif defined(TARGET_POWERPC64)
+		// TO DO for ppc64le
 #else // TARGET*
 #error Unsupported or unset target architecture
 #endif

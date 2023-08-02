@@ -187,6 +187,14 @@ struct TransitionBlock
     };
     //TADDR padding; // Keep size of TransitionBlock as multiple of 16-byte. Simplifies code in PROLOG_WITH_TRANSITION_BLOCK
     ArgumentRegisters       m_argumentRegisters;
+#elif defined(TARGET_POWERPC64)
+    TADDR                   m_backchain;
+    TADDR                   m_reserved;
+    ArgumentRegisters       m_argumentRegisters;
+    CalleeSavedRegisters    m_calleeSavedRegisters;
+    TADDR                   m_ReturnAddress;
+    TADDR                   m_StackPointer;
+    TADDR                   m_calleeSavedFPRegisters[4];
 #else
     PORTABILITY_ASSERT("TransitionBlock");
 #endif

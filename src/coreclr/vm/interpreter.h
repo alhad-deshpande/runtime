@@ -552,6 +552,8 @@ struct InterpreterMethodInfo
     // Stub num for the current method under interpretation.
     int                         m_stubNum;
 
+    Stub*                       m_stub;
+
     // The method this info is relevant to.
     CORINFO_METHOD_HANDLE       m_method;
 
@@ -999,6 +1001,8 @@ private:
         static const int MaxNumFPRegArgSlots = 8;
 #elif defined(HOST_RISCV64)
         static const int MaxNumFPRegArgSlots = 8;
+#elif defined(HOST_POWERPC64)
+	static const int MaxNumFPRegArgSlots = 13; //FPR1-FPR13
 #endif
 
         ~ArgState()
@@ -1094,6 +1098,12 @@ private:
             // In AMD64, a reference to the struct is passed if its size exceeds the word size.
             // Dereference the arg to get to the ref of the struct.
             if (GetArgType(argNum).IsLargeStruct(&m_interpCeeInfo))
+            {
+                return *reinterpret_cast<BYTE**>(&m_ilArgs[m_methInfo->m_argDescs[argNum].m_nativeOffset]);
+            }
+#elif defined(HOST_POWERPC64)
+            size_t size = GetArgType(argNum).Size(&m_interpCeeInfo);
+            if (size > 8 || (size & (size-1)) != 0)
             {
                 return *reinterpret_cast<BYTE**>(&m_ilArgs[m_methInfo->m_argDescs[argNum].m_nativeOffset]);
             }
@@ -2060,6 +2070,8 @@ unsigned short Interpreter::NumberOfIntegerRegArgs() { return 8; }
 #elif defined(HOST_LOONGARCH64)
 unsigned short Interpreter::NumberOfIntegerRegArgs() { return 8; }
 #elif defined(HOST_RISCV64)
+unsigned short Interpreter::NumberOfIntegerRegArgs() { return 8; }
+#elif defined(HOST_POWERPC64)
 unsigned short Interpreter::NumberOfIntegerRegArgs() { return 8; }
 #else
 #error Unsupported architecture.

@@ -3799,6 +3799,10 @@ const size_t hexEncodingSize = 19;
 #elif defined(TARGET_RISCV64)
 const size_t basicIndent     = 12;
 const size_t hexEncodingSize = 19;
+#elif defined(TARGET_POWERPC64)
+//TO Do for ppc64le
+const size_t basicIndent     = 12;
+const size_t hexEncodingSize = 19;
 #endif
 
 #ifdef DEBUG
@@ -5405,6 +5409,8 @@ AGAIN:
         // The size of IF_LARGEJMP/IF_LARGEADR/IF_LARGELDC are 8 or 12.
         // All other code size is 4.
         assert((sizeDif == 4) || (sizeDif == 8));
+#elif defined(TARGET_POWERPC64)
+	//To do for ppc64le
 #else
 #error Unsupported or unset target architecture
 #endif
@@ -7539,6 +7545,9 @@ unsigned emitter::emitEndCodeGen(Compiler* comp,
 #elif defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64)
                     // For LoongArch64 and Riscv64 `emitFwdJumps` is always false.
                     unreached();
+#elif defined(TARGET_POWERPC64)
+		    //TO DO for ppc64le
+		    unreached();
 #else
 #error Unsupported or unset target architecture
 #endif
@@ -7555,6 +7564,9 @@ unsigned emitter::emitEndCodeGen(Compiler* comp,
 #elif defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64)
                     // For LoongArch64 and Riscv64 `emitFwdJumps` is always false.
                     unreached();
+#elif defined(TARGET_POWERPC64)
+		    //TO DO for ppc64le
+		    unreached();
 #else
 #error Unsupported or unset target architecture
 #endif

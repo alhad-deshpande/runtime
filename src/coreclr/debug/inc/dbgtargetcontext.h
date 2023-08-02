@@ -58,6 +58,8 @@
 #define DTCONTEXT_IS_LOONGARCH64
 #elif defined (TARGET_RISCV64)
 #define DTCONTEXT_IS_RISCV64
+#elif defined (TARGET_POWERPC64)
+#define DTCONTEXT_IS_POWERPC64
 #endif
 
 #define CONTEXT_AREA_MASK 0xffff
@@ -607,6 +609,124 @@ typedef struct DECLSPEC_ALIGN(16) {
 } DT_CONTEXT;
 
 static_assert(sizeof(DT_CONTEXT) == sizeof(T_CONTEXT), "DT_CONTEXT size must equal the T_CONTEXT size");
+
+#elif defined(DTCONTEXT_IS_POWERPC64)
+// There is no context for ppc64le defined in winnt.h,
+// so we re-use the amd64 values.
+#define CONTEXT_PPC64   0x100000
+
+#define CONTEXT_CONTROL (CONTEXT_PPC64 | 0x1L)
+#define CONTEXT_INTEGER (CONTEXT_PPC64 | 0x2L)
+#define CONTEXT_FLOATING_POINT  (CONTEXT_PPC64 | 0x4L)
+
+#define CONTEXT_FULL (CONTEXT_CONTROL | CONTEXT_INTEGER | CONTEXT_FLOATING_POINT)
+
+#define CONTEXT_ALL (CONTEXT_CONTROL | CONTEXT_INTEGER | CONTEXT_FLOATING_POINT)
+
+#define CONTEXT_EXCEPTION_ACTIVE 0x8000000
+#define CONTEXT_SERVICE_ACTIVE 0x10000000
+#define CONTEXT_EXCEPTION_REQUEST 0x40000000
+#define CONTEXT_EXCEPTION_REPORTING 0x80000000
+
+//typedef struct DECLSPEC_ALIGN(16) _CONTEXT {
+typedef struct DECLSPEC_ALIGN(16) {
+
+    //
+    // Control flags.
+    //
+
+    DWORD ContextFlags;
+
+    //
+    // Integer  Registers
+    //
+
+    DWORD64 R0;
+    DWORD64 R1;
+    DWORD64 R2;
+    DWORD64 R3;
+    DWORD64 R4;
+    DWORD64 R5;
+    DWORD64 R6;
+    DWORD64 R7;
+    DWORD64 R8;
+    DWORD64 R9;
+    DWORD64 R10;
+    DWORD64 R11;
+    DWORD64 R12;
+    DWORD64 R13;
+    DWORD64 R14;
+    DWORD64 R15;
+    DWORD64 R16;
+    DWORD64 R17;
+    DWORD64 R18;
+    DWORD64 R19;
+    DWORD64 R20;
+    DWORD64 R21;
+    DWORD64 R22;
+    DWORD64 R23;
+    DWORD64 R24;
+    DWORD64 R25;
+    DWORD64 R26;
+    DWORD64 R27;
+    DWORD64 R28;
+    DWORD64 R29;
+    DWORD64 R30;
+    DWORD64 R31;
+
+    //
+    // Floaring Point Registers
+    //
+
+    DWORD64 F0;
+    DWORD64 F1;
+    DWORD64 F2;
+    DWORD64 F3;
+    DWORD64 F4;
+    DWORD64 F5;
+    DWORD64 F6;
+    DWORD64 F7;
+    DWORD64 F8;
+    DWORD64 F9;
+    DWORD64 F10;
+    DWORD64 F11;
+    DWORD64 F12;
+    DWORD64 F13;
+    DWORD64 F14;
+    DWORD64 F15;
+    DWORD64 F16;
+    DWORD64 F17;
+    DWORD64 F18;
+    DWORD64 F19;
+    DWORD64 F20;
+    DWORD64 F21;
+    DWORD64 F22;
+    DWORD64 F23;
+    DWORD64 F24;
+    DWORD64 F25;
+    DWORD64 F26;
+    DWORD64 F27;
+    DWORD64 F28;
+    DWORD64 F29;
+    DWORD64 F30;
+    DWORD64 F31;
+    DWORD64 Fpscr;
+
+    //
+    // Control Registers
+    //
+
+    DWORD64 Nip;
+    DWORD64 Msr;
+    DWORD64 Ctr;
+    DWORD64 Link;
+
+    DWORD Xer;
+    DWORD Ccr;
+
+}DT_CONTEXT;
+
+static_assert(sizeof(DT_CONTEXT) == sizeof(T_CONTEXT), "DT_CONTEXT size must equal the T_CONTEXT size on ppc64le");
 
 #else
 #error Unsupported platform

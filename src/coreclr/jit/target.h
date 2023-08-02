@@ -60,6 +60,8 @@ inline bool compUnixX86Abi()
 #define TARGET_READABLE_NAME "LOONGARCH64"
 #elif defined(TARGET_RISCV64)
 #define TARGET_READABLE_NAME "RISCV64"
+#elif defined(TARGET_POWERPC64)
+#define TARGET_READABLE_NAME "PPC64LE"
 #else
 #error Unsupported or unset target architecture
 #endif
@@ -88,6 +90,10 @@ inline bool compUnixX86Abi()
 #define CSE_CONST_SHARED_LOW_BITS 12
 
 #elif defined(TARGET_RISCV64)
+#define REGMASK_BITS 64
+#define CSE_CONST_SHARED_LOW_BITS 12
+
+#elif defined(TARGET_POWERPC64)
 #define REGMASK_BITS 64
 #define CSE_CONST_SHARED_LOW_BITS 12
 
@@ -169,6 +175,29 @@ enum _regMask_enum : uint64_t
 #include "register.h"
 
 };
+
+#elif defined(TARGET_POWERPC64)
+
+enum _regNumber_enum : unsigned
+{
+#define REGDEF(name, rnum, mask, sname) REG_##name = rnum,
+#define REGALIAS(alias, realname) REG_##alias = REG_##realname,
+#include "register.h"
+
+    REG_COUNT,
+    REG_NA           = REG_COUNT,
+    ACTUAL_REG_COUNT = REG_COUNT - 1 // everything but REG_STK (only real regs)
+};
+
+enum _regMask_enum : unsigned
+{
+    RBM_NONE = 0,
+
+#define REGDEF(name, rnum, mask, sname) RBM_##name = mask,
+#define REGALIAS(alias, realname) RBM_##alias = RBM_##realname,
+#include "register.h"
+};
+
 
 #elif defined(TARGET_X86)
 
@@ -265,6 +294,8 @@ typedef unsigned char   regNumberSmall;
 #include "targetloongarch64.h"
 #elif defined(TARGET_RISCV64)
 #include "targetriscv64.h"
+#elif defined(TARGET_POWERPC64)
+#include "targetppc64le.h"
 #else
   #error Unsupported or unset target architecture
 #endif
@@ -584,7 +615,7 @@ inline regMaskTP genRegMask(regNumber reg)
 inline regMaskTP genRegMaskFloat(regNumber reg ARM_ARG(var_types type /* = TYP_DOUBLE */))
 {
 #if defined(TARGET_AMD64) || defined(TARGET_ARM64) || defined(TARGET_X86) || defined(TARGET_LOONGARCH64) ||            \
-    defined(TARGET_RISCV64)
+    defined(TARGET_RISCV64) || defined(TARGET_POWERPC64)
     assert(genIsValidFloatReg(reg));
     assert((unsigned)reg < ArrLen(regMasks));
     return regMasks[reg];
