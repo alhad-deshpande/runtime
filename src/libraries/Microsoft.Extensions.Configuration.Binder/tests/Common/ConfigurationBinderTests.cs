@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 using System.Reflection;
@@ -540,10 +541,12 @@ if (!System.Diagnostics.Debugger.IsAttached) { System.Diagnostics.Debugger.Launc
             var expectedValue = TypeDescriptor.GetConverter(type).ConvertFromInvariantString(value);
 
             // act
+#pragma warning disable SYSLIB1104
             config.Bind(options);
             var optionsValue = options.GetType().GetProperty("Value").GetValue(options);
             var getValueValue = config.GetValue(type, "Value");
             var getValue = config.GetSection("Value").Get(type);
+#pragma warning restore SYSLIB1104
 
             // assert
             Assert.Equal(expectedValue, optionsValue);
@@ -587,6 +590,7 @@ if (!System.Diagnostics.Debugger.IsAttached) { System.Diagnostics.Debugger.Launc
             var options = Activator.CreateInstance(optionsType);
 
             // act
+#pragma warning disable SYSLIB1104
             var exception = Assert.Throws<InvalidOperationException>(
                 () => config.Bind(options));
 
@@ -595,6 +599,7 @@ if (!System.Diagnostics.Debugger.IsAttached) { System.Diagnostics.Debugger.Launc
 
             var getException = Assert.Throws<InvalidOperationException>(
                 () => config.GetSection("Value").Get(type));
+#pragma warning restore SYSLIB1104
 
             // assert
             Assert.NotNull(exception.InnerException);
@@ -952,8 +957,7 @@ if (!System.Diagnostics.Debugger.IsAttached) { System.Diagnostics.Debugger.Launc
             configurationBuilder.AddInMemoryCollection(input);
             var config = configurationBuilder.Build();
 
-            var exception = Assert.Throws<InvalidOperationException>(
-                () => config.Bind(new TestOptions()));
+            var exception = Assert.Throws<InvalidOperationException>(() => config.Bind(new TestOptions()));
             Assert.Equal(
                 SR.Format(SR.Error_CannotActivateAbstractOrInterface, typeof(ISomeInterface)),
                 exception.Message);
@@ -1937,7 +1941,9 @@ if (!System.Diagnostics.Debugger.IsAttached) { System.Diagnostics.Debugger.Launc
                 """);
 
             StructWithNestedStructs.DeeplyNested obj = new();
+#pragma warning disable SYSLIB1103
             configuration.Bind(obj);
+#pragma warning restore SYSLIB1103
             Assert.Equal(0, obj.Int32);
             Assert.False(obj.Boolean);
         }
@@ -2030,10 +2036,161 @@ if (!System.Diagnostics.Debugger.IsAttached) { System.Diagnostics.Debugger.Launc
             ValidateGeolocation(obj);
         }
 
+#if !BUILDING_SOURCE_GENERATOR_TESTS
+        [ConditionalFact(typeof(PlatformDetection), nameof(PlatformDetection.IsNotBrowser))]
+        public void TraceSwitchTest()
+        {
+            var dic = new Dictionary<string, string>
+            {
+                {"TraceSwitch:Level", "Info"}
+            };
+            var configurationBuilder = new ConfigurationBuilder();
+            configurationBuilder.AddInMemoryCollection(dic);
+            var config = configurationBuilder.Build();
+
+            TraceSwitch ts = new(displayName: "TraceSwitch", description: "This switch is set via config.");
+            ConfigurationBinder.Bind(config, "TraceSwitch", ts);
+            Assert.Equal(TraceLevel.Info, ts.Level);
+#if NETCOREAPP
+            // Value property is not publicly exposed in .NET Framework.
+            Assert.Equal("Info", ts.Value);
+#endif // NETCOREAPP
+        }
+#endif
+
         private void ValidateGeolocation(IGeolocation location)
         {
             Assert.Equal(3, location.Latitude);
             Assert.Equal(4, location.Longitude);
+        }
+
+        [Fact]
+#if !BUILDING_SOURCE_GENERATOR_TESTS
+        [ActiveIssue("Investigate Build browser-wasm linux Release LibraryTests_EAT CI failure for reflection impl", TestPlatforms.Browser)]
+#endif
+        public void TestGraphWithUnsupportedMember()
+        {
+            var configuration = TestHelpers.GetConfigurationFromJsonString("""{ "WriterOptions": { "Indented": "true" } }""");
+            var obj = new GraphWithUnsupportedMember();
+            configuration.Bind(obj);
+            Assert.True(obj.WriterOptions.Indented);
+
+            // Encoder prop not supported; throw if there's config data.
+            configuration = TestHelpers.GetConfigurationFromJsonString("""{ "WriterOptions": { "Indented": "true", "Encoder": { "Random": "" } } }""");
+            Assert.Throws<InvalidOperationException>(() => configuration.Bind(obj));
+        }
+
+        [Fact]
+        public void CanBindToObjectMembers()
+        {
+            var config = TestHelpers.GetConfigurationFromJsonString("""{ "Local": { "Authority": "Auth1" } }""");
+
+            // Regression tests for https://github.com/dotnet/runtime/issues/89273 and https://github.com/dotnet/runtime/issues/89732.
+            TestBind(options => config.Bind("Local", options.GenericProp), obj => obj.GenericProp);
+            TestBind(options => config.GetSection("Local").Bind(options.NonGenericProp), obj => obj.NonGenericProp);
+            TestBind(options => config.GetSection("Local").Bind(options._genericField, _ => { }), obj => obj._genericField);
+            TestBind(options => config.Bind("Local", options._nonGenericField), obj => obj._nonGenericField);
+
+            // Check statics.
+            TestBind(options => config.GetSection("Local").Bind(RemoteAuthenticationOptions<OidcProviderOptions>.StaticGenericProp), obj => RemoteAuthenticationOptions<OidcProviderOptions>.StaticGenericProp);
+            TestBind(options => config.GetSection("Local").Bind(RemoteAuthenticationOptions<OidcProviderOptions>.StaticNonGenericProp, _ => { }), obj => RemoteAuthenticationOptions<OidcProviderOptions>.StaticNonGenericProp);
+            TestBind(options => config.Bind("Local", RemoteAuthenticationOptions<OidcProviderOptions>.s_GenericField), obj => RemoteAuthenticationOptions<OidcProviderOptions>.s_GenericField);
+            TestBind(options => config.GetSection("Local").Bind(RemoteAuthenticationOptions<OidcProviderOptions>.s_NonGenericField), obj => RemoteAuthenticationOptions<OidcProviderOptions>.s_NonGenericField);
+
+            // No null refs.
+            config.GetSection("Local").Bind(new RemoteAuthenticationOptions<OidcProviderOptions>().NullGenericProp);
+            config.GetSection("Local").Bind(RemoteAuthenticationOptions<OidcProviderOptions>.s_NullNonGenericField);
+
+            static void TestBind(Action<RemoteAuthenticationOptions<OidcProviderOptions>> configure, Func<RemoteAuthenticationOptions<OidcProviderOptions>, OidcProviderOptions> getBindedProp)
+            {
+                var obj = new RemoteAuthenticationOptions<OidcProviderOptions>();
+                configure(obj);
+                Assert.Equal("Auth1", getBindedProp(obj).Authority);
+            }
+        }
+
+        [Fact]
+        public void BinderSupportsObjCreationInput()
+        {
+            var configuration = new ConfigurationBuilder().Build();
+            // No diagnostic warning SYSLIB1104.
+            configuration.Bind(new GraphWithUnsupportedMember());
+        }
+
+        [Fact]
+        public void TestNullHandling_Get()
+        {
+            // Null configuration.
+            IConfiguration? configuration = null;
+
+            Assert.Throws<ArgumentNullException>(() => configuration.Get<GeolocationClass>());
+            Assert.Throws<ArgumentNullException>(() => configuration.Get<GeolocationClass>(_ => { }));
+            Assert.Throws<ArgumentNullException>(() => configuration.Get<Geolocation>());
+            Assert.Throws<ArgumentNullException>(() => configuration.Get<Geolocation>(_ => { }));
+
+            // Null Type.
+            configuration = TestHelpers.GetConfigurationFromJsonString(@"{""Longitude"":1,""Latitude"":2}");
+#pragma warning disable SYSLIB1104 // The target type for a binder call could not be determined
+            Assert.Throws<ArgumentNullException>(() => configuration.Get(type: null));
+            Assert.Throws<ArgumentNullException>(() => configuration.Get(type: null, _ => { }));
+#pragma warning restore SYSLIB1104 // The target type for a binder call could not be determined
+        }
+
+        [Fact]
+        public void TestNullHandling_GetValue()
+        {
+            string key = "Longitude";
+
+            // Null configuration.
+            Test(configuration: null, key);
+
+            // Null type.
+            IConfiguration configuration = TestHelpers.GetConfigurationFromJsonString(@"{""Longitude"":1,""Latitude"":2}");
+#pragma warning disable SYSLIB1104 // The target type for a binder call could not be determined
+            Assert.Throws<ArgumentNullException>(() => configuration.GetValue(type: null, key));
+            Assert.Throws<ArgumentNullException>(() => configuration.GetValue(type: null, key, defaultValue: null));
+#pragma warning restore SYSLIB1104 // The target type for a binder call could not be determined
+
+            // Null key.
+            Test(configuration: configuration, key: null);
+
+            void Test(IConfiguration? configuration, string? key)
+            {
+                Assert.Throws<ArgumentNullException>(() => configuration.GetValue<GeolocationClass>(key));
+                Assert.Throws<ArgumentNullException>(() => configuration.GetValue<GeolocationClass>(key, defaultValue: null));
+                Assert.Throws<ArgumentNullException>(() => configuration.GetValue<Geolocation>(key));
+                Assert.Throws<ArgumentNullException>(() => configuration.GetValue<Geolocation>(key, defaultValue: default));
+                TestUntypedOverloads(configuration: null, key);
+            }
+
+            void TestUntypedOverloads(IConfiguration? configuration, string? key)
+            {
+                Assert.Throws<ArgumentNullException>(() => configuration.GetValue(typeof(GeolocationClass), key));
+                Assert.Throws<ArgumentNullException>(() => configuration.GetValue(typeof(GeolocationClass), key, defaultValue: null));
+                Assert.Throws<ArgumentNullException>(() => configuration.GetValue(typeof(GeolocationClass), key, new GeolocationClass()));
+                Assert.Throws<ArgumentNullException>(() => configuration.GetValue(typeof(Geolocation), key));
+                Assert.Throws<ArgumentNullException>(() => configuration.GetValue(typeof(Geolocation), key, defaultValue: null));
+                Assert.Throws<ArgumentNullException>(() => configuration.GetValue(typeof(Geolocation), key, default(Geolocation)));    
+            }
+        }
+
+        [Fact]
+        public void TestNullHandling_Bind()
+        {
+            // Null configuration.
+            IConfiguration? configuration = null;
+            GeolocationClass? location = new();
+            Assert.Throws<ArgumentNullException>(() => configuration.Bind(location));
+            Assert.Throws<ArgumentNullException>(() => configuration.Bind(location, _ => { }));
+            Assert.Throws<ArgumentNullException>(() => configuration.Bind("", location));
+
+            // Null object.
+            configuration = TestHelpers.GetConfigurationFromJsonString(@"{""Longitude"":1,""Latitude"":2}");
+            location = null;
+            // Expect no exceptions.
+            configuration.Bind(location);
+            configuration.Bind(location, _ => { });
+            configuration.Bind("", location);
         }
     }
 }

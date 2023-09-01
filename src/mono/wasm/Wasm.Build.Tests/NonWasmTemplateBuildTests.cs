@@ -74,6 +74,7 @@ public class NonWasmTemplateBuildTests : TestMainJsTestBase
         .UnwrapItemsAsArrays().ToList();
 
     [Theory, TestCategory("no-workload")]
+    [ActiveIssue("https://github.com/dotnet/runtime/issues/91357")]
     [MemberData(nameof(GetTestData))]
     public void NonWasmConsoleBuild_WithoutWorkload(string config, string extraBuildArgs, string targetFramework)
         => NonWasmConsoleBuild(config,
@@ -82,8 +83,8 @@ public class NonWasmTemplateBuildTests : TestMainJsTestBase
                                // net6 is sdk would be needed to run the app
                                shouldRun: targetFramework == s_latestTargetFramework);
 
-
     [Theory]
+    [ActiveIssue("https://github.com/dotnet/runtime/issues/91357")]
     [MemberData(nameof(GetTestData))]
     public void NonWasmConsoleBuild_WithWorkload(string config, string extraBuildArgs, string targetFramework)
         => NonWasmConsoleBuild(config,
@@ -98,7 +99,7 @@ public class NonWasmTemplateBuildTests : TestMainJsTestBase
                                      string? directoryBuildTargets = null,
                                      bool shouldRun = true)
     {
-        string id = $"nonwasm_{targetFramework}_{config}_{Path.GetRandomFileName()}";
+        string id = $"nonwasm_{targetFramework}_{config}_{GetRandomId()}";
         InitPaths(id);
         InitProjectDir(_projectDir);
 

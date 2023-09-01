@@ -108,8 +108,17 @@
 #pragma warning(disable:4477)
 #endif //_MSC_VER
 
+//#define TRACE_GC
+//#define SIMPLE_DPRINTF
+
+#if defined(TRACE_GC) && defined(SIMPLE_DPRINTF)
+void flush_gc_log (bool);
+#endif //TRACE_GC && SIMPLE_DPRINTF
 inline void FATAL_GC_ERROR()
 {
+#if defined(TRACE_GC) && defined(SIMPLE_DPRINTF)
+    flush_gc_log (true);
+#endif //TRACE_GC && SIMPLE_DPRINTF
     GCToOSInterface::DebugBreak();
     _ASSERTE(!"Fatal Error in GC.");
     GCToEEInterface::HandleFatalError((unsigned int)COR_E_EXECUTIONENGINE);
@@ -233,9 +242,6 @@ inline void FATAL_GC_ERROR()
 #ifndef MAX_LONGPATH
 #define MAX_LONGPATH 1024
 #endif // MAX_LONGPATH
-
-//#define TRACE_GC
-//#define SIMPLE_DPRINTF
 
 //#define JOIN_STATS         //amount of time spent in the join
 
@@ -611,6 +617,14 @@ enum gc_type
     gc_type_max = 3
 };
 
+#ifdef DYNAMIC_HEAP_COUNT
+enum gc_dynamic_adaptation_mode
+{
+    dynamic_adaptation_default = 0,
+    dynamic_adaptation_to_application_sizes = 1,
+};
+#endif //DYNAMIC_HEAP_COUNT
+
 //encapsulates the mechanism for the current gc
 class gc_mechanisms
 {
@@ -913,8 +927,8 @@ public:
     void unlink_item_no_undo_added (unsigned int bn, uint8_t* item, uint8_t* previous_item);
 #if defined(MULTIPLE_HEAPS) && defined(USE_REGIONS)
     void count_items (gc_heap* this_hp, size_t* fl_items_count, size_t* fl_items_for_oh_count);
-    void rethread_items (size_t* num_total_fl_items, 
-                         size_t* num_total_fl_items_rethread, 
+    void rethread_items (size_t* num_total_fl_items,
+                         size_t* num_total_fl_items_rethread,
                          gc_heap* current_heap,
                          min_fl_list_info* min_fl_list,
                          size_t* free_list_space_per_heap,
@@ -1608,6 +1622,8 @@ private:
     PER_HEAP_ISOLATED_METHOD void fire_per_heap_hist_event (gc_history_per_heap* current_gc_data_per_heap, int heap_num);
 
     PER_HEAP_ISOLATED_METHOD void fire_pevents();
+
+    PER_HEAP_ISOLATED_METHOD void fire_committed_usage_event();
 
 #ifdef FEATURE_BASICFREEZE
     PER_HEAP_ISOLATED_METHOD void walk_read_only_segment(heap_segment *seg, void *pvContext, object_callback_func pfnMethodTable, object_callback_func pfnObjRef);
@@ -2364,6 +2380,7 @@ private:
 #ifdef FEATURE_BASICFREEZE
     PER_HEAP_METHOD BOOL insert_ro_segment (heap_segment* seg);
     PER_HEAP_METHOD void remove_ro_segment (heap_segment* seg);
+    PER_HEAP_METHOD void update_ro_segment (heap_segment* seg, uint8_t* allocated, uint8_t* committed);
 #endif //FEATURE_BASICFREEZE
     PER_HEAP_METHOD BOOL set_ro_segment_in_range (heap_segment* seg);
 #ifndef USE_REGIONS
@@ -2405,6 +2422,7 @@ private:
 #ifndef USE_REGIONS
     PER_HEAP_METHOD void rearrange_heap_segments(BOOL compacting);
 #endif //!USE_REGIONS
+    PER_HEAP_METHOD void delay_free_segments();
     PER_HEAP_ISOLATED_METHOD void distribute_free_regions();
 #ifdef BACKGROUND_GC
     PER_HEAP_ISOLATED_METHOD void reset_write_watch_for_gc_heap(void* base_address, size_t region_size);
@@ -2583,7 +2601,7 @@ private:
     // check if we should change the heap count
     PER_HEAP_METHOD void check_heap_count();
 
-    PER_HEAP_METHOD bool prepare_to_change_heap_count (int new_n_heaps);
+    PER_HEAP_ISOLATED_METHOD bool prepare_to_change_heap_count (int new_n_heaps);
     PER_HEAP_METHOD bool change_heap_count (int new_n_heaps);
 #endif //DYNAMIC_HEAP_COUNT
 #endif //USE_REGIONS
@@ -3372,6 +3390,12 @@ private:
     PER_HEAP_ISOLATED_METHOD bool compute_memory_settings(bool is_initialization, uint32_t& nhp, uint32_t nhp_from_config, size_t& seg_size_from_config,
         size_t new_current_total_committed);
 
+#ifdef USE_REGIONS
+    PER_HEAP_ISOLATED_METHOD void compute_committed_bytes(size_t& total_committed, size_t& committed_decommit, size_t& committed_free, 
+                                  size_t& committed_bookkeeping, size_t& new_current_total_committed, size_t& new_current_total_committed_bookkeeping, 
+                                  size_t* new_committed_by_oh);
+#endif
+
     PER_HEAP_METHOD void update_collection_counts ();
 
     /*****************************************************************************************************************/
@@ -3755,6 +3779,13 @@ private:
     PER_HEAP_FIELD_MAINTAINED mark*  loh_pinned_queue;
 #endif //FEATURE_LOH_COMPACTION
 
+#ifdef DYNAMIC_HEAP_COUNT
+    PER_HEAP_FIELD_MAINTAINED GCEvent gc_idle_thread_event;
+#ifdef BACKGROUND_GC
+    PER_HEAP_FIELD_MAINTAINED GCEvent bgc_idle_thread_event;
+#endif //BACKGROUND_GC
+#endif //DYNAMIC_HEAP_COUNT
+
     /******************************************/
     // PER_HEAP_FIELD_MAINTAINED_ALLOC fields //
     /******************************************/
@@ -4061,7 +4092,6 @@ private:
     // These 2 fields' values do not change but are set/unset per GC
     PER_HEAP_ISOLATED_FIELD_SINGLE_GC GCEvent gc_start_event;
     PER_HEAP_ISOLATED_FIELD_SINGLE_GC GCEvent ee_suspend_event;
-    PER_HEAP_ISOLATED_FIELD_SINGLE_GC GCEvent gc_idle_thread_event;
 
     // Also updated on the heap#0 GC thread because that's where we are actually doing the decommit.
     PER_HEAP_ISOLATED_FIELD_SINGLE_GC BOOL gradual_decommit_in_progress_p;
@@ -4139,6 +4169,10 @@ private:
     PER_HEAP_ISOLATED_FIELD_SINGLE_GC uint8_t* gc_low; // low end of the lowest region being condemned
     PER_HEAP_ISOLATED_FIELD_SINGLE_GC uint8_t* gc_high; // high end of the highest region being condemned
 #endif //USE_REGIONS
+
+#ifdef STRESS_DYNAMIC_HEAP_COUNT
+    PER_HEAP_ISOLATED_FIELD_SINGLE_GC int heaps_in_this_gc;
+#endif //STRESS_DYNAMIC_HEAP_COUNT
 
     /**************************************************/
     // PER_HEAP_ISOLATED_FIELD_SINGLE_GC_ALLOC fields //
@@ -4264,6 +4298,11 @@ private:
         float space_cost_decrease_per_step_down;// percentage effect on space of decreasing heap count
 
         int             new_n_heaps;
+        // the heap count we changed from
+        int             last_n_heaps;
+        // don't start a GC till we see (n_max_heaps - new_n_heaps) number of threads idling
+        VOLATILE(int32_t) idle_thread_count;
+        bool              init_only_p;
 #ifdef STRESS_DYNAMIC_HEAP_COUNT
         int             lowest_heap_with_msl_uoh;
 #endif //STRESS_DYNAMIC_HEAP_COUNT
@@ -4412,6 +4451,10 @@ private:
 #ifdef HOST_64BIT
     PER_HEAP_ISOLATED_FIELD_INIT_ONLY size_t youngest_gen_desired_th;
 #endif //HOST_64BIT
+
+#ifdef DYNAMIC_HEAP_COUNT
+    PER_HEAP_ISOLATED_FIELD_INIT_ONLY int dynamic_adaptation_mode;
+#endif //DYNAMIC_HEAP_COUNT
 
     /********************************************/
     // PER_HEAP_ISOLATED_FIELD_DIAG_ONLY fields //
