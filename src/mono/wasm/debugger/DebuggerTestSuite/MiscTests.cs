@@ -964,7 +964,7 @@ namespace DebuggerTests
             "dotnet://debugger-test-special-char-in-path.dll/test#.cs")]
         [InlineData(
             "DebuggerTests.CheckSNonAsciiCharactersInPath",
-            "dotnet://debugger-test-special-char-in-path.dll/non-ascii-test-ął.cs")]
+            "dotnet://debugger-test-special-char-in-path.dll/non-ascii-test-ąłÅ.cs")]
         public async Task SetBreakpointInProjectWithSpecialCharactersInPath(
             string classWithNamespace, string expectedFileLocation)
         {
@@ -1042,13 +1042,19 @@ namespace DebuggerTests
             );
         }
 
-        [Theory]
+        [ConditionalTheory(nameof(RunningOnChrome))]
         [InlineData("ClassInheritsFromClassWithoutDebugSymbols", 1287, true)]
         [InlineData("ClassInheritsFromClassWithoutDebugSymbols", 1287, false)]
         [InlineData("ClassInheritsFromNonUserCodeClass", 1335, true)]
         [InlineData("ClassInheritsFromNonUserCodeClass", 1335, false)]
         [InlineData("ClassInheritsFromNonUserCodeClassThatInheritsFromNormalClass", 1352, true)]
         [InlineData("ClassInheritsFromNonUserCodeClassThatInheritsFromNormalClass", 1352, false)]
+        [InlineData("GenericCustomAttributeDecoratedClassInheritsFromClassWithoutDebugSymbols", 1390, true)]
+        [InlineData("GenericCustomAttributeDecoratedClassInheritsFromClassWithoutDebugSymbols", 1390, false)]
+        [InlineData("GenericCustomAttributeDecoratedClassInheritsFromNonUserCodeClass", 1407, true)]
+        [InlineData("GenericCustomAttributeDecoratedClassInheritsFromNonUserCodeClass", 1407, false)]
+        [InlineData("GenericCustomAttributeDecoratedClassInheritsFromNonUserCodeClassThatInheritsFromNormalClass", 1425, true)]
+        [InlineData("GenericCustomAttributeDecoratedClassInheritsFromNonUserCodeClassThatInheritsFromNormalClass", 1425, false)]
         public async Task InspectThisThatInheritsFromClassNonUserCode(string class_name, int line, bool jmc)
         {
             await SetJustMyCode(jmc);

@@ -91,6 +91,8 @@ BOOL bgc_heap_walk_for_etw_p = FALSE;
 
 #define UOH_ALLOCATION_RETRY_MAX_COUNT 2
 
+#define MAX_YP_SPIN_COUNT_UNIT 32768
+
 uint32_t yp_spin_count_unit = 0;
 uint32_t original_spin_count_unit = 0;
 size_t loh_size_threshold = LARGE_OBJECT_SIZE;
@@ -2287,6 +2289,7 @@ double      gc_heap::short_plugs_pad_ratio = 0;
 
 int         gc_heap::generation_skip_ratio_threshold = 0;
 int         gc_heap::conserve_mem_setting = 0;
+bool        gc_heap::spin_count_unit_config_p = false;
 
 uint64_t    gc_heap::suspended_start_time = 0;
 uint64_t    gc_heap::end_gc_time = 0;
@@ -2333,9 +2336,6 @@ size_t      gc_heap::heap_hard_limit_oh[total_oh_count];
 #ifdef USE_REGIONS
 
 size_t      gc_heap::regions_range = 0;
-
-size_t      gc_heap::heap_hard_limit_for_heap = 0;
-size_t      gc_heap::heap_hard_limit_for_bookkeeping = 0;
 
 #endif //USE_REGIONS
 
@@ -3971,6 +3971,8 @@ bool region_allocator::allocate_large_region (uint8_t** start, uint8_t** end, al
     return allocate_region (size, start, end, direction, fn);
 }
 
+// Whenever a region is deleted, it is expected that the memory and the mark array
+// of the region is decommitted already.
 void region_allocator::delete_region (uint8_t* region_start)
 {
     enter_spin_lock();
@@ -6942,10 +6944,6 @@ bool gc_heap::virtual_commit (void* address, size_t size, int bucket, int h_numb
 
         if (heap_hard_limit_oh[soh] != 0)
         {
-#ifdef USE_REGIONS
-            assert (heap_hard_limit_for_heap == 0);
-            assert (heap_hard_limit_for_bookkeeping == 0);
-#endif //USE_REGIONS
             if ((bucket < total_oh_count) && (committed_by_oh[bucket] + size) > heap_hard_limit_oh[bucket])
             {
                 exceeded_p = true;
@@ -6953,23 +6951,9 @@ bool gc_heap::virtual_commit (void* address, size_t size, int bucket, int h_numb
         }
         else
         {
-            size_t base;
-            size_t limit;
-#ifdef USE_REGIONS
-            if (h_number < 0)
-            {
-                base = current_total_committed_bookkeeping;
-                limit = heap_hard_limit_for_bookkeeping;
-            }
-            else
-            {
-                base = current_total_committed - current_total_committed_bookkeeping;
-                limit = heap_hard_limit_for_heap;
-            }
-#else
-            base = current_total_committed;
-            limit = heap_hard_limit;
-#endif //USE_REGIONS
+            size_t base = current_total_committed;
+            size_t limit = heap_hard_limit;
+
             if ((base + size) > limit)
             {
                 dprintf (1, ("%Id + %Id = %Id > limit %Id ", base, size, (base + size), limit));
@@ -10296,7 +10280,7 @@ static int __cdecl cmp_mark_list_item (const void* vkey, const void* vdatum)
 #endif // _DEBUG
 
 #ifdef USE_REGIONS
-uint8_t** gc_heap::get_region_mark_list (uint8_t* start, uint8_t* end, uint8_t*** mark_list_end_ptr)
+uint8_t** gc_heap::get_region_mark_list (BOOL& use_mark_list, uint8_t* start, uint8_t* end, uint8_t*** mark_list_end_ptr)
 {
     size_t region_number = get_basic_region_index_for_address (start);
     size_t source_number = region_number;
@@ -10426,6 +10410,13 @@ void gc_heap::merge_mark_lists (size_t total_mark_list_size)
 
             // blast this piece to the mark list
             append_to_mark_list(source[lowest_source], x);
+#ifdef USE_REGIONS
+            if (mark_list_index > mark_list_end)
+            {
+                use_mark_list = false;
+                return nullptr;
+            }
+#endif //USE_REGIONS
             piece_count++;
 
             source[lowest_source] = x;
@@ -10445,6 +10436,13 @@ void gc_heap::merge_mark_lists (size_t total_mark_list_size)
         }
         // we're left with just one source that we copy
         append_to_mark_list(source[0], source_end[0]);
+#ifdef USE_REGIONS
+        if (mark_list_index > mark_list_end)
+        {
+            use_mark_list = false;
+            return nullptr;
+        }
+#endif //USE_REGIONS
         piece_count++;
     }
 
@@ -10501,7 +10499,7 @@ static uint8_t** binary_search (uint8_t** left, uint8_t** right, uint8_t* e)
         return a + l;
 }
 
-uint8_t** gc_heap::get_region_mark_list (uint8_t* start, uint8_t* end, uint8_t*** mark_list_end_ptr)
+uint8_t** gc_heap::get_region_mark_list (BOOL& use_mark_list, uint8_t* start, uint8_t* end, uint8_t*** mark_list_end_ptr)
 {
     // do a binary search over the sorted marked list to find start and end of the
     // mark list for this region
@@ -11280,12 +11278,6 @@ void gc_heap::clear_region_info (heap_segment* region)
                         seg_deleted);
 
     bgc_verify_mark_array_cleared (region);
-
-    if (dt_high_memory_load_p())
-    {
-        decommit_mark_array_by_seg (region);
-        region->flags &= ~(heap_segment_flags_ma_committed);
-    }
 #endif //BACKGROUND_GC
 }
 
@@ -11730,7 +11722,7 @@ void gc_heap::clear_gen1_cards()
 heap_segment* gc_heap::make_heap_segment (uint8_t* new_pages, size_t size, gc_heap* hp, int gen_num)
 {
     gc_oh_num oh = gen_to_oh (gen_num);
-    size_t initial_commit = SEGMENT_INITIAL_COMMIT;
+    size_t initial_commit = use_large_pages_p ? size : SEGMENT_INITIAL_COMMIT;
     int h_number =
 #ifdef MULTIPLE_HEAPS
         hp->heap_number;
@@ -11755,8 +11747,7 @@ heap_segment* gc_heap::make_heap_segment (uint8_t* new_pages, size_t size, gc_he
     heap_segment_mem (new_segment) = start;
     heap_segment_used (new_segment) = start;
     heap_segment_reserved (new_segment) = new_pages + size;
-    heap_segment_committed (new_segment) = (use_large_pages_p ?
-        heap_segment_reserved(new_segment) : (new_pages + initial_commit));
+    heap_segment_committed (new_segment) = new_pages + initial_commit;
 
     init_heap_segment (new_segment, hp
 #ifdef USE_REGIONS
@@ -13510,13 +13501,17 @@ HRESULT gc_heap::initialize_gc (size_t soh_segment_size,
         gc_log = CreateLogFile(GCConfig::GetLogFile(), false);
 
         if (gc_log == NULL)
+        {
+            GCToEEInterface::LogErrorToHost("Cannot create log file");
             return E_FAIL;
+        }
 
         // GCLogFileSize in MBs.
         gc_log_file_size = static_cast<size_t>(GCConfig::GetLogFileSize());
 
         if (gc_log_file_size <= 0 || gc_log_file_size > 500)
         {
+            GCToEEInterface::LogErrorToHost("Invalid log file size (valid size needs to be larger than 0 and smaller than 500)");
             fclose (gc_log);
             return E_FAIL;
         }
@@ -13526,7 +13521,7 @@ HRESULT gc_heap::initialize_gc (size_t soh_segment_size,
         if (!gc_log_buffer)
         {
             fclose(gc_log);
-            return E_FAIL;
+            return E_OUTOFMEMORY;
         }
 
         memset (gc_log_buffer, '*', gc_log_buffer_size);
@@ -13541,13 +13536,16 @@ HRESULT gc_heap::initialize_gc (size_t soh_segment_size,
         gc_config_log = CreateLogFile(GCConfig::GetConfigLogFile(), true);
 
         if (gc_config_log == NULL)
+        {
+            GCToEEInterface::LogErrorToHost("Cannot create log file");
             return E_FAIL;
+        }
 
         gc_config_log_buffer = new (nothrow) uint8_t [gc_config_log_buffer_size];
         if (!gc_config_log_buffer)
         {
             fclose(gc_config_log);
-            return E_FAIL;
+            return E_OUTOFMEMORY;
         }
 
         compact_ratio = static_cast<int>(GCConfig::GetCompactRatio());
@@ -13598,26 +13596,6 @@ HRESULT gc_heap::initialize_gc (size_t soh_segment_size,
     GCConfig::SetConcurrentGC(false);
 #endif //BACKGROUND_GC
 #endif //WRITE_WATCH
-
-#ifdef USE_REGIONS
-    if (gc_heap::heap_hard_limit && gc_heap::heap_hard_limit_oh[soh] == 0)
-    {
-        size_t gc_region_size = (size_t)1 << min_segment_size_shr;
-        size_t sizes[total_bookkeeping_elements];
-        size_t bookkeeping_size_per_region = 0;
-        uint8_t* temp_lowest_address = (uint8_t*)gc_region_size;
-        gc_heap::get_card_table_element_sizes(temp_lowest_address, temp_lowest_address + gc_region_size, sizes);
-        for (int i = 0; i < total_bookkeeping_elements; i++)
-        {
-            bookkeeping_size_per_region += sizes[i];
-        }
-        size_t total_size_per_region = gc_region_size + bookkeeping_size_per_region;
-        size_t max_region_count = gc_heap::heap_hard_limit / total_size_per_region; // implictly rounded down
-        gc_heap::heap_hard_limit_for_heap = max_region_count * gc_region_size;
-        gc_heap::heap_hard_limit_for_bookkeeping = max_region_count * bookkeeping_size_per_region;
-        dprintf (REGIONS_LOG, ("bookkeeping_size_per_region = %Id", bookkeeping_size_per_region));
-    }
-#endif //USE_REGIONS
 
 #ifdef BACKGROUND_GC
     // leave the first page to contain only segment info
@@ -13674,6 +13652,7 @@ HRESULT gc_heap::initialize_gc (size_t soh_segment_size,
     else
     {
         assert (!"cannot use regions without specifying the range!!!");
+        GCToEEInterface::LogErrorToHost("Cannot use regions without specifying the range (using DOTNET_GCRegionRange)");
         return E_FAIL;
     }
 #else //USE_REGIONS
@@ -13684,10 +13663,20 @@ HRESULT gc_heap::initialize_gc (size_t soh_segment_size,
     if (!reserve_initial_memory (soh_segment_size, loh_segment_size, poh_segment_size, number_of_heaps,
                                  use_large_pages_p, separated_poh_p, heap_no_to_numa_node))
         return E_OUTOFMEMORY;
-    if (separated_poh_p)
+    if (use_large_pages_p)
     {
-        heap_hard_limit_oh[poh] = min_segment_size_hard_limit * number_of_heaps;
-        heap_hard_limit += heap_hard_limit_oh[poh];
+        if (heap_hard_limit_oh[soh])
+        {
+            heap_hard_limit_oh[soh] = soh_segment_size * number_of_heaps;
+            heap_hard_limit_oh[loh] = loh_segment_size * number_of_heaps;
+            heap_hard_limit_oh[poh] = poh_segment_size * number_of_heaps;
+            heap_hard_limit = heap_hard_limit_oh[soh] + heap_hard_limit_oh[loh] + heap_hard_limit_oh[poh];
+        }
+        else
+        {
+            assert (heap_hard_limit);
+            heap_hard_limit = (soh_segment_size + loh_segment_size + poh_segment_size) * number_of_heaps;
+        }
     }
 #endif //USE_REGIONS
 
@@ -13772,6 +13761,14 @@ HRESULT gc_heap::initialize_gc (size_t soh_segment_size,
     yp_spin_count_unit = 32 * g_num_processors;
 #endif //MULTIPLE_HEAPS
 
+    // Check if the values are valid for the spin count if provided by the user
+    // and if they are, set them as the yp_spin_count_unit and then ignore any updates made in SetYieldProcessorScalingFactor.
+    uint32_t spin_count_unit_from_config = (uint32_t)GCConfig::GetGCSpinCountUnit();
+    gc_heap::spin_count_unit_config_p = (spin_count_unit_from_config > 0) && (spin_count_unit_from_config <= MAX_YP_SPIN_COUNT_UNIT);
+    if (gc_heap::spin_count_unit_config_p)
+    {
+        yp_spin_count_unit = spin_count_unit_from_config;
+    }
     original_spin_count_unit = yp_spin_count_unit;
 
 #if defined(__linux__)
@@ -13787,6 +13784,7 @@ HRESULT gc_heap::initialize_gc (size_t soh_segment_size,
 
     if (!init_semi_shared())
     {
+        GCToEEInterface::LogErrorToHost("PER_HEAP_ISOLATED data members initialization failed");
         hres = E_FAIL;
     }
 
@@ -14370,6 +14368,8 @@ gc_heap::init_gc_heap (int h_number)
 #endif //CARD_BUNDLE
 
 #ifdef BACKGROUND_GC
+    background_saved_highest_address = nullptr;
+    background_saved_lowest_address = nullptr;
     if (gc_can_use_concurrent)
         mark_array = translate_mark_array (card_table_mark_array (&g_gc_card_table[card_word (card_of (g_gc_lowest_address))]));
     else
@@ -20290,25 +20290,22 @@ bool gc_heap::try_get_new_free_region()
 bool gc_heap::init_table_for_region (int gen_number, heap_segment* region)
 {
 #ifdef BACKGROUND_GC
-        if (is_bgc_in_progress())
-        {
-            dprintf (GC_TABLE_LOG, ("new seg %Ix, mark_array is %Ix",
-                heap_segment_mem (region), mark_array));
-            if (((region->flags & heap_segment_flags_ma_committed) == 0) &&
-                !commit_mark_array_new_seg (__this, region))
-            {
-                dprintf (GC_TABLE_LOG, ("failed to commit mark array for the new region %Ix-%Ix",
-                    get_region_start (region), heap_segment_reserved (region)));
+    dprintf (GC_TABLE_LOG, ("new seg %Ix, mark_array is %Ix",
+        heap_segment_mem (region), mark_array));
+    if (((region->flags & heap_segment_flags_ma_committed) == 0) &&
+        !commit_mark_array_new_seg (__this, region))
+    {
+        dprintf (GC_TABLE_LOG, ("failed to commit mark array for the new region %Ix-%Ix",
+            get_region_start (region), heap_segment_reserved (region)));
 
-                // We don't have memory to commit the mark array so we cannot use the new region.
-                global_region_allocator.delete_region (get_region_start (region));
-                return false;
-            }
-        }
-        if ((region->flags & heap_segment_flags_ma_committed) != 0)
-        {
-            bgc_verify_mark_array_cleared (region, true);
-        }
+        // We don't have memory to commit the mark array so we cannot use the new region.
+        decommit_region (region, gen_to_oh (gen_number), heap_number);
+        return false;
+    }
+    if ((region->flags & heap_segment_flags_ma_committed) != 0)
+    {
+        bgc_verify_mark_array_cleared (region, true);
+    }
 #endif //BACKGROUND_GC
 
     if (gen_number <= max_generation)
@@ -21712,7 +21709,10 @@ void gc_heap::gc1()
 #endif //BACKGROUND_GC
 #endif //MULTIPLE_HEAPS
 #ifdef USE_REGIONS
-    last_gc_before_oom = FALSE;
+    if (!(settings.concurrent) && (settings.condemned_generation == max_generation))
+    {
+        last_gc_before_oom = FALSE;
+    }
 #endif //USE_REGIONS
 }
 
@@ -22571,6 +22571,8 @@ void gc_heap::garbage_collect_pm_full_gc()
 
 void gc_heap::garbage_collect (int n)
 {
+    gc_pause_mode saved_settings_pause_mode = settings.pause_mode;
+
     //reset the number of alloc contexts
     alloc_contexts_used = 0;
 
@@ -22976,7 +22978,7 @@ void gc_heap::garbage_collect (int n)
 #endif //MULTIPLE_HEAPS
 
 done:
-    if (settings.pause_mode == pause_no_gc)
+    if (saved_settings_pause_mode == pause_no_gc)
         allocate_for_no_gc_after_gc();
 }
 
@@ -23069,15 +23071,15 @@ void gc_heap::sync_promoted_bytes()
                     total_old_card_surv += g_heaps[hp_idx]->old_card_survived_per_region[region_index];
                 }
 
-                heap_segment_survived (current_region) = (int)total_surv;
+                heap_segment_survived (current_region) = total_surv;
                 heap_segment_old_card_survived (current_region) = (int)total_old_card_surv;
 #else
-                heap_segment_survived (current_region) = (int)(survived_per_region[region_index]);
+                heap_segment_survived (current_region) = survived_per_region[region_index];
                 heap_segment_old_card_survived (current_region) =
                     (int)(old_card_survived_per_region[region_index]);
 #endif //MULTIPLE_HEAPS
 
-                dprintf (REGIONS_LOG, ("region #%d %Ix surv %Id, old card surv %Id",
+                dprintf (REGIONS_LOG, ("region #%d %Ix surv %zd, old card surv %Id",
                     region_index,
                     heap_segment_mem (current_region),
                     heap_segment_survived (current_region),
@@ -23271,8 +23273,8 @@ void gc_heap::equalize_promoted_bytes()
                 {
                     break;
                 }
-                assert (surv_per_heap[i] >= (size_t)heap_segment_survived (region));
-                dprintf (REGIONS_LOG, ("heap: %d surv: %Id - %Id = %Id",
+                assert (surv_per_heap[i] >= heap_segment_survived (region));
+                dprintf (REGIONS_LOG, ("heap: %d surv: %Id - %zd = %Id",
                     i,
                     surv_per_heap[i],
                     heap_segment_survived (region),
@@ -23283,7 +23285,7 @@ void gc_heap::equalize_promoted_bytes()
                 heap_segment_next (region) = surplus_regions;
                 surplus_regions = region;
 
-                max_survived = max (max_survived, (size_t)heap_segment_survived (region));
+                max_survived = max (max_survived, heap_segment_survived (region));
             }
             if (surv_per_heap[i] < avg_surv_per_heap)
             {
@@ -23301,7 +23303,7 @@ void gc_heap::equalize_promoted_bytes()
         heap_segment* next_region;
         for (heap_segment* region = surplus_regions; region != nullptr; region = next_region)
         {
-            int size_class = (int)(heap_segment_survived (region)*survived_scale_factor);
+            size_t size_class = (size_t)(heap_segment_survived (region)*survived_scale_factor);
             assert ((0 <= size_class) && (size_class < NUM_SIZE_CLASSES));
             next_region = heap_segment_next (region);
             heap_segment_next (region) = surplus_regions_by_size_class[size_class];
@@ -23363,7 +23365,7 @@ void gc_heap::equalize_promoted_bytes()
             g_heaps[heap_num]->thread_rw_region_front (gen_idx, region);
 
             // adjust survival for this heap
-            dprintf (REGIONS_LOG, ("heap: %d surv: %Id + %Id = %Id",
+            dprintf (REGIONS_LOG, ("heap: %d surv: %Id + %zd = %Id",
                 heap_num,
                 surv_per_heap[heap_num],
                 heap_segment_survived (region),
@@ -24093,12 +24095,17 @@ BOOL ref_p (uint8_t* r)
     return (straight_ref_p (r) || partial_object_p (r));
 }
 
-mark_queue_t::mark_queue_t() : curr_slot_index(0)
+mark_queue_t::mark_queue_t()
+#ifdef MARK_PHASE_PREFETCH
+    : curr_slot_index(0)
+#endif //MARK_PHASE_PREFETCH
 {
+#ifdef MARK_PHASE_PREFETCH
     for (size_t i = 0; i < slot_count; i++)
     {
         slot_table[i] = nullptr;
     }
+#endif //MARK_PHASE_PREFETCH
 }
 
 // place an object in the mark queue
@@ -24108,6 +24115,7 @@ mark_queue_t::mark_queue_t() : curr_slot_index(0)
 FORCEINLINE
 uint8_t *mark_queue_t::queue_mark(uint8_t *o)
 {
+#ifdef MARK_PHASE_PREFETCH
     Prefetch (o);
 
     // while the prefetch is taking effect, park our object in the queue
@@ -24120,6 +24128,9 @@ uint8_t *mark_queue_t::queue_mark(uint8_t *o)
     curr_slot_index = (slot_index + 1) % slot_count;
     if (old_o == nullptr)
         return nullptr;
+#else //MARK_PHASE_PREFETCH
+    uint8_t* old_o = o;
+#endif //MARK_PHASE_PREFETCH
 
     // this causes us to access the method table pointer of the old object
     BOOL already_marked = marked (old_o);
@@ -24171,6 +24182,7 @@ uint8_t *mark_queue_t::queue_mark(uint8_t *o, int condemned_gen)
 // returns nullptr if there is no such object
 uint8_t* mark_queue_t::get_next_marked()
 {
+#ifdef MARK_PHASE_PREFETCH
     size_t slot_index = curr_slot_index;
     size_t empty_slot_count = 0;
     while (empty_slot_count < slot_count)
@@ -24190,15 +24202,18 @@ uint8_t* mark_queue_t::get_next_marked()
         }
         empty_slot_count++;
     }
+#endif //MARK_PHASE_PREFETCH
     return nullptr;
 }
 
 void mark_queue_t::verify_empty()
 {
+#ifdef MARK_PHASE_PREFETCH
     for (size_t slot_index = 0; slot_index < slot_count; slot_index++)
     {
         assert(slot_table[slot_index] == nullptr);
     }
+#endif //MARK_PHASE_PREFETCH
 }
 
 void gc_heap::mark_object_simple1 (uint8_t* oo, uint8_t* start THREAD_NUMBER_DCL)
@@ -25893,6 +25908,7 @@ BOOL gc_heap::process_mark_overflow(int condemned_gen_number)
 
     BOOL  overflow_p = FALSE;
 recheck:
+    drain_mark_queue();
     if ((! (max_overflow_address == 0) ||
          ! (min_overflow_address == MAX_PTR)))
     {
@@ -26157,7 +26173,8 @@ void gc_heap::scan_dependent_handles (int condemned_gen_number, ScanContext *sc,
         if (process_mark_overflow(condemned_gen_number))
             fUnscannedPromotions = true;
 
-        drain_mark_queue();
+        // mark queue must be empty after process_mark_overflow
+        mark_queue.verify_empty();
 
         // Perform the scan and set the flag if any promotions resulted.
         if (GCScan::GcDhReScan(sc))
@@ -26775,7 +26792,9 @@ void gc_heap::mark_phase (int condemned_gen_number, BOOL mark_only_p)
     // handle table has been fully promoted.
     GCScan::GcDhInitialScan(GCHeap::Promote, condemned_gen_number, max_generation, &sc);
     scan_dependent_handles(condemned_gen_number, &sc, true);
-    drain_mark_queue();
+
+    // mark queue must be empty after scan_dependent_handles
+    mark_queue.verify_empty();
     fire_mark_event (ETW::GC_ROOT_DH_HANDLES, current_promoted_bytes, last_promoted_bytes);
 
 #ifdef MULTIPLE_HEAPS
@@ -26865,7 +26884,9 @@ void gc_heap::mark_phase (int condemned_gen_number, BOOL mark_only_p)
     // Scan dependent handles again to promote any secondaries associated with primaries that were promoted
     // for finalization. As before scan_dependent_handles will also process any mark stack overflow.
     scan_dependent_handles(condemned_gen_number, &sc, false);
-    drain_mark_queue();
+
+    // mark queue must be empty after scan_dependent_handles
+    mark_queue.verify_empty();
     fire_mark_event (ETW::GC_ROOT_DH_HANDLES, current_promoted_bytes, last_promoted_bytes);
 #endif //FEATURE_PREMORTEM_FINALIZATION
 
@@ -28750,7 +28771,8 @@ void gc_heap::process_remaining_regions (int current_plan_gen_num, generation* c
         return;
     }
 
-    set_region_plan_gen_num_sip (current_region, current_plan_gen_num);
+    decide_on_demotion_pin_surv (current_region);
+
     if (!heap_segment_swept_in_plan (current_region))
     {
         heap_segment_plan_allocated (current_region) = generation_allocation_pointer (consing_gen);
@@ -29227,7 +29249,7 @@ void gc_heap::plan_phase (int condemned_gen_number)
     uint8_t** mark_list_index = nullptr;
     uint8_t** mark_list_next = nullptr;
     if (use_mark_list)
-        mark_list_next = get_region_mark_list (x, end, &mark_list_index);
+        mark_list_next = get_region_mark_list (use_mark_list, x, end, &mark_list_index);
 #else // USE_REGIONS
     assert (!marked (x));
     uint8_t** mark_list_next = &mark_list[0];
@@ -29515,7 +29537,7 @@ void gc_heap::plan_phase (int condemned_gen_number)
                 current_brick = brick_of (x);
 #ifdef USE_REGIONS
                 if (use_mark_list)
-                    mark_list_next = get_region_mark_list (x, end, &mark_list_index);
+                    mark_list_next = get_region_mark_list (use_mark_list, x, end, &mark_list_index);
 
                 if (should_sweep_in_plan (seg1))
                 {
@@ -29585,7 +29607,7 @@ void gc_heap::plan_phase (int condemned_gen_number)
                     current_brick = brick_of (x);
 
                     if (use_mark_list)
-                        mark_list_next = get_region_mark_list (x, end, &mark_list_index);
+                        mark_list_next = get_region_mark_list (use_mark_list, x, end, &mark_list_index);
 
                     if (should_sweep_in_plan (seg1))
                     {
@@ -30473,6 +30495,13 @@ void gc_heap::plan_phase (int condemned_gen_number)
         gc_time_info[time_plan] = gc_time_info[time_sweep] - gc_time_info[time_plan];
     }
 #endif //FEATURE_EVENT_TRACE
+
+#ifdef USE_REGIONS
+    if (special_sweep_p)
+    {
+        should_compact = FALSE;
+    }
+#endif //!USE_REGIONS
 #endif //MULTIPLE_HEAPS
 
 #ifdef FEATURE_LOH_COMPACTION
@@ -31319,7 +31348,7 @@ heap_segment* gc_heap::find_first_valid_region (heap_segment* region, bool compa
     if (heap_segment_swept_in_plan (current_region))
     {
         int gen_num = heap_segment_gen_num (current_region);
-        dprintf (REGIONS_LOG, ("threading SIP region %Ix surv %Id onto gen%d",
+        dprintf (REGIONS_LOG, ("threading SIP region %Ix surv %zd onto gen%d",
             heap_segment_mem (current_region), heap_segment_survived (current_region), gen_num));
 
         generation* gen = generation_of (gen_num);
@@ -31646,7 +31675,7 @@ bool gc_heap::should_sweep_in_plan (heap_segment* region)
         assert (heap_segment_gen_num (region) == heap_segment_plan_gen_num (region));
 
         int surv_ratio = (int)(((double)heap_segment_survived (region) * 100.0) / (double)basic_region_size);
-        dprintf (2222, ("SSIP: region %Ix surv %Id / %Id = %d%%(%d)",
+        dprintf (2222, ("SSIP: region %p surv %d / %zd = %d%%(%d)",
             heap_segment_mem (region),
             heap_segment_survived (region),
             basic_region_size,
@@ -31854,14 +31883,14 @@ void gc_heap::sweep_region_in_plan (heap_segment* region,
 
 #ifdef _DEBUG
     size_t region_index = get_basic_region_index_for_address (heap_segment_mem (region));
-    dprintf (REGIONS_LOG, ("region #%d %Ix survived %Id, %s recorded %Id",
+    dprintf (REGIONS_LOG, ("region #%d %Ix survived %zd, %s recorded %Id",
         region_index, heap_segment_mem (region), survived,
-        ((survived == (size_t)heap_segment_survived (region)) ? "same as" : "diff from"),
+        ((survived == heap_segment_survived (region)) ? "same as" : "diff from"),
         heap_segment_survived (region)));
 #ifdef MULTIPLE_HEAPS
-    assert (survived <= (size_t)heap_segment_survived (region));
+    assert (survived <= heap_segment_survived (region));
 #else
-    assert (survived == (size_t)heap_segment_survived (region));
+    assert (survived == heap_segment_survived (region));
 #endif //MULTIPLE_HEAPS
 #endif //_DEBUG
 
@@ -40930,31 +40959,7 @@ bool gc_heap::decommit_step (uint64_t step_milliseconds)
         while (global_regions_to_decommit[kind].get_num_free_regions() > 0)
         {
             heap_segment* region = global_regions_to_decommit[kind].unlink_region_front();
-
-            uint8_t* page_start = align_lower_page(get_region_start(region));
-            uint8_t* end = use_large_pages_p ? heap_segment_used(region) : heap_segment_committed(region);
-            size_t size = end - page_start;
-            bool decommit_succeeded_p = false;
-            if (!use_large_pages_p)
-            {
-                decommit_succeeded_p = virtual_decommit(page_start, size, recorded_committed_free_bucket);
-                dprintf(REGIONS_LOG, ("decommitted region %Ix(%Ix-%Ix) (%Iu bytes) - success: %d",
-                    region,
-                    page_start,
-                    end,
-                    size,
-                    decommit_succeeded_p));
-            }
-            if (!decommit_succeeded_p)
-            {
-                memclr(page_start, size);
-                dprintf(REGIONS_LOG, ("cleared region %Ix(%Ix-%Ix) (%Iu bytes)",
-                    region,
-                    page_start,
-                    end,
-                    size));
-            }
-            global_region_allocator.delete_region(get_region_start(region));
+            size_t size = decommit_region (region, recorded_committed_free_bucket, -1);
             decommit_size += size;
             if (decommit_size >= max_decommit_step_size)
             {
@@ -40980,6 +40985,68 @@ bool gc_heap::decommit_step (uint64_t step_milliseconds)
 #endif //MULTIPLE_HEAPS
     return (decommit_size != 0);
 }
+
+#ifdef USE_REGIONS
+size_t gc_heap::decommit_region (heap_segment* region, int bucket, int h_number)
+{
+    uint8_t* page_start = align_lower_page (get_region_start (region));
+    uint8_t* end = use_large_pages_p ? heap_segment_used (region) : heap_segment_committed (region);
+    size_t size = end - page_start;
+    bool decommit_succeeded_p = false;
+    if (!use_large_pages_p)
+    {
+        decommit_succeeded_p = virtual_decommit (page_start, size, bucket, h_number);
+    }
+    dprintf (REGIONS_LOG, ("decommitted region %p(%p-%p) (%zu bytes) - success: %d",
+        region,
+        page_start,
+        end,
+        size,
+        decommit_succeeded_p));
+    if (decommit_succeeded_p)
+    {
+        heap_segment_committed (region) = heap_segment_mem (region);
+    }
+    else
+    {
+        memclr (page_start, size);
+        heap_segment_used (region) = heap_segment_mem (region);
+        dprintf(REGIONS_LOG, ("cleared region %p(%p-%p) (%zu bytes)",
+            region,
+            page_start,
+            end,
+            size));
+    }
+
+    // Under USE_REGIONS, mark array is never partially committed. So we are only checking for this
+    // flag here.
+    if ((region->flags & heap_segment_flags_ma_committed) != 0)
+    {
+#ifdef MULTIPLE_HEAPS
+        // In return_free_region, we set heap_segment_heap (region) to nullptr so we cannot use it here.
+        // but since all heaps share the same mark array we simply pick the 0th heap to use. 
+        gc_heap* hp = g_heaps [0];
+#else
+        gc_heap* hp = pGenGCHeap;
+#endif
+        hp->decommit_mark_array_by_seg (region);
+        region->flags &= ~(heap_segment_flags_ma_committed);
+    }
+
+    if (use_large_pages_p)
+    {
+        assert (heap_segment_used (region) == heap_segment_mem (region));
+    }
+    else
+    {
+        assert (heap_segment_committed (region) == heap_segment_mem (region));
+    }
+    assert ((region->flags & heap_segment_flags_ma_committed) == 0);
+    global_region_allocator.delete_region (get_region_start (region));
+
+    return size;
+}
+#endif //USE_REGIONS
 
 #ifdef MULTIPLE_HEAPS
 // return the decommitted size
@@ -45123,10 +45190,6 @@ HRESULT GCHeap::Initialize()
 
 #endif //HOST_64BIT
     GCConfig::SetGCLargePages(gc_heap::use_large_pages_p);
-    GCConfig::SetGCHeapHardLimit(static_cast<int64_t>(gc_heap::heap_hard_limit));
-    GCConfig::SetGCHeapHardLimitSOH(static_cast<int64_t>(gc_heap::heap_hard_limit_oh[soh]));
-    GCConfig::SetGCHeapHardLimitLOH(static_cast<int64_t>(gc_heap::heap_hard_limit_oh[loh]));
-    GCConfig::SetGCHeapHardLimitPOH(static_cast<int64_t>(gc_heap::heap_hard_limit_oh[poh]));
 
     uint32_t nhp = 1;
     uint32_t nhp_from_config = 0;
@@ -45265,8 +45328,14 @@ HRESULT GCHeap::Initialize()
     gc_heap::enable_special_regions_p = (bool)GCConfig::GetGCEnableSpecialRegions();
     size_t gc_region_size = (size_t)GCConfig::GetGCRegionSize();
 
-    // Adjust GCRegionSize based on how large each heap would be, for smaller heaps we would 
-    // like to keep Region sizes small. We choose between 4, 2 and 1mb based on the calculations 
+    // Constraining the size of region size to be < 2 GB.       
+    if (gc_region_size >= MAX_REGION_SIZE) 
+    {
+        return CLR_E_GC_BAD_REGION_SIZE;
+    }
+
+    // Adjust GCRegionSize based on how large each heap would be, for smaller heaps we would
+    // like to keep Region sizes small. We choose between 4, 2 and 1mb based on the calculations
     // below (unless its configured explictly) such that there are at least 2 regions available
     // except for the smallest case. Now the lowest limit possible is 4mb. 
     if (gc_region_size == 0)
@@ -45304,6 +45373,11 @@ HRESULT GCHeap::Initialize()
 #else
     hr = gc_heap::initialize_gc (seg_size, large_seg_size, pin_seg_size);
 #endif //MULTIPLE_HEAPS
+
+    GCConfig::SetGCHeapHardLimit(static_cast<int64_t>(gc_heap::heap_hard_limit));
+    GCConfig::SetGCHeapHardLimitSOH(static_cast<int64_t>(gc_heap::heap_hard_limit_oh[soh]));
+    GCConfig::SetGCHeapHardLimitLOH(static_cast<int64_t>(gc_heap::heap_hard_limit_oh[loh]));
+    GCConfig::SetGCHeapHardLimitPOH(static_cast<int64_t>(gc_heap::heap_hard_limit_oh[poh]));
 
     if (hr != S_OK)
         return hr;
@@ -45358,6 +45432,7 @@ HRESULT GCHeap::Initialize()
 
     if (!WaitForGCEvent->CreateManualEventNoThrow(TRUE))
     {
+        GCToEEInterface::LogErrorToHost("Creation of WaitForGCEvent failed");
         return E_FAIL;
     }
 
@@ -45439,9 +45514,15 @@ HRESULT GCHeap::Initialize()
         int hb_info_size_per_node = hb_info_size_per_proc * procs_per_numa_node;
         uint8_t* numa_mem = (uint8_t*)GCToOSInterface::VirtualReserve (hb_info_size_per_node, 0, 0, numa_node_index);
         if (!numa_mem)
+        {
+            GCToEEInterface::LogErrorToHost("Reservation of numa_mem failed");
             return E_FAIL;
+        }
         if (!GCToOSInterface::VirtualCommit (numa_mem, hb_info_size_per_node, numa_node_index))
+        {
+            GCToEEInterface::LogErrorToHost("Commit of numa_mem failed");
             return E_FAIL;
+        }
 
         heap_balance_info_proc* hb_info_procs = (heap_balance_info_proc*)numa_mem;
         hb_info_numa_nodes[numa_node_index].hb_info_procs = hb_info_procs;
@@ -45572,14 +45653,17 @@ size_t GCHeap::GetPromotedBytes(int heap_index)
 
 void GCHeap::SetYieldProcessorScalingFactor (float scalingFactor)
 {
-    assert (yp_spin_count_unit != 0);
-    uint32_t saved_yp_spin_count_unit = yp_spin_count_unit;
-    yp_spin_count_unit = (uint32_t)((float)original_spin_count_unit * scalingFactor / (float)9);
-
-    // It's very suspicious if it becomes 0 and also, we don't want to spin too much.
-    if ((yp_spin_count_unit == 0) || (yp_spin_count_unit > 32768))
+    if (!gc_heap::spin_count_unit_config_p)
     {
-        yp_spin_count_unit = saved_yp_spin_count_unit;
+        assert (yp_spin_count_unit != 0);
+        uint32_t saved_yp_spin_count_unit = yp_spin_count_unit;
+        yp_spin_count_unit = (uint32_t)((float)original_spin_count_unit * scalingFactor / (float)9);
+
+        // It's very suspicious if it becomes 0 and also, we don't want to spin too much.
+        if ((yp_spin_count_unit == 0) || (yp_spin_count_unit > MAX_YP_SPIN_COUNT_UNIT))
+        {
+            yp_spin_count_unit = saved_yp_spin_count_unit;
+        }
     }
 }
 

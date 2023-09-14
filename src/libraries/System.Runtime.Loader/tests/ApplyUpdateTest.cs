@@ -3,6 +3,7 @@
 
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using Xunit;
 
 namespace System.Reflection.Metadata
@@ -199,18 +200,33 @@ namespace System.Reflection.Metadata
             {
                 var assm = typeof(System.Reflection.Metadata.ApplyUpdate.Test.ClassWithCustomAttributeDelete).Assembly;
 
+                Type attrType = typeof(System.Reflection.Metadata.ApplyUpdate.Test.MyDeleteAttribute);
+
+                Type preUpdateTy = assm.GetType("System.Reflection.Metadata.ApplyUpdate.Test.ClassWithCustomAttributeDelete");
+                Assert.NotNull(preUpdateTy);
+                
+                // before the update the type has a MyDeleteAttribute on it
+                Attribute[] cattrs = Attribute.GetCustomAttributes(preUpdateTy, attrType);
+                Assert.NotNull(cattrs);
+                Assert.Equal(1, cattrs.Length);
+
                 ApplyUpdateUtil.ApplyUpdate(assm);
                 ApplyUpdateUtil.ClearAllReflectionCaches();
 
-                // Just check the updated value on one method
 
-                Type attrType = typeof(System.Reflection.Metadata.ApplyUpdate.Test.MyDeleteAttribute);
                 Type ty = assm.GetType("System.Reflection.Metadata.ApplyUpdate.Test.ClassWithCustomAttributeDelete");
                 Assert.NotNull(ty);
 
+                // After the update, the type has no MyDeleteAttribute on it anymore
+                cattrs = Attribute.GetCustomAttributes(ty, attrType);
+                Assert.NotNull(cattrs);
+                Assert.Equal(0, cattrs.Length);
+
+                // Just check the updated value on one method
+
                 MethodInfo mi1 = ty.GetMethod(nameof(System.Reflection.Metadata.ApplyUpdate.Test.ClassWithCustomAttributeDelete.Method1), BindingFlags.Public | BindingFlags.Static);
                 Assert.NotNull(mi1);
-                Attribute[] cattrs = Attribute.GetCustomAttributes(mi1, attrType);
+                cattrs = Attribute.GetCustomAttributes(mi1, attrType);
                 Assert.NotNull(cattrs);
                 Assert.Equal(0, cattrs.Length);
 
@@ -230,7 +246,6 @@ namespace System.Reflection.Metadata
             });
         }
 
-        [ActiveIssue("https://github.com/dotnet/runtime/issues/52993", TestRuntimes.Mono)]
         [ConditionalFact(typeof(ApplyUpdateUtil), nameof (ApplyUpdateUtil.IsSupported))]
         public void AsyncMethodChanges()
         {
@@ -629,5 +644,87 @@ namespace System.Reflection.Metadata
                 System.Reflection.Metadata.ApplyUpdate.Test.ReflectionAddNewType.ZExistingClass.ExistingMethod ();
             });
         }
+
+        [ConditionalFact(typeof(ApplyUpdateUtil), nameof(ApplyUpdateUtil.IsSupported))]
+        public static void TestReflectionAddNewMethod()
+        {
+            ApplyUpdateUtil.TestCase(static () =>
+            {
+                var ty = typeof(System.Reflection.Metadata.ApplyUpdate.Test.ReflectionAddNewMethod);
+                var assm = ty.Assembly;
+
+		var bindingFlags = BindingFlags.Instance | BindingFlags.Public;
+                var allMethods = ty.GetMethods(bindingFlags);
+
+                int objectMethods = typeof(object).GetMethods(bindingFlags).Length;
+                Assert.Equal (objectMethods + 1, allMethods.Length);
+
+                ApplyUpdateUtil.ApplyUpdate(assm);
+                ApplyUpdateUtil.ClearAllReflectionCaches();
+
+                ty = typeof(System.Reflection.Metadata.ApplyUpdate.Test.ReflectionAddNewMethod);
+
+                allMethods = ty.GetMethods(bindingFlags);
+                Assert.Equal (objectMethods + 2, allMethods.Length);
+
+                var mi = ty.GetMethod ("AddedNewMethod");
+
+                Assert.NotNull (mi);
+
+                var retParm = mi.ReturnParameter;
+                Assert.NotNull (retParm);
+                Assert.NotNull (retParm.ParameterType);
+                Assert.Equal (-1, retParm.Position);
+
+                var retCas = retParm.GetCustomAttributes(false);
+                Assert.NotNull(retCas);
+                Assert.Equal(0, retCas.Length);
+
+                var parms = mi.GetParameters();
+                Assert.Equal (5, parms.Length);
+
+                int parmPos = 0;
+                foreach (var parm in parms)
+                {
+                    Assert.NotNull(parm);
+                    Assert.NotNull(parm.ParameterType);
+                    Assert.Equal(parmPos, parm.Position);
+                    Assert.NotNull(parm.Name);
+                    
+                    var cas = parm.GetCustomAttributes(false);
+                    foreach (var ca in cas) {
+                        Assert.NotNull (ca);
+                    }
+
+                    parmPos++;
+                }
+
+		var parmAttrs = parms[4].GetCustomAttributes(false);
+                Assert.Equal (2, parmAttrs.Length);
+		bool foundCallerMemberName = false;
+		bool foundOptional = false;
+		foreach (var pa in parmAttrs) {
+		    if (typeof (CallerMemberNameAttribute).Equals(pa.GetType()))
+		    {
+			foundCallerMemberName = true;
+		    }
+		    if (typeof (OptionalAttribute).Equals(pa.GetType()))
+		    {
+			foundOptional = true;
+		    }
+		}
+		Assert.True(foundCallerMemberName);
+		Assert.True(foundOptional);
+
+		// n.b. this typeof() also makes the rest of the test work on Wasm with aggressive trimming.
+		Assert.Equal (typeof(System.Threading.CancellationToken), parms[3].ParameterType);
+
+                Assert.True(parms[3].HasDefaultValue);
+		Assert.True(parms[4].HasDefaultValue);
+
+		Assert.Null(parms[3].DefaultValue);
+		Assert.Equal(string.Empty, parms[4].DefaultValue);
+            });
+	} 
     }
 }

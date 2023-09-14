@@ -11,7 +11,7 @@
   <PropertyGroup>
     <TargetPlatformIdentifier>$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)'))</TargetPlatformIdentifier>
     <DefineConstants Condition="'$(TargetPlatformIdentifier)' == 'Unix' or '$(TargetPlatformIdentifier)' == 'Android' or '$(TargetPlatformIdentifier)' == 'OSX' or '$(TargetPlatformIdentifier)' == 'iOS' or '$(TargetPlatformIdentifier)' == 'tvOS'">$(DefineConstants);Unix</DefineConstants>
-    <UseAppleCrypto Condition="'$(TargetPlatformIdentifier)' == 'OSX' or '$(TargetPlatformIdentifier)' == 'iOS' or '$(TargetPlatformIdentifier)' == 'tvOS'">true</UseAppleCrypto>
+    <UseAppleCrypto Condition="'$(TargetPlatformIdentifier)' == 'OSX' or '$(TargetPlatformIdentifier)' == 'iOS' or '$(TargetPlatformIdentifier)' == 'tvOS' or '$(TargetPlatformIdentifier)' == 'MacCatalyst'">true</UseAppleCrypto>
   </PropertyGroup>
   <PropertyGroup Condition="'$(TargetPlatformIdentifier)' == 'Android'">
     <UseAndroidCrypto>true</UseAndroidCrypto>
@@ -49,6 +49,11 @@
     <Compile Include="PfxFormatTests.SingleCertGenerator.cs" />
     <Compile Include="PfxFormatTests_Collection.cs" />
     <Compile Include="PfxFormatTests_SingleCert.cs" />
+    <Compile Include="PfxIterationCountTests.CustomAppDomainDataLimit.cs" />
+    <Compile Include="PfxIterationCountTests.X509Certificate2Collection.cs" />
+    <Compile Include="PfxIterationCountTests.X509Certificate2.cs" />
+    <Compile Include="PfxIterationCountTests.X509Certificate.cs" />
+    <Compile Include="PfxIterationCountTests.cs" />
     <Compile Include="PfxTests.cs" />
     <Compile Include="PropsTests.cs" />
     <Compile Include="PublicKeyTests.cs" />

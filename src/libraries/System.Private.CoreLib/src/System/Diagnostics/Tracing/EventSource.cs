@@ -2645,9 +2645,6 @@ namespace System.Diagnostics.Tracing
                         m_eventSourceEnabled = true;
                     }
 
-                    this.OnEventCommand(commandArgs);
-                    this.m_eventCommandExecuted?.Invoke(this, commandArgs);
-
                     if (!commandArgs.enable)
                     {
                         // If we are disabling, maybe we can turn on 'quick checks' to filter
@@ -2679,6 +2676,9 @@ namespace System.Diagnostics.Tracing
                             m_eventSourceEnabled = false;
                         }
                     }
+
+                    this.OnEventCommand(commandArgs);
+                    this.m_eventCommandExecuted?.Invoke(this, commandArgs);
                 }
                 else
                 {
@@ -2807,8 +2807,13 @@ namespace System.Diagnostics.Tracing
         // Today, we only send the manifest to ETW, custom listeners don't get it.
         private unsafe void SendManifest(byte[]? rawManifest)
         {
-            if (rawManifest == null)
+            if (rawManifest == null
+                // Don't send the manifest for NativeRuntimeEventSource, it is conceptually
+                // an extension of the native coreclr provider
+                || m_name.Equals("Microsoft-Windows-DotNETRuntime"))
+            {
                 return;
+            }
 
             Debug.Assert(!SelfDescribingEvents);
 

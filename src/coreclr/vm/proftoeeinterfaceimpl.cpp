@@ -901,7 +901,7 @@ void GenerationTable::Refresh()
 
 // This is the table of generation bounds updated by the gc
 // and read by the profiler.
-static GenerationTable *s_currentGenerationTable;
+static GenerationTable *s_currentGenerationTable = nullptr;
 
 // This is just so we can assert there's a single writer
 #ifdef  ENABLE_CONTRACTS
@@ -931,7 +931,6 @@ void __stdcall UpdateGenerationBounds()
     // Notify the profiler of start of the collection
     if (CORProfilerTrackGC() || CORProfilerTrackBasicGC())
     {
-
         if (s_currentGenerationTable == nullptr)
         {
             EX_TRY
@@ -965,7 +964,10 @@ void __stdcall ProfilerAddNewRegion(int generation, uint8_t* rangeStart, uint8_t
 #ifdef PROFILING_SUPPORTED
     if (CORProfilerTrackGC() || CORProfilerTrackBasicGC())
     {
-        s_currentGenerationTable->AddRecord(generation, rangeStart, rangeEnd, rangeEndReserved);
+        if (s_currentGenerationTable != nullptr)
+        {
+            s_currentGenerationTable->AddRecord(generation, rangeStart, rangeEnd, rangeEndReserved);
+        }
     }
 #endif // PROFILING_SUPPORTED
     RETURN;
@@ -4330,7 +4332,7 @@ HRESULT ProfToEEInterfaceImpl::GetILFunctionBody(ModuleID    moduleId,
 
     PEAssembly *pPEAssembly = pModule->GetPEAssembly();
 
-    if (!pPEAssembly->HasLoadedPEImage())
+    if (!pPEAssembly->IsLoaded())
         return (CORPROF_E_DATAINCOMPLETE);
 
     LPCBYTE pbMethod = NULL;
@@ -4440,7 +4442,7 @@ HRESULT ProfToEEInterfaceImpl::GetILFunctionBodyAllocator(ModuleID         modul
     Module * pModule = (Module *) moduleId;
 
     if (pModule->IsBeingUnloaded() ||
-        !pModule->GetPEAssembly()->HasLoadedPEImage())
+        !pModule->GetPEAssembly()->IsLoaded())
     {
         return (CORPROF_E_DATAINCOMPLETE);
     }

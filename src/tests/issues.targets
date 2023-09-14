@@ -1032,9 +1032,6 @@
         <ExcludeList Include="$(XunitTestBinBase)/Interop/NativeLibrary/Callback/CallbackStressTest_TargetWindows/*">
             <Issue>https://github.com/dotnet/runtimelab/issues/166</Issue>
         </ExcludeList>
-        <ExcludeList Include="$(XunitTestBinBase)/Interop/NativeLibrary/Callback/CallbackTests/*">
-            <Issue>https://github.com/dotnet/runtimelab/issues/206</Issue>
-        </ExcludeList>
         <ExcludeList Include="$(XunitTestBinBase)/Interop/PInvoke/Array/MarshalArrayAsParam/AsDefault/AsDefaultTest/*">
             <Issue>https://github.com/dotnet/runtimelab/issues/176: VARIANT marshalling</Issue>
         </ExcludeList>
@@ -2690,6 +2687,9 @@
         <ExcludeList Include = "$(XunitTestBinBase)/Interop/StructMarshalling/ReversePInvoke/MarshalSeqStruct/DelegatePInvoke/DelegatePInvokeTest/**">
             <Issue>needs triage</Issue>
         </ExcludeList>
+        <ExcludeList Include = "$(XunitTestBinBase)/Interop/NativeLibrary/MainProgramHandle/**">
+            <Issue>needs triage</Issue>
+        </ExcludeList>
         <ExcludeList Include = "$(XunitTestBinBase)/JIT/Methodical/eh/basics/throwinfilter_il_d/**">
             <Issue>https://github.com/dotnet/runtime/issues/47624</Issue>
         </ExcludeList>
@@ -2906,6 +2906,9 @@
             <Issue>https://github.com/dotnet/runtime/issues/57350</Issue>
         </ExcludeList>
         <ExcludeList Include = "$(XunitTestBinBase)/JIT/Regression/JitBlue/DevDiv_461649/DevDiv_461649/**">
+            <Issue>https://github.com/dotnet/runtime/issues/57350</Issue>
+        </ExcludeList>
+        <ExcludeList Include = "$(XunitTestBinBase)/JIT/Regression/JitBlue/Runtime_79354/Runtime_79354/**">
             <Issue>https://github.com/dotnet/runtime/issues/57350</Issue>
         </ExcludeList>
         <ExcludeList Include = "$(XunitTestBinBase)/JIT/Regression/JitBlue/GitHub_25027/GitHub_25027/**">
@@ -3584,6 +3587,9 @@
         <ExcludeList Include = "$(XunitTestBinBase)/JIT/Regression/JitBlue/Runtime_64125/Runtime_64125/**">
             <Issue>needs triage</Issue>
         </ExcludeList>
+        <ExcludeList Include="$(XunitTestBinBase)/Interop/DllImportSearchPaths/DllImportSearchPathsTest/**">
+            <Issue>Loads an assembly from file</Issue>
+        </ExcludeList>
         <ExcludeList Include="$(XunitTestBinBase)/JIT/Regression/JitBlue/Runtime_64883/Runtime_64883/*">
             <Issue>Loads an assembly from file</Issue>
         </ExcludeList>
@@ -3851,6 +3857,9 @@
         <ExcludeList Include = "$(XunitTestBinBase)/Loader/classloader/StaticVirtualMethods/GenericContext/**">
             <Issue>https://github.com/dotnet/runtime/issues/67359</Issue>
         </ExcludeList>
+        <ExcludeList Include="$(XunitTestBinBase)/Interop/DllImportSearchPaths/DllImportSearchPathsTest/**">
+            <Issue>Loads an assembly from file</Issue>
+        </ExcludeList>
     </ItemGroup>
 
     <ItemGroup Condition=" $(TargetOS) == 'Android' And '$(TargetArchitecture)' == 'arm64' " >
@@ -4052,6 +4061,9 @@
     <ItemGroup Condition=" '$(TargetArchitecture)' == 'wasm' or ('$(TargetOS)' == 'Android' or '$(TargetOS)' == 'iOSSimulator')">
         <ExcludeList Include="$(XunitTestBinBase)/Interop/MonoAPI/**">
             <Issue>mobile and wasm don't support tests with native libraries.  wasm also needs static linking</Issue>
+        </ExcludeList>
+        <ExcludeList Include="$(XunitTestBinBase)/Interop/StructMarshalling/PInvoke/NestedStruct/**">
+            <Issue>https://github.com/dotnet/runtime/issues/64127</Issue>
         </ExcludeList>
     </ItemGroup>
 

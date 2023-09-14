@@ -69,12 +69,14 @@ if (MSVC)
   set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} /PDBCOMPRESS")
 
   set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} /DEBUG")
+  set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} /DEBUGTYPE:CV,FIXUP")
   set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} /IGNORE:4197,4013,4254,4070,4221")
   set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} /SUBSYSTEM:WINDOWS,${WINDOWS_SUBSYSTEM_VERSION}")
 
   set(CMAKE_STATIC_LINKER_FLAGS "${CMAKE_STATIC_LINKER_FLAGS} /IGNORE:4221")
 
   set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /DEBUG")
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /DEBUGTYPE:CV,FIXUP")
   set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /PDBCOMPRESS")
   set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /STACK:1572864")
 
@@ -382,6 +384,17 @@ if (CLR_CMAKE_HOST_UNIX)
   # using twos-complement representation (this is normally undefined according to the C++ spec).
   add_compile_options(-fwrapv)
 
+  if(CLR_CMAKE_HOST_OSX OR CLR_CMAKE_HOST_MACCATALYST OR CLR_CMAKE_HOST_IOS OR CLR_CMAKE_HOST_TVOS)
+    # Clang will by default emit objc_msgSend stubs in Xcode 14, which ld from earlier Xcodes doesn't understand.
+    # We disable this by passing -fno-objc-msgsend-selector-stubs to clang.
+    # We can probably remove this flag once we require developers to use Xcode 14.
+    # Ref: https://github.com/xamarin/xamarin-macios/issues/16223
+    check_c_compiler_flag(-fno-objc-msgsend-selector-stubs COMPILER_SUPPORTS_FNO_OBJC_MSGSEND_SELECTOR_STUBS)
+    if(COMPILER_SUPPORTS_FNO_OBJC_MSGSEND_SELECTOR_STUBS)
+      set(CLR_CMAKE_COMMON_OBJC_FLAGS "${CLR_CMAKE_COMMON_OBJC_FLAGS} -fno-objc-msgsend-selector-stubs")
+    endif()
+  endif()
+
   if(CLR_CMAKE_HOST_OSX OR CLR_CMAKE_HOST_MACCATALYST)
     # We cannot enable "stack-protector-strong" on OS X due to a bug in clang compiler (current version 7.0.2)
     add_compile_options(-fstack-protector)
@@ -447,6 +460,15 @@ if (CLR_CMAKE_HOST_UNIX)
     add_compile_options(-Wno-incompatible-ms-struct)
 
     add_compile_options(-Wno-reserved-identifier)
+
+    # clang 16.0 introduced buffer hardening https://discourse.llvm.org/t/rfc-c-buffer-hardening/65734
+    # which we are not conforming to yet.
+    add_compile_options(-Wno-unsafe-buffer-usage)
+
+    # other clang 16.0 suppressions
+    add_compile_options(-Wno-single-bit-bitfield-constant-conversion)
+    add_compile_options(-Wno-cast-function-type-strict)
+    add_compile_options(-Wno-incompatible-function-pointer-types-strict)
   else()
     add_compile_options(-Wno-uninitialized)
     add_compile_options(-Wno-strict-aliasing)

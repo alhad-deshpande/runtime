@@ -2277,17 +2277,12 @@ gboolean
 mono_metadata_method_has_param_attrs (MonoImage *m, int def)
 {
 	MonoTableInfo *paramt = &m->tables [MONO_TABLE_PARAM];
-	MonoTableInfo *methodt = &m->tables [MONO_TABLE_METHOD];
-	guint lastp, i, param_index = mono_metadata_decode_row_col (methodt, def - 1, MONO_METHOD_PARAMLIST);
+	guint lastp, i, param_index;
 
-	if (param_index == 0)
+	param_index = mono_metadata_get_method_params (m, def, (uint32_t*)&lastp);
+
+	if (!param_index)
 		return FALSE;
-
-	/* FIXME: metadata-update */
-	if (GINT_TO_UINT32(def) < table_info_get_rows (methodt))
-		lastp = mono_metadata_decode_row_col (methodt, def, MONO_METHOD_PARAMLIST);
-	else
-		lastp = table_info_get_rows (&m->tables [MONO_TABLE_PARAM]) + 1;
 
 	for (i = param_index; i < lastp; ++i) {
 		guint32 flags = mono_metadata_decode_row_col (paramt, i - 1, MONO_PARAM_FLAGS);
@@ -2313,20 +2308,14 @@ int*
 mono_metadata_get_param_attrs (MonoImage *m, int def, guint32 param_count)
 {
 	MonoTableInfo *paramt = &m->tables [MONO_TABLE_PARAM];
-	MonoTableInfo *methodt = &m->tables [MONO_TABLE_METHOD];
 	guint32 cols [MONO_PARAM_SIZE];
-	guint lastp, i, param_index = mono_metadata_decode_row_col (methodt, def - 1, MONO_METHOD_PARAMLIST);
+	guint lastp, i, param_index;
 	int *pattrs = NULL;
 
-	/* hot reload deltas may specify 0 for the param table index */
-	if (param_index == 0)
-		return NULL;
+	param_index = mono_metadata_get_method_params (m, def, (uint32_t*)&lastp);
 
-	/* FIXME: metadata-update */
-	if (GINT_TO_UINT32(def) < mono_metadata_table_num_rows (m, MONO_TABLE_METHOD))
-		lastp = mono_metadata_decode_row_col (methodt, def, MONO_METHOD_PARAMLIST);
-	else
-		lastp = table_info_get_rows (paramt) + 1;
+	if (!param_index)
+		return NULL;
 
 	for (i = param_index; i < lastp; ++i) {
 		mono_metadata_decode_row (paramt, i - 1, cols, MONO_PARAM_SIZE);
@@ -5530,7 +5519,8 @@ guint
 mono_metadata_str_hash (gconstpointer v1)
 {
 	/* Same as g_str_hash () in glib */
-	char *p = (char *) v1;
+	/* note: signed/unsigned char matters - we feed UTF-8 to this function, so the high bit will give diferent results if we don't match. */
+	unsigned char *p = (unsigned char *) v1;
 	guint hash = *p;
 
 	while (*p++) {
@@ -7013,17 +7003,25 @@ mono_class_get_overrides_full (MonoImage *image, guint32 type_token, MonoMethod 
 	if (num_overrides)
 		*num_overrides = 0;
 
-	if (!tdef->base)
+	if (!tdef->base && !image->has_updates)
 		return;
 
 	loc.t = tdef;
 	loc.col_idx = MONO_METHODIMPL_CLASS;
 	loc.idx = mono_metadata_token_index (type_token);
+	loc.result = 0;
 
-	/* FIXME metadata-update */
-
-	if (!mono_binary_search (&loc, tdef->base, table_info_get_rows (tdef), tdef->row_size, table_locator))
+	gboolean found = tdef->base && mono_binary_search (&loc, tdef->base, table_info_get_rows (tdef), tdef->row_size, table_locator) != NULL;
+	if (!found && !image->has_updates)
 		return;
+
+	if (G_UNLIKELY (image->has_updates))  {
+		if (!found && !mono_metadata_update_metadata_linear_search (image, tdef, &loc, table_locator)) {
+			mono_trace (G_LOG_LEVEL_INFO, MONO_TRACE_METADATA_UPDATE, "NO Found interfaces for class 0x%08x", type_token);
+			return;
+		}
+		mono_trace (G_LOG_LEVEL_INFO, MONO_TRACE_METADATA_UPDATE, "Found interfaces for class 0x%08x starting at 0x%08x", type_token, loc.result);
+	}
 
 	start = loc.result;
 	end = start + 1;
@@ -7036,7 +7034,7 @@ mono_class_get_overrides_full (MonoImage *image, guint32 type_token, MonoMethod 
 		else
 			break;
 	}
-	guint32 rows = table_info_get_rows (tdef);
+	guint32 rows = mono_metadata_table_num_rows (image, MONO_TABLE_METHODIMPL);
 	while (end < rows) {
 		if (loc.idx == mono_metadata_decode_row_col (tdef, end, MONO_METHODIMPL_CLASS))
 			end++;
@@ -8123,4 +8121,41 @@ mono_metadata_get_class_guid (MonoClass* klass, guint8* guid, MonoError *error)
 	else
 		g_warning ("Generated GUIDs only implemented for interfaces!");
 #endif
+}
+
+uint32_t
+mono_metadata_get_method_params (MonoImage *image, uint32_t method_idx, uint32_t *last_param_out)
+{
+	if (last_param_out)
+		*last_param_out = 0;
+	if (!method_idx)
+		return 0;
+
+	MonoTableInfo *methodt = &image->tables [MONO_TABLE_METHOD];
+
+	uint32_t param_index, lastp;
+
+	param_index = mono_metadata_decode_row_col (methodt, method_idx - 1, MONO_METHOD_PARAMLIST);
+
+	if (G_UNLIKELY (param_index == 0 && image->has_updates)) {
+		uint32_t count;
+		param_index = mono_metadata_update_get_method_params (image, mono_metadata_make_token (MONO_TABLE_METHOD, method_idx), &count);
+		if (!param_index)
+			return 0;
+		lastp = param_index + count;
+	} else {
+		/* lastp is the starting param index for the next method in the table, or
+		 * one past the last row if this is the last method
+		 */
+
+		if (method_idx < table_info_get_rows (methodt))
+			lastp = mono_metadata_decode_row_col (methodt, method_idx, MONO_METHOD_PARAMLIST);
+		else
+			lastp = table_info_get_rows (&image->tables [MONO_TABLE_PARAM]) + 1;
+	}
+
+	if (last_param_out)
+		*last_param_out = lastp;
+
+	return param_index;
 }

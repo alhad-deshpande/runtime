@@ -949,7 +949,7 @@ ves_icall_System_Runtime_CompilerServices_RuntimeHelpers_GetSpanDataFrom (MonoCl
 		return NULL;
 	}
 
-	MonoType *type = targetTypeHandle;
+	MonoType *type = mono_type_get_underlying_type (targetTypeHandle);
 	if (MONO_TYPE_IS_REFERENCE (type) || type->type == MONO_TYPE_VALUETYPE) {
 		mono_error_set_argument (error, "array", "Cannot initialize array of non-primitive type");
 		return NULL;
@@ -4032,8 +4032,6 @@ property_accessor_nonpublic (MonoMethod* accessor, gboolean start_klass)
 GPtrArray*
 ves_icall_RuntimeType_GetPropertiesByName_native (MonoQCallTypeHandle type_handle, gchar *propname, guint32 bflags, guint32 mlisttype, MonoError *error)
 {
-	// Fetch non-public properties as well because they can hide public properties with the same name in base classes
-	bflags |= BFLAGS_NonPublic;
 	MonoType *type = type_handle.type;
 
 	if (m_type_is_byref (type))
@@ -4072,11 +4070,9 @@ handle_parent:
 			(prop->set && ((prop->set->flags & METHOD_ATTRIBUTE_MEMBER_ACCESS_MASK) == METHOD_ATTRIBUTE_PUBLIC))) {
 			if (bflags & BFLAGS_Public)
 				match++;
-		} else if (bflags & BFLAGS_NonPublic) {
-			if (property_accessor_nonpublic(prop->get, startklass == klass) ||
+		} else if (property_accessor_nonpublic(prop->get, startklass == klass) ||
 				property_accessor_nonpublic(prop->set, startklass == klass)) {
 				match++;
-			}
 		}
 		if (!match)
 			continue;
@@ -4106,8 +4102,6 @@ handle_parent:
 		g_hash_table_insert (properties, prop, prop);
 	}
 	if (!(bflags & BFLAGS_DeclaredOnly) && (klass = m_class_get_parent (klass))) {
-		// BFLAGS_NonPublic should be excluded for base classes
-		bflags &= ~BFLAGS_NonPublic;
 		goto handle_parent;
 	}
 

@@ -316,10 +316,9 @@ public:
     {
         pthread_mutex_lock(&m_mutex);
         m_state = true;
-        pthread_mutex_unlock(&m_mutex);
-
         // Unblock all threads waiting for the condition variable
         pthread_cond_broadcast(&m_condition);
+        pthread_mutex_unlock(&m_mutex);
     }
 
     void Reset()
@@ -1098,6 +1097,14 @@ extern "C" void _mm_pause()
 extern "C" int32_t _stricmp(const char *string1, const char *string2)
 {
     return strcasecmp(string1, string2);
+}
+
+REDHAWK_PALIMPORT void REDHAWK_PALAPI PopulateControlSegmentRegisters(CONTEXT* pContext)
+{
+#if defined(TARGET_X86) || defined(TARGET_AMD64)
+    // Currently the CONTEXT is only used on Windows for RaiseFailFastException.
+    // So we punt on filling in SegCs and SegSs for now.
+#endif
 }
 
 uint32_t g_RhNumberOfProcessors;

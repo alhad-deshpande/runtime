@@ -138,10 +138,12 @@ namespace System.Formats.Tar
         /// <remarks>The value in this field has no effect on Windows platforms.</remarks>
         public UnixFileMode Mode
         {
-            get => (UnixFileMode)_header._mode;
+            // Some paths do not use the setter, and we want to return valid UnixFileMode.
+            // This mask only keeps the least significant 12 bits.
+            get => (UnixFileMode)(_header._mode & (int)TarHelpers.ValidUnixFileModes);
             set
             {
-                if ((int)value is < 0 or > 4095) // 4095 in decimal is 7777 in octal
+                if ((value & ~TarHelpers.ValidUnixFileModes) != 0) // throw on invalid UnixFileModes
                 {
                     throw new ArgumentOutOfRangeException(nameof(value));
                 }
@@ -347,11 +349,17 @@ namespace System.Formats.Tar
                     throw new InvalidDataException(SR.TarEntryHardLinkOrSymlinkLinkNameEmpty);
                 }
 
-                linkTargetPath = GetSanitizedFullPath(destinationDirectoryPath, LinkName);
+                linkTargetPath = GetSanitizedFullPath(destinationDirectoryPath,
+                    Path.IsPathFullyQualified(LinkName) ? LinkName : Path.Join(Path.GetDirectoryName(fileDestinationPath), LinkName));
+
                 if (linkTargetPath == null)
                 {
                     throw new IOException(string.Format(SR.TarExtractingResultsLinkOutside, LinkName, destinationDirectoryPath));
                 }
+
+                // after TarExtractingResultsLinkOutside validation, preserve the original
+                // symlink target path (to match behavior of other utilities).
+                linkTargetPath = LinkName;
             }
 
             return (fileDestinationPath, linkTargetPath);
@@ -360,9 +368,17 @@ namespace System.Formats.Tar
         // If the path can be extracted in the specified destination directory, returns the full path with sanitized file name. Otherwise, returns null.
         private static string? GetSanitizedFullPath(string destinationDirectoryFullPath, string path)
         {
+            destinationDirectoryFullPath = PathInternal.EnsureTrailingSeparator(destinationDirectoryFullPath);
+
             string fullyQualifiedPath = Path.IsPathFullyQualified(path) ? path : Path.Combine(destinationDirectoryFullPath, path);
             string normalizedPath = Path.GetFullPath(fullyQualifiedPath); // Removes relative segments
-            string sanitizedPath = Path.Join(Path.GetDirectoryName(normalizedPath), ArchivingUtils.SanitizeEntryFilePath(Path.GetFileName(normalizedPath)));
+            string? fileName = Path.GetFileName(normalizedPath);
+            if (string.IsNullOrEmpty(fileName)) // It's a directory
+            {
+                fileName = PathInternal.DirectorySeparatorCharAsString;
+            }
+
+            string sanitizedPath = Path.Join(Path.GetDirectoryName(normalizedPath), ArchivingUtils.SanitizeEntryFilePath(fileName));
             return sanitizedPath.StartsWith(destinationDirectoryFullPath, PathInternal.StringComparison) ? sanitizedPath : null;
         }
 

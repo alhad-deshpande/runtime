@@ -1,6 +1,7 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+using Microsoft.DotNet.RemoteExecutor;
 using System.Collections.Generic;
 using Xunit;
 
@@ -233,8 +234,8 @@ namespace System.Globalization.Tests
             yield return new object[] { "ms-MY", new [] { "ms-MY" } };
             yield return new object[] { "mt", new [] { "mt" }, true };
             yield return new object[] { "mt-MT", new [] { "mt-MT" }, true };
-            yield return new object[] { "nb", new [] { "nb" }, true };
-            yield return new object[] { "nb-NO", new [] { "nb-NO" }, true };
+            yield return new object[] { "nb", new [] { "nb" } };
+            yield return new object[] { "nb-NO", new [] { "nb-NO" } };
             yield return new object[] { "ne", new [] { "ne" }, true };
             yield return new object[] { "ne-NP", new [] { "ne-NP" }, true };
             yield return new object[] { "nl", new [] { "nl" } };
@@ -242,7 +243,7 @@ namespace System.Globalization.Tests
             yield return new object[] { "nl-NL", new [] { "nl-NL" } };
             yield return new object[] { "nn", new [] { "nn" }, true };
             yield return new object[] { "nn-NO", new [] { "nn-NO" }, true };
-            yield return new object[] { "no", new [] { "no" }, true };
+            yield return new object[] { "no", new [] { "no" } };
             yield return new object[] { "nso", new [] { "nso" }, true };
             yield return new object[] { "nso-ZA", new [] { "nso-ZA" }, true };
             yield return new object[] { "oc", new [] { "oc" }, true };
@@ -253,8 +254,8 @@ namespace System.Globalization.Tests
             yield return new object[] { "pa-IN", new [] { "pa-IN" }, true };
             yield return new object[] { "pl", new [] { "pl" } };
             yield return new object[] { "pl-PL", new [] { "pl-PL" } };
-            yield return new object[] { "prs", new [] { "prs" }, true };
-            yield return new object[] { "prs-AF", new [] { "prs-AF" }, true };
+            yield return new object[] { "prs", new [] { "prs", "fa" }, true };
+            yield return new object[] { "prs-AF", new [] { "prs-AF", "fa-AF" }, true};
             yield return new object[] { "ps", new [] { "ps" }, true };
             yield return new object[] { "ps-AF", new [] { "ps-AF" }, true };
             yield return new object[] { "pt", new [] { "pt" } };
@@ -440,13 +441,62 @@ namespace System.Globalization.Tests
             Assert.NotEqual(lcid, new CultureInfo(lcid).LCID);
         }
 
-        [InlineData("zh-TW-u-co-zhuyin")]
-        [InlineData("de-DE-u-co-phoneb")]
-        [InlineData("de-u-co-phonebk")]
-        [ConditionalTheory(typeof(PlatformDetection), nameof(PlatformDetection.IsIcuGlobalization))]
-        public void TestCreationWithMangledSortName(string cultureName)
+        private static bool NotWasmWithIcu => PlatformDetection.IsNotBrowser && PlatformDetection.IsIcuGlobalization;
+
+        [InlineData("zh-TW-u-co-zhuyin", "zh-TW", "zh-TW_zhuyin")]
+        [InlineData("de-DE-u-co-phonebk", "de-DE", "de-DE_phoneboo")]
+        [InlineData("de-DE-u-co-phonebk-u-xx", "de-DE-u-xx", "de-DE-u-xx_phoneboo")]
+        [InlineData("de-DE-u-xx-u-co-phonebk", "de-DE-u-xx-u-co-phonebk", "de-DE-u-xx-u-co-phonebk")]
+        [InlineData("de-DE-t-xx-u-co-phonebk", "de-DE-t-xx-u-co-phonebk", "de-DE-t-xx-u-co-phonebk_phoneboo")]
+        [InlineData("de-DE-u-co-phonebk-t-xx", "de-DE-t-xx", "de-DE-t-xx_phoneboo")]
+        [InlineData("de-DE-u-co-phonebk-t-xx-u-yy", "de-DE-t-xx-u-yy", "de-DE-t-xx-u-yy_phoneboo")]
+        [InlineData("de-DE", "de-DE", "de-DE")]
+        [ConditionalTheory(nameof(NotWasmWithIcu))]
+        public void TestCreationWithMangledSortName(string cultureName, string expectedCultureName, string expectedSortName)
         {
-            Assert.True(CultureInfo.GetCultureInfo(cultureName).CompareInfo.Name.Equals(cultureName, StringComparison.OrdinalIgnoreCase));
+            CultureInfo ci = CultureInfo.GetCultureInfo(cultureName);
+
+            Assert.Equal(expectedCultureName, ci.Name);
+            Assert.Equal(expectedSortName, ci.CompareInfo.Name);
+        }
+
+        private static bool SupportRemoteExecutionWithIcu => RemoteExecutor.IsSupported && PlatformDetection.IsIcuGlobalization && PlatformDetection.IsNotWindowsServerCore;
+
+        [InlineData("xx-u-XX", "xx-u-xx")]
+        [InlineData("xx-u-XX-u-yy", "xx-u-xx-u-yy")]
+        [InlineData("xx-t-ja-JP", "xx-t-ja-jp")]
+        [InlineData("qps-plocm", "qps-PLOCM")] // ICU normalize this name to "qps--plocm" which we normalize it back to "qps-plocm"
+        [InlineData("zh_CN", "zh_cn")]
+        [InlineData("km_KH", "km_kh")]
+        [ConditionalTheory(nameof(SupportRemoteExecutionWithIcu))]
+        public void TestCreationWithICUNormalizedNames(string cultureName, string expectedCultureName)
+        {
+            CultureInfo ci = CultureInfo.GetCultureInfo(cultureName);
+            Assert.Equal(expectedCultureName, ci.Name);
+        }
+
+        [InlineData("xx-u-XX")]
+        [InlineData("xx-u-XX-u-yy")]
+        [InlineData("xx-t-ja-JP")]
+        [InlineData("qps-plocm")]
+        [InlineData("zh-TW-u-co-zhuyin")]
+        [InlineData("de-DE-u-co-phonebk")]
+        [InlineData("de-DE-u-co-phonebk-u-xx")]
+        [InlineData("de-DE-u-xx-u-co-phonebk")]
+        [InlineData("de-DE-t-xx-u-co-phonebk")]
+        [InlineData("de-DE-u-co-phonebk-t-xx")]
+        [InlineData("de-DE-u-co-phonebk-t-xx-u-yy")]
+        [InlineData("de-DE")]
+        [ConditionalTheory(nameof(SupportRemoteExecutionWithIcu))]
+        public void TestWithResourceLookup(string cultureName)
+        {
+            RemoteExecutor.Invoke(name => {
+                CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo(name);
+                int Zero = 0;
+
+                // This should go through the resource manager to get the localized exception message using the current UI culture
+                Assert.Throws<DivideByZeroException>(() => 1 / Zero);
+            }, cultureName).Dispose();
         }
     }
 }

@@ -26,7 +26,8 @@ Param(
     [switch] $DynamicPGO,
     [switch] $FullPGO,
     [switch] $iOSLlvmBuild,
-    [string] $MauiVersion
+    [string] $MauiVersion,
+    [switch] $UseLocalCommitTime
 )
 
 $RunFromPerformanceRepo = ($Repository -eq "dotnet/performance") -or ($Repository -eq "dotnet-performance")
@@ -45,9 +46,10 @@ $Queue = ""
 
 if ($Internal) {
     switch ($LogicalMachine) {
-        "perftiger" { $Queue = "Windows.10.Amd64.19H1.Tiger.Perf"  }
-        "perfowl" { $Queue = "Windows.10.Amd64.20H2.Owl.Perf"  }
-        "perfsurf" { $Queue = "Windows.10.Arm64.Perf.Surf"  }
+        "perftiger" { $Queue = "Windows.10.Amd64.19H1.Tiger.Perf" }
+        "perftiger_crossgen" { $Queue = "Windows.10.Amd64.19H1.Tiger.Perf" }
+        "perfowl" { $Queue = "Windows.10.Amd64.20H2.Owl.Perf" }
+        "perfsurf" { $Queue = "Windows.10.Arm64.Perf.Surf" }
         "perfpixel4a" { $Queue = "Windows.10.Amd64.Pixel.Perf" }
         "perfampere" { $Queue = "Windows.Server.Arm64.Perf" }
         Default { $Queue = "Windows.10.Amd64.19H1.Tiger.Perf" }
@@ -120,13 +122,19 @@ elseif($FullPGO)
     $SetupArguments = "$SetupArguments --full-pgo"
 }
 
+if($UseLocalCommitTime)
+{
+    $LocalCommitTime = (git show -s --format=%ci $CommitSha)
+    $SetupArguments = "$SetupArguments --commit-time `"$LocalCommitTime`""
+}
+
 if ($RunFromPerformanceRepo) {
     $SetupArguments = "--perf-hash $CommitSha $CommonSetupArguments"
     
     robocopy $SourceDirectory $PerformanceDirectory /E /XD $PayloadDirectory $SourceDirectory\artifacts $SourceDirectory\.git
 }
 else {
-    git clone --branch main --depth 1 --quiet https://github.com/dotnet/performance $PerformanceDirectory
+    git clone --branch release/7.0 --depth 1 --quiet https://github.com/dotnet/performance $PerformanceDirectory
 }
 
 if($MonoDotnet -ne "")
@@ -155,14 +163,7 @@ if ($AndroidMono) {
     {
         mkdir $WorkItemDirectory
     }
-    if($Kind -ne "android_scenarios_net6") 
-    {
-        Copy-Item -path "$SourceDirectory\androidHelloWorld\HelloAndroid.apk" $PayloadDirectory -Verbose
-    }
-        Copy-Item -path "$SourceDirectory\MauiAndroidDefault.apk" $PayloadDirectory -Verbose
-        Copy-Item -path "$SourceDirectory\MauiBlazorAndroidDefault.apk" $PayloadDirectory -Verbose
-        Copy-Item -path "$SourceDirectory\MauiAndroidPodcast.apk" $PayloadDirectory -Verbose
-
+    Copy-Item -path "$SourceDirectory\androidHelloWorld\HelloAndroid.apk" $PayloadDirectory -Verbose
     $SetupArguments = $SetupArguments -replace $Architecture, 'arm64'
 }
 

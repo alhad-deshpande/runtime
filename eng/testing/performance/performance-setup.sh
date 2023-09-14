@@ -37,6 +37,7 @@ javascript_engine="v8"
 iosmono=false
 iosllvmbuild=""
 maui_version=""
+use_local_commit_time=false
 only_sanity=false
 
 while (($# > 0)); do
@@ -160,6 +161,10 @@ while (($# > 0)); do
       maui_version=$2
       shift 2
       ;;
+    --uselocalcommittime)
+      use_local_commit_time=true
+      shift 1
+      ;;
     --perffork)
       perf_fork=$2
       shift 2
@@ -200,6 +205,7 @@ while (($# > 0)); do
       echo "  --iosmono                      Set for ios Mono/Maui runs"
       echo "  --iosllvmbuild                 Set LLVM for iOS Mono/Maui runs"
       echo "  --mauiversion                  Set the maui version for Mono/Maui runs"
+      echo "  --uselocalcommittime           Pass local runtime commit time to the setup script"
       echo ""
       exit 0
       ;;
@@ -247,8 +253,10 @@ if [[ "$internal" == true ]]; then
     else
         if [[ "$logical_machine" == "perfowl" ]]; then
             queue=Ubuntu.1804.Amd64.Owl.Perf
-        else
+        elif [[ "$logical_machine" == "perftiger_crossgen" ]]; then
             queue=Ubuntu.1804.Amd64.Tiger.Perf
+        else
+            queue=Ubuntu.2204.Amd64.Tiger.Perf
         fi
     fi
 
@@ -314,6 +322,11 @@ if [[ "$internal" != true ]]; then
     setup_arguments="$setup_arguments --not-in-lab"
 fi
 
+if [[ "$use_local_commit_time" == true ]]; then
+    local_commit_time=$(git show -s --format=%ci $commit_sha)
+    setup_arguments="$setup_arguments --commit-time \"$local_commit_time\""
+fi
+
 if [[ "$run_from_perf_repo" == true ]]; then
     payload_directory=
     workitem_directory=$source_directory
@@ -323,7 +336,7 @@ else
     if [[ -n "$perf_fork" ]]; then
         git clone --branch $perf_fork_branch --depth 1 --quiet $perf_fork $performance_directory
     else
-        git clone --branch main --depth 1 --quiet https://github.com/dotnet/performance.git $performance_directory
+        git clone --branch release/7.0 --depth 1 --quiet https://github.com/dotnet/performance.git $performance_directory
     fi
     # uncomment to use BenchmarkDotNet sources instead of nuget packages
     # git clone https://github.com/dotnet/BenchmarkDotNet.git $benchmark_directory
@@ -374,37 +387,13 @@ fi
 
 if [[ "$iosmono" == "true" ]]; then
     if [[ "$iosllvmbuild" == "True" ]]; then
-        if [[ "$kind" != "ios_scenarios_net6" ]]; then
-            # LLVM Mono .app
-            mkdir -p $payload_directory/iosHelloWorld && cp -rv $source_directory/iosHelloWorld/llvm $payload_directory/iosHelloWorld
-            mkdir -p $payload_directory/iosHelloWorldZip/llvmzip && cp -rv $source_directory/iosHelloWorldZip/llvmzip $payload_directory/iosHelloWorldZip
-        fi
+        # LLVM Mono .app
+        mkdir -p $payload_directory/iosHelloWorld && cp -rv $source_directory/iosHelloWorld/llvm $payload_directory/iosHelloWorld
+        mkdir -p $payload_directory/iosHelloWorldZip/llvmzip && cp -rv $source_directory/iosHelloWorldZip/llvmzip $payload_directory/iosHelloWorldZip
     else
-        # NoLLVM Mono .app, Maui iOS IPA, Maui Maccatalyst, Maui iOS Podcast IPA
-        if [[ "$kind" != "ios_scenarios_net6" ]]; then
-            mkdir -p $payload_directory/iosHelloWorld && cp -rv $source_directory/iosHelloWorld/nollvm $payload_directory/iosHelloWorld
-            mkdir -p $payload_directory/iosHelloWorldZip/nollvmzip && cp -rv $source_directory/iosHelloWorldZip/nollvmzip $payload_directory/iosHelloWorldZip
-        fi
-        mkdir -p $payload_directory/MauiMacCatalystDefault && cp -rv $source_directory/MauiMacCatalystDefault/MauiMacCatalystDefault.app $payload_directory/MauiMacCatalystDefault
-        mkdir -p $payload_directory/MauiBlazorMacCatalystDefault && cp -rv $source_directory/MauiBlazorMacCatalystDefault/MauiBlazorMacCatalystDefault.app $payload_directory/MauiBlazorMacCatalystDefault
-        cp -v $source_directory/MauiiOSDefaultIPA/MauiiOSDefault.ipa $payload_directory/MauiiOSDefault.ipa
-        cp -v $source_directory/MauiBlazoriOSDefaultIPA/MauiBlazoriOSDefault.ipa $payload_directory/MauiBlazoriOSDefault.ipa
-        cp -v $source_directory/MauiiOSPodcastIPA/MauiiOSPodcast.ipa $payload_directory/MauiiOSPodcast.ipa
-
-        # Get the .app so we can resign in the xharness item
-        cp -v $source_directory/MauiiOSDefaultIPA/MauiiOSDefault.ipa $source_directory/MauiiOSDefaultIPA/MauiiOSDefault.zip
-        unzip -d $source_directory/MauiiOSDefaultIPA $source_directory/MauiiOSDefaultIPA/MauiiOSDefault.zip
-        mv $source_directory/MauiiOSDefaultIPA/Payload/MauiTesting.app $payload_directory/
-
-        # Get the .app so we can resign in the xharness item for Maui Blazor
-        cp -v $source_directory/MauiBlazoriOSDefaultIPA/MauiBlazoriOSDefault.ipa $source_directory/MauiBlazoriOSDefaultIPA/MauiBlazoriOSDefault.zip
-        unzip -d $source_directory/MauiBlazoriOSDefaultIPA $source_directory/MauiBlazoriOSDefaultIPA/MauiBlazoriOSDefault.zip
-        mv $source_directory/MauiBlazoriOSDefaultIPA/Payload/MauiBlazorTesting.app $payload_directory/
-
-        # Get the .app so we can resign in the xharness item for podcast
-        cp -v $source_directory/MauiiOSPodcastIPA/MauiiOSPodcast.ipa $source_directory/MauiiOSPodcastIPA/MauiiOSPodcast.zip
-        unzip -d $source_directory/MauiiOSPodcastIPA $source_directory/MauiiOSPodcastIPA/MauiiOSPodcast.zip
-        mv $source_directory/MauiiOSPodcastIPA/Payload/Microsoft.NetConf2021.Maui.app $payload_directory/
+        # NoLLVM Mono .app
+        mkdir -p $payload_directory/iosHelloWorld && cp -rv $source_directory/iosHelloWorld/nollvm $payload_directory/iosHelloWorld
+        mkdir -p $payload_directory/iosHelloWorldZip/nollvmzip && cp -rv $source_directory/iosHelloWorldZip/nollvmzip $payload_directory/iosHelloWorldZip
     fi
 fi
 

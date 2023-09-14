@@ -153,6 +153,12 @@ namespace Microsoft.Workload.Build.Tasks
                     continue;
                 }
 
+                if (string.IsNullOrEmpty(req.Version))
+                {
+                    Log.LogError($"No Version set for workload manifest {req.ManifestName} in workload install requests.");
+                    return false;
+                }
+
                 Log.LogMessage(MessageImportance.High, $"{Environment.NewLine}** Installing manifests for workload {req.WorkloadId} **");
                 if (!InstallWorkloadManifest(workload,
                                              req.ManifestName,
@@ -181,7 +187,7 @@ namespace Microsoft.Workload.Build.Tasks
             (int exitCode, string output) = Utils.TryRunProcess(
                                                     Log,
                                                     Path.Combine(req.TargetPath, "dotnet"),
-                                                    $"workload install --skip-manifest-update --no-cache --configfile \"{nugetConfigPath}\" {req.WorkloadId}",
+                                                    $"workload install --skip-sign-check --skip-manifest-update --no-cache --configfile \"{nugetConfigPath}\" {req.WorkloadId}",
                                                     workingDir: Path.GetTempPath(),
                                                     silent: false,
                                                     logStdErrAsMessage: req.IgnoreErrors,

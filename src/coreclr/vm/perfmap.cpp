@@ -12,29 +12,57 @@
 #include "perfinfo.h"
 #include "pal.h"
 
+
 // The code addresses are actually native image offsets during crossgen. Print
 // them as 32-bit numbers for consistent output when cross-targeting and to
 // make the output more compact.
 
 #define FMT_CODE_ADDR "%p"
 
+#ifndef __ANDROID__
+#define TEMP_DIRECTORY_PATH "/tmp"
+#else
+// On Android, "/tmp/" doesn't exist; temporary files should go to
+// /data/local/tmp/
+#define TEMP_DIRECTORY_PATH "/data/local/tmp"
+#endif
+
 Volatile<bool> PerfMap::s_enabled = false;
 PerfMap * PerfMap::s_Current = nullptr;
 bool PerfMap::s_ShowOptimizationTiers = false;
+unsigned PerfMap::s_StubsMapped = 0;
+
+enum 
+{
+    DISABLED,
+    ALL,
+    JITDUMP,
+    PERFMAP
+};
 
 // Initialize the map for the process - called from EEStartupHelper.
 void PerfMap::Initialize()
 {
     LIMITED_METHOD_CONTRACT;
 
+    const DWORD perfMapEnabled = CLRConfig::GetConfigValue(CLRConfig::EXTERNAL_PerfMapEnabled);
+    if (perfMapEnabled == DISABLED)
+    {
+        return;
+    }
+
+    // Build the path to the map file on disk.
+    char tempPathBuffer[MAX_LONGPATH+1];
+    const char* tempPath = InternalConstructPath(tempPathBuffer, sizeof(tempPathBuffer));
+
     // Only enable the map if requested.
-    if (CLRConfig::GetConfigValue(CLRConfig::EXTERNAL_PerfMapEnabled))
+    if (perfMapEnabled == ALL || perfMapEnabled == PERFMAP)
     {
         // Get the current process id.
         int currentPid = GetCurrentProcessId();
 
         // Create the map.
-        s_Current = new PerfMap(currentPid);
+        s_Current = new PerfMap(currentPid, tempPath);
 
         int signalNum = (int) CLRConfig::GetConfigValue(CLRConfig::EXTERNAL_PerfMapIgnoreSignal);
 
@@ -42,30 +70,39 @@ void PerfMap::Initialize()
         {
             PAL_IgnoreProfileSignal(signalNum);
         }
-
-        if (CLRConfig::GetConfigValue(CLRConfig::EXTERNAL_PerfMapShowOptimizationTiers) != 0)
-        {
-            s_ShowOptimizationTiers = true;
-        }
-
-        s_enabled = true;
-
-        const char* jitdumpPath;
-        char jitdumpPathBuffer[4096];
-
-        CLRConfigNoCache value = CLRConfigNoCache::Get("PerfMapJitDumpPath");
-        if (value.IsSet())
-        {
-            jitdumpPath = value.AsString();
-        }
-        else
-        {
-            GetTempPathA(sizeof(jitdumpPathBuffer) - 1, jitdumpPathBuffer);
-            jitdumpPath = jitdumpPathBuffer;
-        }
-
-        PAL_PerfJitDump_Start(jitdumpPath);
     }
+
+    // only enable JitDumps if requested
+    if (perfMapEnabled == ALL || perfMapEnabled == JITDUMP)
+    {
+        PAL_PerfJitDump_Start(tempPath);
+    }
+
+    if (CLRConfig::GetConfigValue(CLRConfig::EXTERNAL_PerfMapShowOptimizationTiers) != 0)
+    {
+        s_ShowOptimizationTiers = true;
+    }
+    
+    s_enabled = true;
+}
+
+// InternalConstructPath is guaranteed to return a non-null path
+// the function  uses the input buffer only whe PerfMapJitDumpPath environment variable is set
+const char * PerfMap::InternalConstructPath(char *tmpBuf, int lenBuf)
+{
+    DWORD len = GetEnvironmentVariableA("DOTNET_PerfMapJitDumpPath", tmpBuf, lenBuf);
+    if (len == 0)
+    {
+        len = GetEnvironmentVariableA("COMPlus_PerfMapJitDumpPath", tmpBuf, lenBuf);
+    }
+
+    if (len == 0 || // GetEnvironmentVariableA returns 0 if the variable is not found, 
+        len >= lenBuf) // or the length of the string not including the null terminator on success.
+    {
+        return TEMP_DIRECTORY_PATH;
+    }
+
+    return tmpBuf;
 }
 
 // Destroy the map for the process - called from EEShutdownHelper.
@@ -82,29 +119,21 @@ void PerfMap::Destroy()
 }
 
 // Construct a new map for the process.
-PerfMap::PerfMap(int pid)
+PerfMap::PerfMap(int pid, const char* path)
 {
     LIMITED_METHOD_CONTRACT;
 
     // Initialize with no failures.
     m_ErrorEncountered = false;
 
-    m_StubsMapped = 0;
-
     // Build the path to the map file on disk.
-    WCHAR tempPath[MAX_LONGPATH+1];
-    if(!GetTempPathW(MAX_LONGPATH, tempPath))
-    {
-        return;
-    }
-
-    SString path;
-    path.Printf("%Sperf-%d.map", &tempPath, pid);
+    SString pathFile;
+    pathFile.Printf("%s/perf-%d.map", path, pid);
 
     // Open the map file for writing.
-    OpenFile(path);
+    OpenFile(pathFile);
 
-    m_PerfInfo = new PerfInfo(pid);
+    m_PerfInfo = new PerfInfo(pid, path);
 }
 
 // Construct a new map without a specified file name.
@@ -117,8 +146,6 @@ PerfMap::PerfMap()
 
     // Initialize with no failures.
     m_ErrorEncountered = false;
-
-    m_StubsMapped = 0;
 }
 
 // Clean-up resources.
@@ -156,6 +183,11 @@ void PerfMap::WriteLine(SString& line)
 {
     STANDARD_VM_CONTRACT;
 
+    if (m_FileStream == nullptr || m_ErrorEncountered)
+    {
+        return;
+    }
+
     EX_TRY
     {
         // Write the line.
@@ -176,50 +208,9 @@ void PerfMap::WriteLine(SString& line)
     EX_CATCH{} EX_END_CATCH(SwallowAllExceptions);
 }
 
-// Log a method to the map.
-void PerfMap::LogMethod(MethodDesc * pMethod, PCODE pCode, size_t codeSize, const char *optimizationTier)
-{
-    CONTRACTL{
-        THROWS;
-        GC_NOTRIGGER;
-        MODE_PREEMPTIVE;
-        PRECONDITION(pMethod != nullptr);
-        PRECONDITION(pCode != nullptr);
-        PRECONDITION(codeSize > 0);
-    } CONTRACTL_END;
-
-    if (m_FileStream == nullptr || m_ErrorEncountered)
-    {
-        // A failure occurred, do not log.
-        return;
-    }
-
-    // Logging failures should not cause any exceptions to flow upstream.
-    EX_TRY
-    {
-        // Get the full method signature.
-        SString name;
-        pMethod->GetFullMethodInfo(name);
-
-        // Build the map file line.
-        if (optimizationTier != nullptr && s_ShowOptimizationTiers)
-        {
-            name.AppendPrintf("[%s]", optimizationTier);
-        }
-        SString line;
-        line.Printf(FMT_CODE_ADDR " %x %s\n", pCode, codeSize, name.GetUTF8());
-
-        // Write the line.
-        WriteLine(line);
-        PAL_PerfJitDump_LogMethod((void*)pCode, codeSize, name.GetUTF8(), nullptr, nullptr);
-    }
-    EX_CATCH{} EX_END_CATCH(SwallowAllExceptions);
-}
-
-
 void PerfMap::LogImageLoad(PEAssembly * pPEAssembly)
 {
-    if (s_enabled)
+    if (s_enabled && s_Current != nullptr)
     {
         s_Current->LogImage(pPEAssembly);
     }
@@ -258,6 +249,15 @@ void PerfMap::LogJITCompiledMethod(MethodDesc * pMethod, PCODE pCode, size_t cod
 {
     LIMITED_METHOD_CONTRACT;
 
+    CONTRACTL{
+        THROWS;
+        GC_NOTRIGGER;
+        MODE_PREEMPTIVE;
+        PRECONDITION(pMethod != nullptr);
+        PRECONDITION(pCode != nullptr);
+        PRECONDITION(codeSize > 0);
+    } CONTRACTL_END;
+
     if (!s_enabled)
     {
         return;
@@ -269,7 +269,31 @@ void PerfMap::LogJITCompiledMethod(MethodDesc * pMethod, PCODE pCode, size_t cod
         optimizationTier = PrepareCodeConfig::GetJitOptimizationTierStr(pConfig, pMethod);
     }
 
-    s_Current->LogMethod(pMethod, pCode, codeSize, optimizationTier);
+    // Logging failures should not cause any exceptions to flow upstream.
+    EX_TRY
+    {
+        // Get the full method signature.
+        SString name;
+        pMethod->GetFullMethodInfo(name);
+
+        // Build the map file line.
+        if (optimizationTier != nullptr && s_ShowOptimizationTiers)
+        {
+            name.AppendPrintf("[%s]", optimizationTier);
+        }
+
+        SString line;
+        line.Printf(FMT_CODE_ADDR " %x %s\n", pCode, codeSize, name.GetUTF8());
+
+        // Write the line.
+        if(s_Current != nullptr)
+        {
+            s_Current->WriteLine(line);
+        }
+        PAL_PerfJitDump_LogMethod((void*)pCode, codeSize, name.GetUTF8(), nullptr, nullptr);
+    }
+    EX_CATCH{} EX_END_CATCH(SwallowAllExceptions);
+
 }
 
 // Log a pre-compiled method to the perfmap.
@@ -326,7 +350,7 @@ void PerfMap::LogStubs(const char* stubType, const char* stubOwner, PCODE pCode,
 {
     LIMITED_METHOD_CONTRACT;
 
-    if (!s_enabled || s_Current->m_FileStream == nullptr)
+    if (!s_enabled)
     {
         return;
     }
@@ -344,13 +368,15 @@ void PerfMap::LogStubs(const char* stubType, const char* stubOwner, PCODE pCode,
         }
 
         SString name;
-        // Build the map file line.
-        name.Printf("stub<%d> %s<%s>", ++(s_Current->m_StubsMapped), stubType, stubOwner);
+        name.Printf("stub<%d> %s<%s>", ++(s_StubsMapped), stubType, stubOwner);
         SString line;
         line.Printf(FMT_CODE_ADDR " %x %s\n", pCode, codeSize, name.GetUTF8());
 
         // Write the line.
-        s_Current->WriteLine(line);
+        if(s_Current != nullptr)
+        {
+            s_Current->WriteLine(line);
+        }
         PAL_PerfJitDump_LogMethod((void*)pCode, codeSize, name.GetUTF8(), nullptr, nullptr);
     }
     EX_CATCH{} EX_END_CATCH(SwallowAllExceptions);
@@ -405,6 +431,41 @@ NativeImagePerfMap::NativeImagePerfMap(Assembly * pAssembly, BSTR pDestPath)
     {
         m_EmitRVAs = false;
     }
+}
+
+void NativeImagePerfMap::LogMethod(MethodDesc * pMethod, PCODE pCode, size_t codeSize, const char *optimizationTier)
+{
+    CONTRACTL{
+        THROWS;
+        GC_NOTRIGGER;
+        MODE_PREEMPTIVE;
+        PRECONDITION(pMethod != nullptr);
+        PRECONDITION(pCode != nullptr);
+        PRECONDITION(codeSize > 0);
+    } CONTRACTL_END;
+
+    // Logging failures should not cause any exceptions to flow upstream.
+    EX_TRY
+    {
+        // Get the full method signature.
+        SString name;
+        pMethod->GetFullMethodInfo(name);
+
+        // Build the map file line.
+        if (optimizationTier != nullptr && s_ShowOptimizationTiers)
+        {
+            name.AppendPrintf("[%s]", optimizationTier);
+        }
+        SString line;
+        line.Printf(FMT_CODE_ADDR " %x %s\n", pCode, codeSize, name.GetUTF8());
+
+        if (s_Current != nullptr)
+        {
+            s_Current->WriteLine(line);
+        }
+        PAL_PerfJitDump_LogMethod((void*)pCode, codeSize, name.GetUTF8(), nullptr, nullptr);
+    }
+    EX_CATCH{} EX_END_CATCH(SwallowAllExceptions);
 }
 
 // Log data to the perfmap for the specified module.
