@@ -101,4 +101,4 @@ BOOL rel32SetInterlocked(/*PINT32*/ PVOID pRel32, /*PINT32*/ PVOID pRel32RW, TAD
 #endif
 
 #endif  // STUBLINKERS390X_H
-_
+

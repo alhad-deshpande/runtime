@@ -3181,7 +3181,7 @@ enum {
 //
 typedef struct _RUNTIME_FUNCTION {
     DWORD BeginAddress;
-#ifdef TARGET_AMD64 || defined(TARGET_POWERPC64)
+#if defined(TARGET_AMD64) || defined(TARGET_POWERPC64)
     DWORD EndAddress;
 #endif
     DWORD UnwindData;

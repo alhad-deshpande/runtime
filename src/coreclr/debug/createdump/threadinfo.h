@@ -59,6 +59,21 @@ struct user_vfpregs_struct
 #define user_fpregs_struct lasx_context
 #endif
 
+#if defined(__ppc64le__)
+#define user_regs_struct ppc64le_regs
+#define user_fpregs_struct ppc64le_fpregs
+/*struct user_regs_struct
+{
+  unsigned long long regs[32];
+  unsigned long long lr;
+  unsigned long long ctr;
+};
+struct user_fpregs_struct
+{
+  unsigned long long fpregs[32];
+};*/
+#endif
+
 #define STACK_OVERFLOW_EXCEPTION    0x800703e9
 
 class ThreadInfo
@@ -168,6 +183,10 @@ public:
     inline const uint64_t GetInstructionPointer() const { return MCREG_Pc(m_gpRegisters); }
     inline const uint64_t GetStackPointer() const { return MCREG_Sp(m_gpRegisters); }
     inline const uint64_t GetFramePointer() const { return MCREG_Fp(m_gpRegisters); }
+#elif defined(__ppc64le__)
+    inline const uint64_t GetInstructionPointer() const { return m_gpRegisters.lr; }
+    inline const uint64_t GetStackPointer() const { return m_gpRegisters.regs[1]; }
+    inline const uint64_t GetFramePointer() const { return m_gpRegisters.regs[31]; }
 #endif
 #endif // __APPLE__
     bool IsCrashThread() const;

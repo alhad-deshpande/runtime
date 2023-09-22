@@ -267,9 +267,9 @@ inline void UnsetSSFlag(DT_CONTEXT *pContext)
 
 inline bool IsSSFlagEnabled(DT_CONTEXT * context)
 {
-        _ASSERTE(!"unimplemented on POWERPC64 yet");
+    _ASSERTE(!"unimplemented on POWERPC64 yet");
     //_ASSERTE(context != NULL);
-    //return (context->EFlags & 0x100) != 0;
+    return 0;
 }
 
 
@@ -283,7 +283,5 @@ inline void InitializePRD(PRD_TYPE *p1) {
 inline bool PRDIsEmpty(PRD_TYPE p1) {
     return p1 == 0;
 }
-
-
 
 #endif // PRIMITIVES_H_
