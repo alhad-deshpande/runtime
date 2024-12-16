@@ -16,7 +16,6 @@
 #include <fcntl.h>
 #include <fnmatch.h>
 #include <ctime>
-#include <locale>
 #include <pwd.h>
 #include "config.h"
 #include <minipal/getexepath.h>
@@ -171,6 +170,7 @@ namespace
         }
 
         fclose(file);
+        free(line);
         if (!found)
             return false;
 
@@ -269,7 +269,7 @@ bool pal::get_default_breadcrumb_store(string_t* recv)
 {
     recv->clear();
     pal::string_t ext;
-    if (pal::getenv(_X("CORE_BREADCRUMBS"), &ext) && pal::realpath(&ext))
+    if (pal::getenv(_X("CORE_BREADCRUMBS"), &ext) && pal::fullpath(&ext))
     {
         // We should have the path in ext.
         trace::info(_X("Realpath CORE_BREADCRUMBS [%s]"), ext.c_str());
@@ -301,7 +301,7 @@ bool pal::get_default_servicing_directory(string_t* recv)
 {
     recv->clear();
     pal::string_t ext;
-    if (pal::getenv(_X("CORE_SERVICING"), &ext) && pal::realpath(&ext))
+    if (pal::getenv(_X("CORE_SERVICING"), &ext) && pal::fullpath(&ext))
     {
         // We should have the path in ext.
         trace::info(_X("Realpath CORE_SERVICING [%s]"), ext.c_str());
@@ -332,7 +332,7 @@ bool pal::get_default_servicing_directory(string_t* recv)
 
 bool is_read_write_able_directory(pal::string_t& dir)
 {
-    return pal::realpath(&dir) &&
+    return pal::fullpath(&dir) &&
         (access(dir.c_str(), R_OK | W_OK | X_OK) == 0);
 }
 
@@ -591,6 +591,22 @@ bool pal::get_default_installation_dir_for_arch(pal::architecture arch, pal::str
         append_path(recv, get_arch_name(arch));
     }
 #endif
+#elif defined(TARGET_FREEBSD)
+    int mib[2];
+    char buf[PATH_MAX];
+    size_t len = PATH_MAX;
+
+    mib[0] = CTL_USER;
+    mib[1] = USER_LOCALBASE;
+    if (::sysctl(mib, 2, buf, &len, NULL, 0) == 0)
+    {
+        recv->assign(buf);
+        recv->append(_X("/share/dotnet"));
+    }
+    else
+    {
+        recv->assign(_X("/usr/local/share/dotnet"));
+    }
 #else
     recv->assign(_X("/usr/share/dotnet"));
 #endif
@@ -665,7 +681,7 @@ pal::string_t pal::get_current_os_rid_platform()
     return ridOS;
 }
 #elif defined(TARGET_FREEBSD)
-// On FreeBSD get major verion. Minors should be compatible
+// On FreeBSD get major version. Minors should be compatible
 pal::string_t pal::get_current_os_rid_platform()
 {
     pal::string_t ridOS;
@@ -755,7 +771,7 @@ pal::string_t pal::get_current_os_rid_platform()
 #else
 // For some distros, we don't want to use the full version from VERSION_ID. One example is
 // Red Hat Enterprise Linux, which includes a minor version in their VERSION_ID but minor
-// versions are backwards compatable.
+// versions are backwards compatible.
 //
 // In this case, we'll normalized RIDs like 'rhel.7.2' and 'rhel.7.3' to a generic
 // 'rhel.7'. This brings RHEL in line with other distros like CentOS or Debian which
@@ -841,8 +857,13 @@ pal::string_t pal::get_current_os_rid_platform()
                     size_t pos = line.find(strVersionID);
                     if ((pos != std::string::npos) && (pos == 0))
                     {
-                        valVersionID.append(line.substr(11));
-                        fFoundVersion = true;
+                        pal::string_t version = line.substr(11);
+                        // check if version characters are valid (quotes are trimmed at a later stage)
+                        if (!version.empty() && version.find_first_not_of("0123456789.\"'") == std::string::npos)
+                        {
+                            valVersionID.append(version);
+                            fFoundVersion = true;
+                        }
                     }
                 }
 
@@ -937,6 +958,11 @@ bool pal::getenv(const pal::char_t* name, pal::string_t* recv)
     }
 
     return (recv->length() > 0);
+}
+
+bool pal::fullpath(pal::string_t* path, bool skip_error_logging)
+{
+    return realpath(path, skip_error_logging);
 }
 
 bool pal::realpath(pal::string_t* path, bool skip_error_logging)

@@ -242,7 +242,7 @@ namespace System.Linq.Expressions
 
         internal override ReadOnlyCollection<Expression> GetOrMakeArguments()
         {
-            return EmptyReadOnlyCollection<Expression>.Instance;
+            return ReadOnlyCollection<Expression>.Empty;
         }
 
         internal override bool SameArguments(ICollection<Expression>? arguments) =>
@@ -622,7 +622,7 @@ namespace System.Linq.Expressions
 
         internal override ReadOnlyCollection<Expression> GetOrMakeArguments()
         {
-            return EmptyReadOnlyCollection<Expression>.Instance;
+            return ReadOnlyCollection<Expression>.Empty;
         }
 
         internal override bool SameArguments(ICollection<Expression>? arguments) =>
@@ -1138,14 +1138,12 @@ namespace System.Linq.Expressions
         /// <paramref name="instance"/> or <paramref name="methodName"/> is null.</exception>
         /// <exception cref="InvalidOperationException">No method whose name is <paramref name="methodName"/>, whose type parameters match <paramref name="typeArguments"/>, and whose parameter types match <paramref name="arguments"/> is found in <paramref name="instance"/>.Type or its base types.-or-More than one method whose name is <paramref name="methodName"/>, whose type parameters match <paramref name="typeArguments"/>, and whose parameter types match <paramref name="arguments"/> is found in <paramref name="instance"/>.Type or its base types.</exception>
         [RequiresUnreferencedCode(ExpressionRequiresUnreferencedCode)]
+        [RequiresDynamicCode(GenericMethodRequiresDynamicCode)]
         public static MethodCallExpression Call(Expression instance, string methodName, Type[]? typeArguments, params Expression[]? arguments)
         {
             ArgumentNullException.ThrowIfNull(instance);
             ArgumentNullException.ThrowIfNull(methodName);
-            if (arguments == null)
-            {
-                arguments = Array.Empty<Expression>();
-            }
+            arguments ??= Array.Empty<Expression>();
 
             BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.FlattenHierarchy;
             return Expression.Call(instance, FindMethod(instance.Type, methodName, typeArguments, arguments, flags)!, arguments);
@@ -1164,6 +1162,7 @@ namespace System.Linq.Expressions
         /// <paramref name="type"/> or <paramref name="methodName"/> is null.</exception>
         /// <exception cref="InvalidOperationException">No method whose name is <paramref name="methodName"/>, whose type parameters match <paramref name="typeArguments"/>, and whose parameter types match <paramref name="arguments"/> is found in <paramref name="type"/> or its base types.-or-More than one method whose name is <paramref name="methodName"/>, whose type parameters match <paramref name="typeArguments"/>, and whose parameter types match <paramref name="arguments"/> is found in <paramref name="type"/> or its base types.</exception>
         [RequiresUnreferencedCode(GenericMethodRequiresUnreferencedCode)]
+        [RequiresDynamicCode(GenericMethodRequiresDynamicCode)]
         public static MethodCallExpression Call(
             [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicMethods | DynamicallyAccessedMemberTypes.NonPublicMethods)] Type type,
             string methodName,
@@ -1173,9 +1172,9 @@ namespace System.Linq.Expressions
             ArgumentNullException.ThrowIfNull(type);
             ArgumentNullException.ThrowIfNull(methodName);
 
-            if (arguments == null) arguments = Array.Empty<Expression>();
-            BindingFlags flags = BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.FlattenHierarchy;
-            return Expression.Call(null, FindMethod(type, methodName, typeArguments, arguments, flags)!, arguments);
+            arguments ??= Array.Empty<Expression>();
+            const BindingFlags Flags = BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.FlattenHierarchy;
+            return Expression.Call(null, FindMethod(type, methodName, typeArguments, arguments, Flags)!, arguments);
         }
 
         /// <summary>Creates a <see cref="MethodCallExpression"/> that represents a method call.</summary>
@@ -1294,6 +1293,7 @@ namespace System.Linq.Expressions
         }
 
         [RequiresUnreferencedCode(GenericMethodRequiresUnreferencedCode)]
+        [RequiresDynamicCode(GenericMethodRequiresDynamicCode)]
         private static MethodInfo? FindMethod(
             [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicMethods | DynamicallyAccessedMemberTypes.NonPublicMethods)] Type type,
             string methodName,
@@ -1369,6 +1369,7 @@ namespace System.Linq.Expressions
         }
 
         [RequiresUnreferencedCode(GenericMethodRequiresUnreferencedCode)]
+        [RequiresDynamicCode(GenericMethodRequiresDynamicCode)]
         private static MethodInfo? ApplyTypeArgs(MethodInfo m, Type[]? typeArgs)
         {
             if (typeArgs == null || typeArgs.Length == 0)

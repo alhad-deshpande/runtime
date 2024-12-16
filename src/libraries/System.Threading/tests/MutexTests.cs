@@ -272,7 +272,7 @@ namespace System.Threading.Tests
                     return;
                 }
 
-                Assert.Throws<UnauthorizedAccessException>(() => new Mutex(false, "Global\\" + Guid.NewGuid().ToString("N")));
+                Assert.Throws<UnauthorizedAccessException>(() => new Mutex(false, $"Global\\{Guid.NewGuid():N}"));
                 Assert.True(RevertToSelf());
             });
         }
@@ -282,7 +282,7 @@ namespace System.Threading.Tests
         public void Ctor_TryCreateGlobalMutexTest_Uwp()
         {
             ThreadTestHelpers.RunTestInBackgroundThread(() =>
-                Assert.Throws<UnauthorizedAccessException>(() => new Mutex(false, "Global\\" + Guid.NewGuid().ToString("N"))));
+                Assert.Throws<UnauthorizedAccessException>(() => new Mutex(false, $"Global\\{Guid.NewGuid():N}")));
         }
 
         [ConditionalTheory(typeof(PlatformDetection), nameof(PlatformDetection.IsThreadingSupported))]
@@ -661,6 +661,7 @@ namespace System.Threading.Tests
         }
 
         [ConditionalFact(typeof(PlatformDetection), nameof(PlatformDetection.IsThreadingSupported))]
+        [ActiveIssue("https://github.com/dotnet/runtime/issues/96191", TestPlatforms.Browser)]
         public void NamedMutex_ThreadExitDisposeRaceTest()
         {
             var mutexName = Guid.NewGuid().ToString("N");

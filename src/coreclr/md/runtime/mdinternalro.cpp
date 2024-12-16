@@ -400,7 +400,7 @@ HRESULT MDInternalRO::EnumInit(     // return S_FALSE if record not found
             IfFailGo(m_LiteWeightStgdb.m_MiniMd.GetPropertyMapRecord(ridPropertyMap, &pPropertyMapRec));
             phEnum->u.m_ulStart = m_LiteWeightStgdb.m_MiniMd.getPropertyListOfPropertyMap(pPropertyMapRec);
             IfFailGo(m_LiteWeightStgdb.m_MiniMd.getEndPropertyListOfPropertyMap(ridPropertyMap, &(phEnum->u.m_ulEnd)));
-            ulMax = m_LiteWeightStgdb.m_MiniMd.getCountPropertys() + 1;
+            ulMax = m_LiteWeightStgdb.m_MiniMd.getCountProperties() + 1;
             if(phEnum->u.m_ulStart == 0) phEnum->u.m_ulStart = 1;
             if(phEnum->u.m_ulEnd > ulMax) phEnum->u.m_ulEnd = ulMax;
             if(phEnum->u.m_ulStart > phEnum->u.m_ulEnd) phEnum->u.m_ulStart = phEnum->u.m_ulEnd;
@@ -1248,7 +1248,7 @@ HRESULT MDInternalRO::GetItemGuid(      // return hresult
         wzBlob[0] = '{';
         wzBlob[37] = '}';
         wzBlob[38] = 0;
-        hr = IIDFromString(wzBlob, pGuid);
+        hr = LPCWSTRToGuid(wzBlob, pGuid) ? S_OK : E_FAIL;
     }
     else
         *pGuid = GUID_NULL;
@@ -1675,9 +1675,6 @@ HRESULT MDInternalRO::GetMethodSpecProps(         // S_OK or error.
     HRESULT         hr = NOERROR;
     MethodSpecRec  *pMethodSpecRec;
 
-    LOG((LOGMD, "MD RegMeta::GetMethodSpecProps(0x%08x, 0x%08x, 0x%08x, 0x%08x)\n",
-        mi, tkParent, ppvSigBlob, pcbSigBlob));
-
     _ASSERTE(TypeFromToken(mi) == mdtMethodSpec);
 
     IfFailRet(m_LiteWeightStgdb.m_MiniMd.GetMethodSpecRecord(RidFromToken(mi), &pMethodSpecRec));
@@ -1953,7 +1950,7 @@ HRESULT MDInternalRO::GetPropertyInfoForMethodDef(  // Result.
 
             if (InterlockedCompareExchangeT<CMethodSemanticsMap *>(
                 &m_pMethodSemanticsMap, pMethodSemanticsMap, NULL) == NULL)
-            {   // The exchange did happen, supress of the allocated map
+            {   // The exchange did happen, suppress of the allocated map
                 pMethodSemanticsMap.SuppressRelease();
             }
         }
@@ -3114,7 +3111,7 @@ BOOL MDInternalRO::IsValidToken(        // True or False.
     case mdtEvent:
         return (rid <= m_LiteWeightStgdb.m_MiniMd.getCountEvents());
     case mdtProperty:
-        return (rid <= m_LiteWeightStgdb.m_MiniMd.getCountPropertys());
+        return (rid <= m_LiteWeightStgdb.m_MiniMd.getCountProperties());
     case mdtModuleRef:
         return (rid <= m_LiteWeightStgdb.m_MiniMd.getCountModuleRefs());
     case mdtTypeSpec:
@@ -3150,7 +3147,6 @@ mdModule MDInternalRO::GetModuleFromScope(void)
 
 //*****************************************************************************
 // Fill a variant given a MDDefaultValue
-// This routine will create a bstr if the ELEMENT_TYPE of default value is STRING
 //*****************************************************************************
 __checkReturn
 HRESULT _FillMDDefaultValue(
@@ -3221,7 +3217,7 @@ HRESULT _FillMDDefaultValue(
             {
                 IfFailGo(CLDB_E_FILE_CORRUPT);
             }
-            __int32 Value = GET_UNALIGNED_VAL32(pValue);
+            int32_t Value = GET_UNALIGNED_VAL32(pValue);
             pMDDefaultValue->m_fltValue = (float &)Value;
         }
         break;
@@ -3231,7 +3227,7 @@ HRESULT _FillMDDefaultValue(
             {
                 IfFailGo(CLDB_E_FILE_CORRUPT);
             }
-            __int64 Value = GET_UNALIGNED_VAL64(pValue);
+            int64_t Value = GET_UNALIGNED_VAL64(pValue);
             pMDDefaultValue->m_dblValue = (double &) Value;
         }
         break;
@@ -3239,19 +3235,7 @@ HRESULT _FillMDDefaultValue(
         if (cbValue == 0)
             pValue = NULL;
 
-#if BIGENDIAN
-        {
-            // We need to allocate and swap the string if we're on a big endian
-            // This allocation will be freed by the MDDefaultValue destructor.
-            pMDDefaultValue->m_wzValue = new WCHAR[(cbValue + 1) / sizeof (WCHAR)];
-            IfNullGo(pMDDefaultValue->m_wzValue);
-            memcpy(const_cast<WCHAR *>(pMDDefaultValue->m_wzValue), pValue, cbValue);
-            _ASSERTE(cbValue % sizeof(WCHAR) == 0);
-            SwapStringLength(const_cast<WCHAR *>(pMDDefaultValue->m_wzValue), cbValue / sizeof(WCHAR));
-        }
-#else
         pMDDefaultValue->m_wzValue = (LPWSTR) pValue;
-#endif
         break;
     case ELEMENT_TYPE_CLASS:
         //

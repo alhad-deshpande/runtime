@@ -1,9 +1,8 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-using System.Text;
 using System.Diagnostics;
-
+using System.Text;
 using System.Threading.Tasks;
 
 namespace System.Xml
@@ -50,10 +49,7 @@ namespace System.Xml
                 if (_leftOverBytesCount > 0)
                 {
                     count -= _leftOverBytesCount;
-                    if (_leftOverBytes == null)
-                    {
-                        _leftOverBytes = new byte[3];
-                    }
+                    _leftOverBytes ??= new byte[3];
                     for (int i = 0; i < _leftOverBytesCount; i++)
                     {
                         _leftOverBytes[i] = buffer[index + count + i];

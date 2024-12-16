@@ -4,7 +4,7 @@
 
 There are two main ways of running .NET Applications: through `dotnet` or through the `apphost` executables. The executable is in charge of finding and loading `hostfxr`. `hostfxr`, in turn, must find and load `hostpolicy`. It is also responsible for searching for the SDK when running .NET SDK commands. Finally, `hostpolicy` must find and load the runtime (`coreclr`). See [host components](host-components.md) for details.
 
-An application can either be [framework-dependent](https://docs.microsoft.com/dotnet/core/deploying/#publish-framework-dependent) or [self-contained](https://docs.microsoft.com/dotnet/core/deploying/#publish-self-contained). Framework-dependent apps must have the runtime files inside predefined folders. Self-contained apps are expected to have their dependencies in the same location as the executable.
+An application can either be [framework-dependent](https://learn.microsoft.com/dotnet/core/deploying/#publish-framework-dependent) or [self-contained](https://learn.microsoft.com/dotnet/core/deploying/#publish-self-contained). Framework-dependent apps must have the runtime files inside predefined folders. Self-contained apps are expected to have their dependencies in the same location as the executable.
 
 ## Semantic Versioning
 
@@ -42,7 +42,7 @@ There are two possibilities for a muxer: it can be a framework-dependent app or 
 In the first case the app file path should have been specified as an argument to the dotnet.exe.
 
 In the second case the `dotnet.dll` from SDK must be invoked as a framework-dependent app. At first the running program searches for the `global.json` file which may have specified a CLI version. It starts from the current working directory and looks for it inside all parent folder hierarchy. After that, it searches for the dotnet.dll file inside the `sdk\<CLI_version>` sub-folder in the executable directory.
-The exact algorithm how versions as matched is described (with some history) in the [docs](https://docs.microsoft.com/en-us/dotnet/core/tools/global-json#matching-rules)
+The exact algorithm how versions as matched is described (with some history) in the [docs](https://learn.microsoft.com/dotnet/core/tools/global-json#matching-rules)
 
 Note: if the SDK lookup is invoked through `hostfxr_resolve_sdk2` the algorithm is the same, expect that the function can disallow pre-release versions via the `hostfxr_resolve_sdk2_flags_t::disallow_prerelease` flag.
 
@@ -86,7 +86,7 @@ From the framework's `name` and `version` the appropriate framework location is 
 
 In order for other frameworks (or platforms such as ASP.NET) to get the same benefits of roll-forward and self-containment for serviceability, 2.1 will support multiple frameworks.
 
-For 2.1, a given framework can only depend upon another single framework. An app can still only depend upon a single framework as well. Thus it repesents a "vertical" hierarchy. It is possible to allow additional frameworks in a "horizontal" manner, but that is out of scope for 2.1.
+For 2.1, a given framework can only depend upon another single framework. An app can still only depend upon a single framework as well. Thus it represents a "vertical" hierarchy. It is possible to allow additional frameworks in a "horizontal" manner, but that is out of scope for 2.1.
 
 Each framework has its own roll-forward semantics. This means ASP.NET can roll-forward independently of NETCore.App even though ASP.NET depends upon the NETCore.App framework.
 
@@ -255,7 +255,7 @@ Using the specified version from the `--fx-version` argument or from the runtime
  - For 2.1+, if the apphost (e.g. myapp.exe) use the environment variable %DOTNET_ROOT% (empty by default)
  - For 2.1+, if the apphost and %DOTNET_ROOT% is empty, use the `Default installation location`.
 
-2.	Obtain the most appropriate version from the `Global .NET location` and compare it agaist the most appropriate version from the first step. Select the most appropriate version from the two locations. If a compatible framework cannot be found, then an error will be displayed.
+2.	Obtain the most appropriate version from the `Global .NET location` and compare it against the most appropriate version from the first step. Select the most appropriate version from the two locations. If a compatible framework cannot be found, then an error will be displayed.
 
 Determine the most appropriate version varies for release (production) and pre-release versions.
 - For releases:

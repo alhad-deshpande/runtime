@@ -1,9 +1,9 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-using System.Diagnostics;
 using System.Collections;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Resources;
 
 namespace System.Data
@@ -113,9 +113,8 @@ namespace System.Data
                 }
                 AddUniqueConstraint((UniqueConstraint)constraint);
             }
-            else if (constraint is ForeignKeyConstraint)
+            else if (constraint is ForeignKeyConstraint fk)
             {
-                ForeignKeyConstraint fk = (ForeignKeyConstraint)constraint;
                 if (addUniqueWhenAddingForeign)
                 {
                     UniqueConstraint? key = fk.RelatedTable.Constraints.FindKeyConstraint(fk.RelatedColumnsReference);

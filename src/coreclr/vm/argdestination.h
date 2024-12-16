@@ -29,7 +29,7 @@ public:
         LIMITED_METHOD_CONTRACT;
 #if defined(UNIX_AMD64_ABI)
         _ASSERTE((argLocDescForStructInRegs != NULL) || (offset != TransitionBlock::StructInRegsOffset));
-#elif defined(TARGET_ARM64) || defined(TARGET_LOONGARCH64)
+#elif defined(TARGET_ARM64) || defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64)
         // This assert is not interesting on arm64/loongarch64. argLocDescForStructInRegs could be
         // initialized if the args are being enregistered.
 #else
@@ -83,57 +83,99 @@ public:
 #endif // !DACCESS_COMPILE
 #endif // defined(TARGET_ARM64)
 
-#if defined(TARGET_LOONGARCH64)
+#if defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64)
     bool IsStructPassedInRegs()
     {
         return m_argLocDescForStructInRegs != NULL;
     }
 
 #ifndef DACCESS_COMPILE
-    void CopyStructToRegisters(void *src, int fieldBytes)
+    // Copy struct argument into registers described by the current ArgDestination.
+    // Arguments:
+    //  src = source data of the structure
+    //  fieldBytes - size of the structure
+    //  destOffset - nonzero when copying values into Nullable<T>, it is the offset
+    //               of the T value inside of the Nullable<T>
+    void CopyStructToRegisters(void *src, int fieldBytes, int destOffset)
     {
+        static const INT64 NanBox =
+        #ifdef TARGET_RISCV64
+            0xffffffff00000000L;
+        #else
+            0L;
+        #endif // TARGET_RISCV64
+
         _ASSERTE(IsStructPassedInRegs());
+        _ASSERTE(destOffset == 0);
         _ASSERTE(fieldBytes <= 16);
 
-        int argOfs = TransitionBlock::GetOffsetOfFloatArgumentRegisters() + m_argLocDescForStructInRegs->m_idxFloatReg * 8;
+        using namespace FpStruct;
+        FpStructInRegistersInfo info = m_argLocDescForStructInRegs->m_structFields;
+        _ASSERTE(m_argLocDescForStructInRegs->m_cFloatReg == ((info.flags & BothFloat) ? 2 : 1));
+        _ASSERTE(m_argLocDescForStructInRegs->m_cGenReg == ((info.flags & (FloatInt | IntFloat)) ? 1 : 0));
+        _ASSERTE(info.offset2nd + info.Size2nd() <= fieldBytes);
 
-        if (m_argLocDescForStructInRegs->m_structFields == STRUCT_FLOAT_FIELD_ONLY_TWO)
-        { // struct with two floats.
-            _ASSERTE(m_argLocDescForStructInRegs->m_cFloatReg == 2);
-            _ASSERTE(m_argLocDescForStructInRegs->m_cGenReg == 0);
-            *(INT64*)((char*)m_base + argOfs) = *(INT32*)src;
-            *(INT64*)((char*)m_base + argOfs + 8) = *((INT32*)src + 1);
+        int floatRegOffset = TransitionBlock::GetOffsetOfFloatArgumentRegisters() +
+            m_argLocDescForStructInRegs->m_idxFloatReg * FLOAT_REGISTER_SIZE;
+        INT64* floatReg = (INT64*)((char*)m_base + floatRegOffset);
+        static_assert(sizeof(*floatReg) == FLOAT_REGISTER_SIZE, "");
+
+        if (info.flags & (OnlyOne | BothFloat | FloatInt)) // copy first floating field
+        {
+            void* field = (char*)src + info.offset1st;
+            *floatReg++ = (info.SizeShift1st() == 3) ? *(INT64*)field : NanBox | *(INT32*)field;
         }
-        else if ((m_argLocDescForStructInRegs->m_structFields & STRUCT_FLOAT_FIELD_FIRST) != 0)
-        { // the first field is float or double.
-            if ((m_argLocDescForStructInRegs->m_structFields & STRUCT_FIRST_FIELD_SIZE_IS8) == 0)
-                *(INT64*)((char*)m_base + argOfs) = *(INT32*)src; // the first field is float
-            else
-                *(UINT64*)((char*)m_base + argOfs) = *(UINT64*)src; // the first field is double.
-            _ASSERTE(m_argLocDescForStructInRegs->m_cFloatReg == 1);
-            _ASSERTE(m_argLocDescForStructInRegs->m_cGenReg == 1);
-            _ASSERTE((m_argLocDescForStructInRegs->m_structFields & STRUCT_FLOAT_FIELD_SECOND) == 0);//the second field is integer.
-            argOfs = TransitionBlock::GetOffsetOfArgumentRegisters() + m_argLocDescForStructInRegs->m_idxGenReg * 8;
-            if ((m_argLocDescForStructInRegs->m_structFields & STRUCT_HAS_8BYTES_FIELDS_MASK) != 0)
-                *(UINT64*)((char*)m_base + argOfs) = *((UINT64*)src + 1);
-            else
-                *(INT64*)((char*)m_base + argOfs) = *((INT32*)src + 1); // the second field is int32.
+
+        if (info.flags & (BothFloat | IntFloat)) // copy second floating field
+        {
+            void* field = (char*)src + info.offset2nd;
+            *floatReg = (info.SizeShift2nd() == 3) ? *(INT64*)field : NanBox | *(INT32*)field;
         }
-        else if ((m_argLocDescForStructInRegs->m_structFields & STRUCT_FLOAT_FIELD_SECOND) != 0)
-        { // the second field is float or double.
-            *(UINT64*)((char*)m_base + argOfs) = *(UINT64*)src; // NOTE: here ignoring the first size.
-            if ((m_argLocDescForStructInRegs->m_structFields & STRUCT_HAS_8BYTES_FIELDS_MASK) == 0)
-                *(UINT64*)((char*)m_base + argOfs) = *((INT32*)src + 1); // the second field is int32.
-            else
-                *(UINT64*)((char*)m_base + argOfs) = *((UINT64*)src + 1);
-            _ASSERTE(m_argLocDescForStructInRegs->m_cFloatReg == 1);
-            _ASSERTE(m_argLocDescForStructInRegs->m_cGenReg == 1);
-            _ASSERTE((m_argLocDescForStructInRegs->m_structFields & STRUCT_FLOAT_FIELD_FIRST) == 0);//the first field is integer.
-            argOfs = TransitionBlock::GetOffsetOfArgumentRegisters() + m_argLocDescForStructInRegs->m_idxGenReg * 8;
+
+        if (info.flags & (FloatInt | IntFloat)) // copy integer field
+        {
+            int intRegOffset = TransitionBlock::GetOffsetOfArgumentRegisters() +
+                m_argLocDescForStructInRegs->m_idxGenReg * TARGET_POINTER_SIZE;
+            void* intReg = (char*)m_base + intRegOffset;
+
+            // Unlike passing primitives on RISC-V, the integer field of a struct passed by hardware floating-point
+            // calling convention is not type-extended to full register length. Trash the upper bits so the callee
+            // accidentally assuming it is extended consistently gets a bad value.
+            RISCV64_ONLY(INDEBUG(*(INT64*)intReg = 0xDadAddedC0ffee00l;))
+
+            uint32_t offset = (info.flags & IntFloat) ? info.offset1st : info.offset2nd;
+            void* field = (char*)src + offset;
+            unsigned sizeShift = (info.flags & IntFloat) ? info.SizeShift1st() : info.SizeShift2nd();
+            switch (sizeShift)
+            {
+                case 0: *(INT8* )intReg = *(INT8* )field; break;
+                case 1: *(INT16*)intReg = *(INT16*)field; break;
+                case 2: *(INT32*)intReg = *(INT32*)field; break;
+                case 3: *(INT64*)intReg = *(INT64*)field; break;
+                default: _ASSERTE(false);
+            }
+        }
+    }
+
+#ifdef TARGET_RISCV64
+    void CopySingleFloatToRegister(void* src)
+    {
+        void* dest = GetDestinationAddress();
+        UINT32 value = *(UINT32*)src;
+        if (TransitionBlock::IsFloatArgumentRegisterOffset(m_offset))
+        {
+            // NaN-box the floating register value or single-float instructions will treat it as NaN
+            *(UINT64*)dest = 0xffffffff00000000L | value;
         }
         else
-            _ASSERTE(!"---------UNReachable-------LoongArch64!!!");
+        {
+            // When a single float is passed according to integer calling convention
+            // (in integer register or on stack), the upper bits are not specified.
+            *(UINT32*)dest = value;
+        }
     }
+#endif // TARGET_RISCV64
+
 #endif // !DACCESS_COMPILE
 
     PTR_VOID GetStructGenRegDestinationAddress()
@@ -142,7 +184,7 @@ public:
         int argOfs = TransitionBlock::GetOffsetOfArgumentRegisters() + m_argLocDescForStructInRegs->m_idxGenReg * 8;
         return dac_cast<PTR_VOID>(dac_cast<TADDR>(m_base) + argOfs);
     }
-#endif // defined(TARGET_LOONGARCH64)
+#endif // defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64)
 
 #if defined(UNIX_AMD64_ABI)
 
@@ -277,8 +319,6 @@ public:
     void ReportPointersFromStructInRegisters(promote_func *fn, ScanContext *sc, int fieldBytes)
     {
         LIMITED_METHOD_CONTRACT;
-
-        // SPAN-TODO: GC reporting - https://github.com/dotnet/runtime/issues/7103
 
        _ASSERTE(IsStructPassedInRegs());
 

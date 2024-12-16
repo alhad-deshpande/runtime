@@ -18,6 +18,7 @@
 #if HAVE_NETINET_TCP_VAR_H
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wreserved-id-macro"
+#pragma clang diagnostic ignored "-Wunused-macros"
 #define _WANT_INPCB
 #define _WANT_TCPCB
 #pragma clang diagnostic pop
@@ -32,7 +33,9 @@
 #else
 #include <net/route.h>
 #endif
+#if HAVE_NET_IF_H
 #include <net/if.h>
+#endif
 
 #include <sys/types.h>
 #include <stdatomic.h>
@@ -55,6 +58,10 @@
 #include <netinet/ip_var.h>
 #elif HAVE_IOS_NETINET_IP_VAR_H
 #include "ios/netinet/ip_var.h"
+#endif
+#ifdef __FreeBSD__
+#include <sys/callout.h>
+#include <sys/osd.h>
 #endif
 #include <netinet/tcp_var.h>
 #include <netinet/tcp.h>
@@ -341,7 +348,7 @@ int32_t SystemNative_GetIcmpv6GlobalStatistics(Icmpv6GlobalStatistics* retStats)
     return 0;
 }
 
-int32_t SystemNative_GetEstimatedTcpConnectionCount()
+int32_t SystemNative_GetEstimatedTcpConnectionCount(void)
 {
     int32_t count;
     size_t oldlenp = sizeof(count);
@@ -455,7 +462,7 @@ int32_t SystemNative_GetActiveTcpConnectionInfos(NativeTcpConnectionInformation*
     return 0;
 }
 
-int32_t SystemNative_GetEstimatedUdpListenerCount()
+int32_t SystemNative_GetEstimatedUdpListenerCount(void)
 {
     int32_t count;
     size_t oldlenp = sizeof(count);
@@ -702,7 +709,7 @@ int32_t SystemNative_GetNativeIPInterfaceStatistics(char* interfaceName, NativeI
     memset(retStats, 0, sizeof(NativeIPInterfaceStatistics));
     return -1;
 }
-int32_t SystemNative_GetNumRoutes()
+int32_t SystemNative_GetNumRoutes(void)
 {
     int32_t count = 0;
 #if HAVE_RT_MSGHDR2

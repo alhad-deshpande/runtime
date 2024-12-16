@@ -3,12 +3,13 @@ using System.Reflection;
 using System.Collections;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
+using Xunit;
 
-class Program
+public class Program
 {
-    static int Main(string[] args)
+    [Fact]
+    public static void TestEntryPoint()
     {
-/* Re-enable once the fix to https://github.com/dotnet/msbuild/issues/6734 propagates to this repo.
         Assembly assembly = typeof(Class).GetTypeInfo().Assembly;
         Assert(CustomAttributeExtensions.GetCustomAttribute<SingleAttribute<int>>(assembly) != null);
         Assert(((ICustomAttributeProvider)assembly).GetCustomAttributes(typeof(SingleAttribute<int>), true) != null);
@@ -20,7 +21,6 @@ class Program
         Assert(((ICustomAttributeProvider)assembly).IsDefined(typeof(SingleAttribute<bool>), true));
         Assert(CustomAttributeExtensions.GetCustomAttributes(assembly, typeof(SingleAttribute<>)).GetEnumerator().MoveNext());
         Assert(CustomAttributeExtensions.GetCustomAttributes(assembly, typeof(SingleAttribute<>)).GetEnumerator().MoveNext());
-*/
 
         // Uncomment when https://github.com/dotnet/runtime/issues/66168 is resolved
         // Module module = programTypeInfo.Module;
@@ -182,8 +182,6 @@ class Program
 
         AssertAny(a1_data, a => a.AttributeType == typeof(MultiAttribute<Type>) && a.ConstructorArguments.Count == 1 && a.NamedArguments.Count == 0 && a.ConstructorArguments[0].ArgumentType == typeof(Type) &&  ((Type)a.ConstructorArguments[0].Value) == typeof(Class));
         AssertAny(a1_data, a => a.AttributeType == typeof(MultiAttribute<Type>) && a.ConstructorArguments.Count == 0 && a.NamedArguments.Count == 1 && a.NamedArguments[0].TypedValue.ArgumentType == typeof(Type) &&  ((Type)a.NamedArguments[0].TypedValue.Value) == typeof(Class.Derive));
-
-        return 100;
     }
 
     static void Assert(bool condition, [CallerLineNumberAttribute]int line = 0)

@@ -5,6 +5,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Text.Encodings.Web;
+using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
 using Xunit;
@@ -242,9 +243,6 @@ namespace System.Text.Json.Serialization.Tests
         public class DictionaryWithGenericCycle : Dictionary<string, DictionaryWithGenericCycle> { }
 
         [Fact]
-#if BUILDING_SOURCE_GENERATOR_TESTS
-        [ActiveIssue("https://github.com/dotnet/runtime/issues/66421")]
-#endif
         public async Task DictionaryLoop()
         {
             DictionaryWithGenericCycle root = new DictionaryWithGenericCycle();
@@ -261,9 +259,6 @@ namespace System.Text.Json.Serialization.Tests
         }
 
         [Fact]
-#if BUILDING_SOURCE_GENERATOR_TESTS
-        [ActiveIssue("https://github.com/dotnet/runtime/issues/66421")]
-#endif
         public async Task DictionaryPreserveDuplicateDictionaries()
         {
             DictionaryWithGenericCycle root = new DictionaryWithGenericCycle();
@@ -298,9 +293,6 @@ namespace System.Text.Json.Serialization.Tests
         public class DictionaryWithGenericCycleWithinList : Dictionary<string, List<DictionaryWithGenericCycleWithinList>> { }
 
         [Fact]
-#if BUILDING_SOURCE_GENERATOR_TESTS
-        [ActiveIssue("https://github.com/dotnet/runtime/issues/66421")]
-#endif
         public async Task DictionaryArrayLoop()
         {
             DictionaryWithGenericCycleWithinList root = new DictionaryWithGenericCycleWithinList();
@@ -316,9 +308,6 @@ namespace System.Text.Json.Serialization.Tests
         }
 
         [Fact]
-#if BUILDING_SOURCE_GENERATOR_TESTS
-        [ActiveIssue("https://github.com/dotnet/runtime/issues/66421")]
-#endif
         public async Task DictionaryPreserveDuplicateArrays()
         {
             DictionaryWithGenericCycleWithinList root = new DictionaryWithGenericCycleWithinList();
@@ -449,9 +438,6 @@ namespace System.Text.Json.Serialization.Tests
         public class ListWithGenericCycle : List<ListWithGenericCycle> { }
 
         [Fact]
-#if BUILDING_SOURCE_GENERATOR_TESTS
-        [ActiveIssue("https://github.com/dotnet/runtime/issues/66421")]
-#endif
         public async Task ArrayLoop()
         {
             ListWithGenericCycle root = new ListWithGenericCycle();
@@ -518,9 +504,6 @@ namespace System.Text.Json.Serialization.Tests
         public class ListWithGenericCycleWithinDictionary : List<Dictionary<string, ListWithGenericCycleWithinDictionary>> { }
 
         [Fact]
-#if BUILDING_SOURCE_GENERATOR_TESTS
-        [ActiveIssue("https://github.com/dotnet/runtime/issues/66421")]
-#endif
         public async Task ArrayDictionaryLoop()
         {
             ListWithGenericCycleWithinDictionary root = new ListWithGenericCycleWithinDictionary();
@@ -536,9 +519,6 @@ namespace System.Text.Json.Serialization.Tests
         }
 
         [Fact]
-#if BUILDING_SOURCE_GENERATOR_TESTS
-        [ActiveIssue("https://github.com/dotnet/runtime/issues/66421")]
-#endif
         public async Task ArrayPreserveDuplicateDictionaries()
         {
             ListWithGenericCycleWithinDictionary root = new ListWithGenericCycleWithinDictionary
@@ -839,14 +819,14 @@ namespace System.Text.Json.Serialization.Tests
 
         public class ClassWithObjectProperty
         {
-            public ClassWithObjectProperty Child { get; set; }
-            public object Sibling { get; set; }
+            public ClassWithObjectProperty? Child { get; set; }
+            public object? Sibling { get; set; }
         }
 
         public class ClassWithListOfObjectProperty
         {
-            public ClassWithListOfObjectProperty Child { get; set; }
-            public List<object> ListOfObjects { get; set; }
+            public ClassWithListOfObjectProperty? Child { get; set; }
+            public List<object>? ListOfObjects { get; set; }
         }
 
         public interface IBoxedStructWithObjectProperty
@@ -869,6 +849,77 @@ namespace System.Text.Json.Serialization.Tests
             }
 
             IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+        }
+
+        [Theory]
+        [InlineData(typeof(ClassWithConflictingRefProperty), "$ref")]
+        [InlineData(typeof(ClassWithConflictingIdProperty), "$id")]
+        public async Task ClassWithConflictingMetadataProperties_ThrowsInvalidOperationException(Type type, string propertyName)
+        {
+            InvalidOperationException ex;
+            object value = Activator.CreateInstance(type);
+
+            ex = Assert.Throws<InvalidOperationException>(() => Serializer.GetTypeInfo(type, s_serializerOptionsPreserve));
+            ValidateException(ex);
+
+            ex = await Assert.ThrowsAsync<InvalidOperationException>(() => Serializer.SerializeWrapper(value, type, s_serializerOptionsPreserve));
+            ValidateException(ex);
+
+            ex = await Assert.ThrowsAsync<InvalidOperationException>(() => Serializer.DeserializeWrapper("{}", type, s_serializerOptionsPreserve));
+            ValidateException(ex);
+
+            void ValidateException(InvalidOperationException ex)
+            {
+                Assert.Contains($"The type '{type}' contains property '{propertyName}' that conflicts with an existing metadata property name.", ex.Message);
+            }
+        }
+
+        public class ClassWithConflictingRefProperty
+        {
+            [JsonPropertyName("$ref")]
+            public int Value { get; set; }
+        }
+
+        public class ClassWithConflictingIdProperty
+        {
+            [JsonPropertyName("$id")]
+            public int Value { get; set; }
+        }
+
+        [Fact]
+        public async Task ClassWithIgnoredConflictingProperty_Supported()
+        {
+            ClassWithIgnoredConflictingProperty value = new();
+            string json = await Serializer.SerializeWrapper(value, s_serializerOptionsPreserve);
+            Assert.Equal("""{"$id":"1"}""", json);
+
+            value = await Serializer.DeserializeWrapper<ClassWithIgnoredConflictingProperty>(json, s_serializerOptionsPreserve);
+            Assert.NotNull(value);
+        }
+
+        public class ClassWithIgnoredConflictingProperty
+        {
+            [JsonPropertyName("$id"), JsonIgnore]
+            public int Value { get; set; }
+        }
+
+        [Fact]
+        public async Task ClassWithExtensionDataConflictingProperty_Supported()
+        {
+            ClassWithExtensionDataConflictingProperty value = new();
+            string json = await Serializer.SerializeWrapper(value, s_serializerOptionsPreserve);
+            Assert.Equal("""{"$id":"1"}""", json);
+
+            value = await Serializer.DeserializeWrapper<ClassWithExtensionDataConflictingProperty>("""{"$id":"1","extraProp":null}""", s_serializerOptionsPreserve);
+            Assert.NotNull(value);
+            Assert.Equal(1, value.Value.Count);
+            Assert.Contains("extraProp", value.Value);
+        }
+
+        public class ClassWithExtensionDataConflictingProperty
+        {
+            [JsonPropertyName("$id"), JsonExtensionData]
+            public JsonObject Value { get; set; }
         }
     }
 }

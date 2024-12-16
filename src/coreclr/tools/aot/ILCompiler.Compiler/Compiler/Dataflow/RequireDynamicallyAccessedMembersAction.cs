@@ -10,25 +10,30 @@ using Internal.TypeSystem;
 
 namespace ILLink.Shared.TrimAnalysis
 {
-    partial struct RequireDynamicallyAccessedMembersAction
+    internal partial struct RequireDynamicallyAccessedMembersAction
     {
-        readonly ReflectionMarker _reflectionMarker;
-        readonly Origin _memberWithRequirements;
+        private readonly ReflectionMarker _reflectionMarker;
+        private readonly string _reason;
 
         public RequireDynamicallyAccessedMembersAction(
             ReflectionMarker reflectionMarker,
             in DiagnosticContext diagnosticContext,
-            Origin memberWithRequirements)
+            string reason)
         {
             _reflectionMarker = reflectionMarker;
             _diagnosticContext = diagnosticContext;
-            _memberWithRequirements = memberWithRequirements;
+            _reason = reason;
         }
 
         public partial bool TryResolveTypeNameAndMark(string typeName, bool needsAssemblyName, out TypeProxy type)
         {
-            if (_reflectionMarker.TryResolveTypeNameAndMark(typeName, _diagnosticContext.Origin, needsAssemblyName, _memberWithRequirements, out TypeDesc? foundType))
+            if (_reflectionMarker.TryResolveTypeNameAndMark(typeName, _diagnosticContext, needsAssemblyName, _reason, out TypeDesc? foundType))
             {
+                if (foundType.HasInstantiation && _reflectionMarker.Annotations.HasGenericParameterAnnotation(foundType))
+                {
+                    GenericArgumentDataFlow.ProcessGenericArgumentDataFlow(_diagnosticContext, _reflectionMarker, foundType);
+                }
+
                 type = new(foundType);
                 return true;
             }
@@ -41,7 +46,7 @@ namespace ILLink.Shared.TrimAnalysis
 
         private partial void MarkTypeForDynamicallyAccessedMembers(in TypeProxy type, DynamicallyAccessedMemberTypes dynamicallyAccessedMemberTypes)
         {
-            _reflectionMarker.MarkTypeForDynamicallyAccessedMembers(_diagnosticContext.Origin, type.Type, dynamicallyAccessedMemberTypes, _memberWithRequirements);
+            _reflectionMarker.MarkTypeForDynamicallyAccessedMembers(_diagnosticContext.Origin, type.Type, dynamicallyAccessedMemberTypes, _reason);
         }
     }
 }

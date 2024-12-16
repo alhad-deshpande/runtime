@@ -34,6 +34,11 @@ namespace System.Diagnostics
         {
             get
             {
+                if (IsCurrentProcess)
+                {
+                    return Environment.CpuUsage.TotalTime;
+                }
+
                 EnsureState(State.HaveNonExitedId);
                 Interop.Process.proc_stats stat = Interop.Process.GetThreadInfo(_processId, 0);
                 return Process.TicksToTimeSpan(stat.userTime + stat.systemTime);
@@ -51,6 +56,11 @@ namespace System.Diagnostics
         {
             get
             {
+                if (IsCurrentProcess)
+                {
+                    return Environment.CpuUsage.UserTime;
+                }
+
                 EnsureState(State.HaveNonExitedId);
 
                 Interop.Process.proc_stats stat = Interop.Process.GetThreadInfo(_processId, 0);
@@ -61,10 +71,16 @@ namespace System.Diagnostics
         /// <summary>Gets the amount of time the process has spent running code inside the operating system core.</summary>
         [UnsupportedOSPlatform("ios")]
         [UnsupportedOSPlatform("tvos")]
+        [SupportedOSPlatform("maccatalyst")]
         public TimeSpan PrivilegedProcessorTime
         {
             get
             {
+                if (IsCurrentProcess)
+                {
+                    return Environment.CpuUsage.PrivilegedTime;
+                }
+
                 EnsureState(State.HaveNonExitedId);
 
                 Interop.Process.proc_stats stat = Interop.Process.GetThreadInfo(_processId, 0);
@@ -91,7 +107,7 @@ namespace System.Diagnostics
                 }
                 finally
                 {
-                    Marshal.FreeHGlobal((IntPtr) processInfo);
+                    Marshal.FreeHGlobal((IntPtr)processInfo);
                 }
             }
         }

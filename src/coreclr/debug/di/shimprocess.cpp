@@ -52,13 +52,13 @@ ShimProcess::ShimProcess() :
 
     m_machineInfo.Clear();
 
-    m_markAttachPendingEvent = WszCreateEvent(NULL, TRUE, FALSE, NULL);
+    m_markAttachPendingEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
     if (m_markAttachPendingEvent == NULL)
     {
         ThrowLastError();
     }
 
-    m_terminatingEvent = WszCreateEvent(NULL, TRUE, FALSE, NULL);
+    m_terminatingEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
     if (m_terminatingEvent == NULL)
     {
         ThrowLastError();
@@ -344,7 +344,7 @@ void ShimProcess::TrackFileHandleForDebugEvent(const DEBUG_EVENT * pEvent)
 //
 //    We do this in a new thread proc to avoid thread restrictions:
 //    Can't call this on win32 event thread because that can't send the IPC event to
-//    make the aysnc-break request.
+//    make the async-break request.
 //    Can't call this on the RCET because that can't send an async-break (see SendIPCEvent for details)
 //    So we just spin up a new thread to do the work.
 //---------------------------------------------------------------------------------------
@@ -789,6 +789,14 @@ HRESULT ShimProcess::HandleWin32DebugEvent(const DEBUG_EVENT * pEvent)
             }
         }
     }
+#ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
+    else if (pEvent->dwDebugEventCode == CREATE_THREAD_DEBUG_EVENT || 
+            pEvent->dwDebugEventCode == EXIT_THREAD_DEBUG_EVENT ||
+            pEvent->dwDebugEventCode == CREATE_PROCESS_DEBUG_EVENT)
+    {
+        m_pProcess->HandleDebugEventForInPlaceStepping(pEvent);
+    }
+#endif
 
     // Do standard event handling, including Handling loader-breakpoint,
     // and callback into CordbProcess for Attach if needed.
@@ -1563,7 +1571,7 @@ void ShimProcess::PreDispatchEvent(bool fRealCreateProcessEvent /*= false*/)
         // Remember that we're processing the first managed event so that we only call HandleFirstRCEvent() once
         m_fFirstManagedEvent = true;
 
-        // This can fail with the incompatable version HR. The process has already been terminated if this
+        // This can fail with the incompatible version HR. The process has already been terminated if this
         // is the case. This will dispatch an Error callback
         // If this fails, the process is in an undefined state.
         // @dbgtodo ipc-block: this will go away once we get rid
@@ -1609,11 +1617,7 @@ HMODULE ShimProcess::GetDacModule(PathString& dacModulePath)
             ThrowLastError();
         }
 
-        // Dac Dll is named:
-        //   mscordaccore.dll  <-- coreclr
-        //   mscordacwks.dll   <-- desktop
         PCWSTR eeFlavor = MAKEDLLNAME_W(W("mscordaccore"));
-
         wszAccessDllPath.Append(eeFlavor);
     }
     hDacDll = WszLoadLibrary(wszAccessDllPath);
@@ -1657,4 +1661,13 @@ RSLock * ShimProcess::GetShimLock()
 bool ShimProcess::IsThreadSuspendedOrHijacked(ICorDebugThread * pThread)
 {
     return m_pProcess->IsThreadSuspendedOrHijacked(pThread);
+}
+
+bool ShimProcess::IsUnmanagedThreadHijacked(ICorDebugThread * pThread)
+{
+#ifdef FEATURE_INTEROP_DEBUGGING
+    return m_pProcess->IsUnmanagedThreadHijacked(pThread);
+#else
+    return false;
+#endif
 }

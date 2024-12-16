@@ -20,6 +20,9 @@ public class DblArray4
 {
     private static int s_LOH_GEN = 0;
     [Fact]
+    [SkipOnCoreClr("This test is not compatible with GCStress.", RuntimeTestModes.AnyGCStress)]
+    [OuterLoop]
+    [ActiveIssue("https://github.com/dotnet/runtime/issues/101284", typeof(TestLibrary.Utilities), nameof(TestLibrary.Utilities.IsNativeAot))]
     public static int TestEntryPoint()
     {
         if (RuntimeInformation.ProcessArchitecture == Architecture.X86)
@@ -27,7 +30,7 @@ public class DblArray4
             s_LOH_GEN = 2;
         }
 
-        Console.WriteLine("DoubleArrayToLargeObjectHeap is {0}", Environment.GetEnvironmentVariable("complus_DoubleArrayToLargeObjectHeap"));
+        Console.WriteLine("DoubleArrayToLargeObjectHeap is {0}", Environment.GetEnvironmentVariable("DOTNET_DoubleArrayToLargeObjectHeap"));
 
         try
         {

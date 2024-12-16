@@ -10,7 +10,7 @@ namespace System.Collections.Immutable
     {
         private const int MaxSize = 35;
 
-#if NETCOREAPP
+#if NET
         [ThreadStatic]
         private static Stack<RefAsValueType<T>>? t_stack;
 #else
@@ -19,14 +19,11 @@ namespace System.Collections.Immutable
 
         public static void TryAdd(T item)
         {
-#if NETCOREAPP
-            Stack<RefAsValueType<T>>? localStack = t_stack; // cache in a local to avoid unnecessary TLS hits on repeated accesses
-            if (localStack == null)
-            {
-                t_stack = localStack = new Stack<RefAsValueType<T>>(MaxSize);
-            }
+            Stack<RefAsValueType<T>> localStack =
+#if NET
+                t_stack ??= new Stack<RefAsValueType<T>>(MaxSize);
 #else
-            Stack<RefAsValueType<T>> localStack = ThreadLocalStack;
+                ThreadLocalStack;
 #endif
 
             // Just in case we're in a scenario where an object is continually requested on one thread
@@ -39,7 +36,7 @@ namespace System.Collections.Immutable
 
         public static bool TryTake([MaybeNullWhen(false)] out T item)
         {
-#if NETCOREAPP
+#if NET
             Stack<RefAsValueType<T>>? localStack = t_stack; // cache in a local to avoid unnecessary TLS hits on repeated accesses
 #else
             Stack<RefAsValueType<T>> localStack = ThreadLocalStack;
@@ -54,17 +51,13 @@ namespace System.Collections.Immutable
             return false;
         }
 
-#if !NETCOREAPP
+#if !NET
         private static Stack<RefAsValueType<T>> ThreadLocalStack
         {
             get
             {
                 // Ensure the [ThreadStatic] is initialized to a dictionary
-                Dictionary<Type, object>? typesToStacks = AllocFreeConcurrentStack.t_stacks;
-                if (typesToStacks == null)
-                {
-                    AllocFreeConcurrentStack.t_stacks = typesToStacks = new Dictionary<Type, object>();
-                }
+                Dictionary<Type, object>? typesToStacks = AllocFreeConcurrentStack.t_stacks ??= new Dictionary<Type, object>();
 
                 // Get the stack that corresponds to the T
                 if (!typesToStacks.TryGetValue(s_typeOfT, out object? stackObj))
@@ -80,7 +73,7 @@ namespace System.Collections.Immutable
 #endif
     }
 
-#if !NETCOREAPP
+#if !NET
     internal static class AllocFreeConcurrentStack
     {
         // Workaround for https://github.com/dotnet/runtime/issues/4731.

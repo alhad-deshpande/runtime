@@ -52,7 +52,7 @@ namespace System.Security.Cryptography
         /// <summary>
         ///     Options used to set / get the property
         /// </summary>
-        public CngPropertyOptions Options { get; private set; }
+        public CngPropertyOptions Options { get; }
 
         public override bool Equals([NotNullWhen(true)] object? obj)
         {
@@ -77,16 +77,7 @@ namespace System.Security.Cryptography
             if (other._value == null)
                 return false;
 
-            if (_value.Length != other._value.Length)
-                return false;
-
-            for (int i = 0; i < _value.Length; i++)
-            {
-                if (_value[i] != other._value[i])
-                    return false;
-            }
-
-            return true;
+            return _value.AsSpan().SequenceEqual(other._value);
         }
 
         public override int GetHashCode()

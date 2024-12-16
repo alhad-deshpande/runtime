@@ -3,8 +3,8 @@
 
 using System.Collections.Generic;
 using System.ComponentModel.Composition.Primitives;
-using Microsoft.Internal.Collections;
 using System.Diagnostics.CodeAnalysis;
+using Microsoft.Internal.Collections;
 
 namespace System.ComponentModel.Composition.ReflectionModel
 {
@@ -28,7 +28,7 @@ namespace System.ComponentModel.Composition.ReflectionModel
         {
             get
             {
-                return _castSingleValueCache = _castSingleValueCache ?? new Dictionary<Type, Func<Export, object>?>();
+                return _castSingleValueCache ??= new Dictionary<Type, Func<Export, object>?>();
             }
         }
 

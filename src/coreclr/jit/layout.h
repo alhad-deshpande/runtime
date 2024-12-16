@@ -30,7 +30,8 @@ class ClassLayout
     // Array of CorInfoGCType (as BYTE) that describes the GC layout of the class.
     // For small classes the array is stored inline, avoiding an extra allocation
     // and the pointer size overhead.
-    union {
+    union
+    {
         BYTE* m_gcPtrs;
         BYTE  m_gcPtrsArray[sizeof(BYTE*)];
     };
@@ -42,7 +43,7 @@ class ClassLayout
     INDEBUG(const char* m_className;)
 
     // Shortened class name as constructed by Compiler::eeGetShortClassName()
-    INDEBUG(const char16_t* m_shortClassName;)
+    INDEBUG(const char* m_shortClassName;)
 
     // ClassLayout instances should only be obtained via ClassLayoutTable.
     friend class ClassLayoutTable;
@@ -59,7 +60,7 @@ class ClassLayout
         , m_type(TYP_STRUCT)
 #ifdef DEBUG
         , m_className("block")
-        , m_shortClassName(u"block")
+        , m_shortClassName("block")
 #endif
     {
     }
@@ -69,7 +70,7 @@ class ClassLayout
     ClassLayout(CORINFO_CLASS_HANDLE classHandle,
                 bool                 isValueClass,
                 unsigned             size,
-                var_types type DEBUGARG(const char* className) DEBUGARG(const char16_t* shortClassName))
+                var_types type       DEBUGARG(const char* className) DEBUGARG(const char* shortClassName))
         : m_classHandle(classHandle)
         , m_size(size)
         , m_isValueClass(isValueClass)
@@ -107,7 +108,7 @@ public:
         return m_className;
     }
 
-    const char16_t* GetShortClassName() const
+    const char* GetShortClassName() const
     {
         return m_shortClassName;
     }
@@ -116,8 +117,6 @@ public:
 
     bool IsValueClass() const
     {
-        assert(!IsBlockLayout());
-
         return m_isValueClass;
     }
 
@@ -186,9 +185,21 @@ public:
         return m_gcPtrCount != 0;
     }
 
+    bool IsStackOnly(Compiler* comp) const;
+
     bool IsGCPtr(unsigned slot) const
     {
         return GetGCPtr(slot) != TYPE_GC_NONE;
+    }
+
+    bool IsGCRef(unsigned slot) const
+    {
+        return GetGCPtr(slot) == TYPE_GC_REF;
+    }
+
+    bool IsGCByRef(unsigned slot) const
+    {
+        return GetGCPtr(slot) == TYPE_GC_BYREF;
     }
 
     var_types GetGCPtrType(unsigned slot) const
@@ -205,6 +216,8 @@ public:
                 unreached();
         }
     }
+
+    bool IntersectsGCPtr(unsigned offset, unsigned size) const;
 
     static bool AreCompatible(const ClassLayout* layout1, const ClassLayout* layout2);
 

@@ -1,14 +1,10 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-using System;
-using System.Reflection;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
-using System.Collections.Generic;
-using System.Reflection.Runtime.General;
-using System.Reflection.Runtime.TypeInfos;
 using System.Reflection.Runtime.ParameterInfos;
 
 using Internal.Reflection.Core.Execution;
@@ -59,7 +55,7 @@ namespace System.Reflection.Runtime.MethodInfos
             return result;
         }
 
-        public sealed override ParameterInfo[] GetParametersNoCopy()
+        public sealed override ReadOnlySpan<ParameterInfo> GetParametersAsSpan()
         {
             return RuntimeParameters;
         }
@@ -71,9 +67,8 @@ namespace System.Reflection.Runtime.MethodInfos
         [DebuggerGuidedStepThrough]
         public sealed override object Invoke(object? obj, BindingFlags invokeAttr, Binder? binder, object?[]? parameters, CultureInfo? culture)
         {
-            if (parameters == null)
-                parameters = Array.Empty<object>();
-            MethodInvoker methodInvoker;
+            parameters ??= Array.Empty<object>();
+            MethodBaseInvoker methodInvoker;
             try
             {
                 methodInvoker = this.MethodInvoker;
@@ -99,11 +94,11 @@ namespace System.Reflection.Runtime.MethodInfos
             }
 
             object? result = methodInvoker.Invoke(obj, parameters, binder, invokeAttr, culture);
-            System.Diagnostics.DebugAnnotations.PreviousCallContainsDebuggerStepInCode();
+            DebugAnnotations.PreviousCallContainsDebuggerStepInCode();
             return result!;
         }
 
-        public abstract override MethodBase MetadataDefinitionMethod { get; }
+        internal abstract override MethodBase MetadataDefinitionMethod { get; }
 
         public abstract override int MetadataToken
         {
@@ -163,15 +158,11 @@ namespace System.Reflection.Runtime.MethodInfos
 
         public abstract override RuntimeMethodHandle MethodHandle { get; }
 
-        protected MethodInvoker MethodInvoker
+        protected internal MethodBaseInvoker MethodInvoker
         {
             get
             {
-                if (_lazyMethodInvoker == null)
-                {
-                    _lazyMethodInvoker = UncachedMethodInvoker;
-                }
-                return _lazyMethodInvoker;
+                return _lazyMethodInvoker ??= UncachedMethodInvoker;
             }
         }
 
@@ -179,8 +170,8 @@ namespace System.Reflection.Runtime.MethodInfos
 
         protected abstract RuntimeParameterInfo[] RuntimeParameters { get; }
 
-        protected abstract MethodInvoker UncachedMethodInvoker { get; }
+        protected abstract MethodBaseInvoker UncachedMethodInvoker { get; }
 
-        private volatile MethodInvoker _lazyMethodInvoker;
+        private volatile MethodBaseInvoker _lazyMethodInvoker;
     }
 }

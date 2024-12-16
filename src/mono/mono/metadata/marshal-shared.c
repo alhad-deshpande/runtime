@@ -705,14 +705,6 @@ mono_marshal_shared_emit_ptr_to_object_conv (MonoMethodBuilder *mb, MonoType *ty
 		break;
 	}
 
-#ifndef DISABLE_COM
-	case MONO_MARSHAL_CONV_OBJECT_INTERFACE:
-	case MONO_MARSHAL_CONV_OBJECT_IUNKNOWN:
-	case MONO_MARSHAL_CONV_OBJECT_IDISPATCH:
-		mono_cominterop_emit_ptr_to_object_conv (mb, type, conv, mspec);
-		break;
-#endif /* DISABLE_COM */
-
 	case MONO_MARSHAL_CONV_SAFEHANDLE: {
 		/*
 		 * Passing SafeHandles as ref does not allow the unmanaged code
@@ -752,7 +744,6 @@ mono_marshal_shared_emit_struct_conv_full (MonoMethodBuilder *mb, MonoClass *kla
 						int offset_of_first_child_field, MonoMarshalNative string_encoding)
 {
 	MonoMarshalType *info;
-	int i;
 
 	if (m_class_get_parent (klass))
 		mono_marshal_shared_emit_struct_conv_full (mb, m_class_get_parent (klass), to_object, mono_marshal_shared_offset_of_first_nonstatic_field (klass), string_encoding);
@@ -790,7 +781,7 @@ mono_marshal_shared_emit_struct_conv_full (MonoMethodBuilder *mb, MonoClass *kla
 		}
 	}
 
-	for (i = 0; i < info->num_fields; i++) {
+	for (guint32 i = 0; i < info->num_fields; i++) {
 		MonoMarshalNative ntype;
 		MonoMarshalConv conv;
 		MonoType *ftype = info->fields [i].field->type;
@@ -830,9 +821,7 @@ mono_marshal_shared_emit_struct_conv_full (MonoMethodBuilder *mb, MonoClass *kla
 		case MONO_MARSHAL_CONV_NONE: {
 			int t;
 
-			//XXX a byref field!?!? that's not allowed! and worse, it might miss a WB
-			g_assert (!m_type_is_byref (ftype));
-			if (ftype->type == MONO_TYPE_I || ftype->type == MONO_TYPE_U) {
+			if (m_type_is_byref (ftype) || ftype->type == MONO_TYPE_I || ftype->type == MONO_TYPE_U) {
 				mono_mb_emit_ldloc (mb, 1);
 				mono_mb_emit_ldloc (mb, 0);
 				mono_mb_emit_byte (mb, CEE_LDIND_I);
@@ -915,26 +904,8 @@ mono_marshal_shared_emit_struct_conv_full (MonoMethodBuilder *mb, MonoClass *kla
 				break;
 			}
 			case MONO_TYPE_OBJECT: {
-#ifndef DISABLE_COM
-				if (to_object) {
-					mono_mb_emit_ldloc (mb, 1);
-					mono_mb_emit_ldloc (mb, 0);
-					mono_mb_emit_managed_call (mb, mono_get_Marshal_GetObjectForNativeVariant (), NULL);
-					mono_mb_emit_byte (mb, CEE_STIND_REF);
-
-					mono_mb_emit_ldloc (mb, 0);
-					mono_mb_emit_managed_call (mb, mono_get_Variant_Clear (), NULL);
-				}
-				else {
-					mono_mb_emit_ldloc (mb, 0);
-					mono_mb_emit_byte(mb, CEE_LDIND_REF);
-					mono_mb_emit_ldloc (mb, 1);
-					mono_mb_emit_managed_call (mb, mono_get_Marshal_GetNativeVariantForObject (), NULL);
-				}
-#else
 				char *msg = g_strdup_printf ("COM support was disabled at compilation time.");
 				mono_marshal_shared_mb_emit_exception_marshal_directive (mb, msg);
-#endif
 				break;
 			}
 
@@ -1228,14 +1199,6 @@ mono_marshal_shared_emit_object_to_ptr_conv (MonoMethodBuilder *mb, MonoType *ty
 		break;
 	}
 
-#ifndef DISABLE_COM
-	case MONO_MARSHAL_CONV_OBJECT_INTERFACE:
-	case MONO_MARSHAL_CONV_OBJECT_IDISPATCH:
-	case MONO_MARSHAL_CONV_OBJECT_IUNKNOWN:
-		mono_cominterop_emit_object_to_ptr_conv (mb, type, conv, mspec);
-		break;
-#endif /* DISABLE_COM */
-
 	case MONO_MARSHAL_CONV_SAFEHANDLE: {
 		mono_mb_emit_ldloc (mb, 0);
 		mono_mb_emit_byte (mb, CEE_LDIND_I);
@@ -1260,6 +1223,11 @@ mono_marshal_shared_emit_object_to_ptr_conv (MonoMethodBuilder *mb, MonoType *ty
 		mono_mb_emit_byte (mb, CEE_ADD);
 		mono_mb_emit_byte (mb, CEE_LDIND_I);
 		mono_mb_emit_byte (mb, CEE_STIND_I);
+		break;
+	}
+	case MONO_MARSHAL_CONV_OBJECT_IUNKNOWN: {
+		char *msg = g_strdup_printf ("Marshaling not supported for COM type MONO_MARSHAL_CONV_OBJECT_IUNKNOWN.");
+		mono_marshal_shared_mb_emit_exception_marshal_directive (mb, msg);
 		break;
 	}
 

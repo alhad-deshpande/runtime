@@ -12,6 +12,7 @@ using Microsoft.DotNet.RemoteExecutor;
 
 using Xunit;
 using Xunit.Abstractions;
+using System.Threading;
 
 namespace System.Net.NetworkInformation.Tests
 {
@@ -72,7 +73,7 @@ namespace System.Net.NetworkInformation.Tests
 
         private static byte[] GetPingPayload(AddressFamily addressFamily)
             // On Unix, Non-root processes cannot send arbitrary data in the ping packet payload
-            => Capability.CanUseRawSockets(addressFamily) || PlatformDetection.IsOSXLike
+            => Capability.CanUseRawSockets(addressFamily) || PlatformDetection.IsApplePlatform
                 ? TestSettings.PayloadAsBytes
                 : Array.Empty<byte>();
 
@@ -663,6 +664,54 @@ namespace System.Net.NetworkInformation.Tests
                 });
         }
 
+        [ConditionalTheory(typeof(PlatformDetection), nameof(PlatformDetection.IsThreadingSupported))]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task SendPingAsyncWithAlreadyCanceledToken(bool useIPAddress)
+        {
+            using CancellationTokenSource source = new();
+            source.Cancel();
+
+            using Ping ping = new();
+            Task pingTask = useIPAddress
+                ? ping.SendPingAsync(await TestSettings.GetLocalIPAddressAsync(), TimeSpan.FromSeconds(5), cancellationToken: source.Token)
+                : ping.SendPingAsync(TestSettings.LocalHost, TimeSpan.FromSeconds(5), cancellationToken: source.Token);
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => pingTask);
+            Assert.True(pingTask.IsCanceled);
+
+            // ensure that previous cancellation does not prevent future success
+            PingReply reply = useIPAddress
+                ? await ping.SendPingAsync(await TestSettings.GetLocalIPAddressAsync(), TimeSpan.FromSeconds(5))
+                : await ping.SendPingAsync(TestSettings.LocalHost, TimeSpan.FromSeconds(5));
+            Assert.Equal(IPStatus.Success, reply.Status);
+        }
+
+        [ConditionalTheory(typeof(PlatformDetection), nameof(PlatformDetection.IsThreadingSupported))]
+        [InlineData(false, false)]
+        [InlineData(false, true)]
+        [InlineData(true, false)]
+        [InlineData(true, true)]
+        [OuterLoop] // Depends on external host and assumption that successful ping takes long enough for cancellation to go through first
+        public async Task CancelSendPingAsync(bool useIPAddress, bool useCancellationToken)
+        {
+            using CancellationTokenSource source = new();
+
+            using Ping ping = new();
+            Task pingTask = useIPAddress
+                ? ping.SendPingAsync((await Dns.GetHostAddressesAsync(Test.Common.Configuration.Ping.PingHost))[0], TimeSpan.FromSeconds(5), cancellationToken: source.Token)
+                : ping.SendPingAsync(Test.Common.Configuration.Ping.PingHost, TimeSpan.FromSeconds(5), cancellationToken: source.Token);
+            if (useCancellationToken)
+            {
+                source.Cancel();
+            }
+            else
+            {
+                ping.SendAsyncCancel();
+            }
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => pingTask);
+            Assert.True(pingTask.IsCanceled);
+        }
+
         [ConditionalFact(typeof(PlatformDetection), nameof(PlatformDetection.IsThreadingSupported))]
         [OuterLoop] // Depends on external host and assumption that network respects and does not change TTL
         public async Task SendPingToExternalHostWithLowTtlTest()
@@ -692,7 +741,7 @@ namespace System.Net.NetworkInformation.Tests
             options.Ttl = 1;
             // This should always fail unless host is one IP hop away.
             pingReply = await ping.SendPingAsync(host, TestSettings.PingTimeout, payload, options);
-            Assert.True(pingReply.Status == IPStatus.TimeExceeded || pingReply.Status == IPStatus.TtlExpired);
+            Assert.True(pingReply.Status == IPStatus.TimeExceeded || pingReply.Status == IPStatus.TtlExpired, $"pingReply.Status was {pingReply.Status} instead of TimeExceeded or TtlExpired");
             Assert.NotEqual(IPAddress.Any, pingReply.Address);
         }
 
@@ -744,13 +793,13 @@ namespace System.Net.NetworkInformation.Tests
             Assert.Equal(IPStatus.TimedOut, reply.Status);
         }
 
-        private static bool IsRemoteExecutorSupportedAndOnUnixAndSuperUser => RemoteExecutor.IsSupported && PlatformDetection.IsUnixAndSuperUser;
+        private static bool IsRemoteExecutorSupportedAndPrivilegedProcess => RemoteExecutor.IsSupported && PlatformDetection.IsPrivilegedProcess;
 
         [PlatformSpecific(TestPlatforms.AnyUnix)]
-        [ConditionalTheory(nameof(IsRemoteExecutorSupportedAndOnUnixAndSuperUser))]
+        [ConditionalTheory(nameof(IsRemoteExecutorSupportedAndPrivilegedProcess))]
         [InlineData(AddressFamily.InterNetwork)]
         [InlineData(AddressFamily.InterNetworkV6)]
-        [OuterLoop] // Depends on sudo
+        [OuterLoop("Requires sudo access")]
         public void SendPingWithIPAddressAndTimeoutAndBufferAndPingOptions_ElevatedUnix(AddressFamily addressFamily)
         {
             IPAddress localIpAddress = TestSettings.GetLocalIPAddress(addressFamily);
@@ -783,7 +832,7 @@ namespace System.Net.NetworkInformation.Tests
         [InlineData(AddressFamily.InterNetworkV6, "ja_JP.UTF8", null, null)]
         [InlineData(AddressFamily.InterNetworkV6, "en_US.UTF8", "ja_JP.UTF8", null)]
         [InlineData(AddressFamily.InterNetworkV6, "en_US.UTF8", null, "ja_JP.UTF8")]
-        public void SendPing_LocaleEnvVarsMustBeIgnored(AddressFamily addressFamily, string envVar_LANG, string envVar_LC_MESSAGES, string envVar_LC_ALL)
+        public async Task SendPing_LocaleEnvVarsMustBeIgnored(AddressFamily addressFamily, string envVar_LANG, string envVar_LC_MESSAGES, string envVar_LC_ALL)
         {
             IPAddress localIpAddress = TestSettings.GetLocalIPAddress(addressFamily);
             if (localIpAddress == null)
@@ -798,7 +847,7 @@ namespace System.Net.NetworkInformation.Tests
             remoteInvokeStartInfo.EnvironmentVariables["LC_MESSAGES"] = envVar_LC_MESSAGES;
             remoteInvokeStartInfo.EnvironmentVariables["LC_ALL"] = envVar_LC_ALL;
 
-            RemoteExecutor.Invoke(address =>
+            await RemoteExecutor.Invoke(address =>
             {
                 SendBatchPing(
                     (ping) => ping.Send(address, TestSettings.PingTimeout),
@@ -806,7 +855,7 @@ namespace System.Net.NetworkInformation.Tests
                     {
                         PingResultValidator(pingReply, new IPAddress[] { IPAddress.Parse(address) }, null);
                     });
-            }, localIpAddress.ToString(), new RemoteInvokeOptions { StartInfo = remoteInvokeStartInfo }).Dispose();
+            }, localIpAddress.ToString(), new RemoteInvokeOptions { StartInfo = remoteInvokeStartInfo }).DisposeAsync();
         }
 
         [PlatformSpecific(TestPlatforms.AnyUnix)]
@@ -817,7 +866,7 @@ namespace System.Net.NetworkInformation.Tests
         [InlineData(AddressFamily.InterNetworkV6, "ja_JP.UTF8", null, null)]
         [InlineData(AddressFamily.InterNetworkV6, "en_US.UTF8", "ja_JP.UTF8", null)]
         [InlineData(AddressFamily.InterNetworkV6, "en_US.UTF8", null, "ja_JP.UTF8")]
-        public void SendPingAsync_LocaleEnvVarsMustBeIgnored(AddressFamily addressFamily, string envVar_LANG, string envVar_LC_MESSAGES, string envVar_LC_ALL)
+        public async Task SendPingAsync_LocaleEnvVarsMustBeIgnored(AddressFamily addressFamily, string envVar_LANG, string envVar_LC_MESSAGES, string envVar_LC_ALL)
         {
             IPAddress localIpAddress = TestSettings.GetLocalIPAddress(addressFamily);
 
@@ -830,7 +879,7 @@ namespace System.Net.NetworkInformation.Tests
                 }
             };
 
-            RemoteExecutor.Invoke(async address =>
+            await RemoteExecutor.Invoke(async address =>
             {
                 await SendBatchPingAsync(
                     (ping) => ping.SendPingAsync(address),
@@ -838,7 +887,7 @@ namespace System.Net.NetworkInformation.Tests
                     {
                         PingResultValidator(pingReply, new IPAddress[] { IPAddress.Parse(address) }, null);
                     });
-            }, localIpAddress.ToString(), new RemoteInvokeOptions { StartInfo = remoteInvokeStartInfo }).Dispose();
+            }, localIpAddress.ToString(), new RemoteInvokeOptions { StartInfo = remoteInvokeStartInfo }).DisposeAsync();
         }
 
         [ConditionalFact(nameof(UsesPingUtility))]

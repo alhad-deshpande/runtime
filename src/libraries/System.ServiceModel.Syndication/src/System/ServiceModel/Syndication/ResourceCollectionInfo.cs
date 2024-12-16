@@ -1,8 +1,8 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-using System.Collections.ObjectModel;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Xml;
 
 namespace System.ServiceModel.Syndication
@@ -124,14 +124,7 @@ namespace System.ServiceModel.Syndication
             _extensions.LoadElementExtensions(buffer);
         }
 
-        private static IEnumerable<string> CreateSingleEmptyAccept()
-        {
-            if (s_singleEmptyAccept == null)
-            {
-                s_singleEmptyAccept = new List<string>(1) { string.Empty }.AsReadOnly();
-            }
-
-            return s_singleEmptyAccept;
-        }
+        private static IEnumerable<string> CreateSingleEmptyAccept() =>
+            s_singleEmptyAccept ??= new List<string>(1) { string.Empty }.AsReadOnly();
     }
 }

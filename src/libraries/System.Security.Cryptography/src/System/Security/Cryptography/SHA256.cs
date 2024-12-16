@@ -1,12 +1,12 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-using Internal.Cryptography;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using Internal.Cryptography;
 
 namespace System.Security.Cryptography
 {
@@ -35,6 +35,7 @@ namespace System.Security.Cryptography
 
         public static new SHA256 Create() => new Implementation();
 
+        [Obsolete(Obsoletions.CryptoStringFactoryMessage, DiagnosticId = Obsoletions.CryptoStringFactoryDiagId, UrlFormat = Obsoletions.SharedUrlFormat)]
         [RequiresUnreferencedCode(CryptoConfig.CreateFromNameUnreferencedCodeMessage)]
         public static new SHA256? Create(string hashName) => (SHA256?)CryptoConfig.CreateFromName(hashName);
 
@@ -142,7 +143,7 @@ namespace System.Security.Cryptography
             if (!source.CanRead)
                 throw new ArgumentException(SR.Argument_StreamNotReadable, nameof(source));
 
-            return LiteHashProvider.HashStream(HashAlgorithmNames.SHA256, HashSizeInBytes, source, destination);
+            return LiteHashProvider.HashStream(HashAlgorithmNames.SHA256, source, destination);
         }
 
         /// <summary>
@@ -188,7 +189,7 @@ namespace System.Security.Cryptography
             if (!source.CanRead)
                 throw new ArgumentException(SR.Argument_StreamNotReadable, nameof(source));
 
-            return LiteHashProvider.HashStreamAsync(HashAlgorithmNames.SHA256, HashSizeInBytes, source, cancellationToken);
+            return LiteHashProvider.HashStreamAsync(HashAlgorithmNames.SHA256, source, cancellationToken);
         }
 
         /// <summary>
@@ -229,7 +230,6 @@ namespace System.Security.Cryptography
 
             return LiteHashProvider.HashStreamAsync(
                 HashAlgorithmNames.SHA256,
-                HashSizeInBytes,
                 source,
                 destination,
                 cancellationToken);

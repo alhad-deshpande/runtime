@@ -8,9 +8,7 @@
  ****************************************************************************/
 #ifndef SOS_INCLUDE
 
-#ifdef _BLD_CLR
 #include "utilcode.h"
-#endif
 #include "corhlprpriv.h"
 #include <stdlib.h>
 
@@ -23,7 +21,6 @@
 template <SIZE_T SIZE, SIZE_T INCREMENT>
 HRESULT CQuickMemoryBase<SIZE, INCREMENT>::ReSizeNoThrow(SIZE_T iItems)
 {
-#ifdef _BLD_CLR
 #ifdef _DEBUG
 #ifndef DACCESS_COMPILE
     // Exercise heap for OOM-fault injection purposes
@@ -39,7 +36,6 @@ HRESULT CQuickMemoryBase<SIZE, INCREMENT>::ReSizeNoThrow(SIZE_T iItems)
     }
 #endif
 #endif
-#endif
     BYTE *pbBuffNew;
     if (iItems <= cbTotal)
     {
@@ -47,12 +43,10 @@ HRESULT CQuickMemoryBase<SIZE, INCREMENT>::ReSizeNoThrow(SIZE_T iItems)
         return NOERROR;
     }
 
-#ifdef _BLD_CLR
 #ifndef DACCESS_COMPILE
     // not allowed to do allocation if current thread suspends EE
     if (IsSuspendEEThread ())
         return E_OUTOFMEMORY;
-#endif
 #endif
     pbBuffNew = NEW_NOTHROW(iItems + INCREMENT);
     if (!pbBuffNew)
@@ -109,6 +103,27 @@ HRESULT _CountBytesOfOneArg(
     }
     switch (ulElementType)
     {
+        case ELEMENT_TYPE_GENERICINST:
+            // skip over generic type
+            CHECK_REMAINDER;
+            cb = cbTotalMax - cbTotal;
+            IfFailGo( _CountBytesOfOneArg(&pbSig[cbTotal], &cb) );
+            cbTotal += cb;
+
+            // skip over number of parameters
+            CHECK_REMAINDER;
+            cbTotal += CorSigUncompressData(&pbSig[cbTotal], &cArg);
+
+            // loop through type parameters
+            for (cArgsIndex = 0; cArgsIndex < cArg; cArgsIndex++)
+            {
+                CHECK_REMAINDER;
+                cb = cbTotalMax - cbTotal;
+                IfFailGo( _CountBytesOfOneArg(&pbSig[cbTotal], &cb) );
+                cbTotal += cb;
+            }
+            break;
+
         case ELEMENT_TYPE_SZARRAY:
         case 0x1e /* obsolete */:
             // skip over base type

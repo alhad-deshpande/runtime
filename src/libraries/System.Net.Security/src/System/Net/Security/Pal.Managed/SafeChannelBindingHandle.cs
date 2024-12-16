@@ -6,14 +6,12 @@ using System.Runtime.InteropServices;
 using System.Security.Authentication.ExtendedProtection;
 using System.Text;
 
-#pragma warning disable CA1419 // TODO https://github.com/dotnet/roslyn-analyzers/issues/5232: not intended for use with P/Invoke
-
 namespace System.Net.Security
 {
     internal sealed class SafeChannelBindingHandle : ChannelBinding
     {
         private const int CertHashMaxSize = 128;
-        private static readonly int s_secChannelBindingSize = Marshal.SizeOf<SecChannelBindings>();
+        private static unsafe int SecChannelBindingSize => sizeof(SecChannelBindings);
 
         private readonly int _cbtPrefixByteArraySize;
         internal int Length { get; private set; }
@@ -38,8 +36,8 @@ namespace System.Net.Security
                 "tls-unique:"u8;
 
             _cbtPrefixByteArraySize = cbtPrefix.Length;
-            handle = Marshal.AllocHGlobal(s_secChannelBindingSize + _cbtPrefixByteArraySize + CertHashMaxSize);
-            IntPtr cbtPrefixPtr = handle + s_secChannelBindingSize;
+            handle = Marshal.AllocHGlobal(SecChannelBindingSize + _cbtPrefixByteArraySize + CertHashMaxSize);
+            IntPtr cbtPrefixPtr = handle + SecChannelBindingSize;
             cbtPrefix.CopyTo(new Span<byte>((byte*)cbtPrefixPtr, cbtPrefix.Length));
             CertHashPtr = cbtPrefixPtr + _cbtPrefixByteArraySize;
             Length = CertHashMaxSize;
@@ -48,12 +46,12 @@ namespace System.Net.Security
         internal void SetCertHashLength(int certHashLength)
         {
             int cbtLength = _cbtPrefixByteArraySize + certHashLength;
-            Length = s_secChannelBindingSize + cbtLength;
+            Length = SecChannelBindingSize + cbtLength;
 
             SecChannelBindings channelBindings = new SecChannelBindings()
             {
                 ApplicationDataLength = cbtLength,
-                ApplicationDataOffset = s_secChannelBindingSize
+                ApplicationDataOffset = SecChannelBindingSize
             };
             Marshal.StructureToPtr(channelBindings, handle, true);
         }

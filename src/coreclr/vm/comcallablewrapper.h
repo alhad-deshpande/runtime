@@ -255,12 +255,6 @@ public:
         return (m_flags & enum_RepresentsVariantInterface);
     }
 
-    BOOL IsUseOleAutDispatchImpl()
-    {
-        LIMITED_METHOD_CONTRACT;
-        return (m_flags & enum_UseOleAutDispatchImpl);
-    }
-
     BOOL ImplementsIMarshal()
     {
         LIMITED_METHOD_CONTRACT;
@@ -327,7 +321,7 @@ private:
 
         enum_RepresentsVariantInterface       = 0x400, // this is a template for an interface with variance
 
-        enum_UseOleAutDispatchImpl            = 0x800, // the class is decorated with IDispatchImplAttribute(CompatibleImpl)
+        // enum_Unused                        = 0x800,
 
         enum_ImplementsIMarshal               = 0x1000, // the class implements a managed interface with Guid == IID_IMarshal
 
@@ -349,7 +343,7 @@ inline void ComCallWrapperTemplateRelease(ComCallWrapperTemplate *value)
     }
 }
 
-typedef Wrapper<ComCallWrapperTemplate *, DoNothing<ComCallWrapperTemplate *>, ComCallWrapperTemplateRelease, NULL> ComCallWrapperTemplateHolder;
+typedef Wrapper<ComCallWrapperTemplate *, DoNothing<ComCallWrapperTemplate *>, ComCallWrapperTemplateRelease, 0> ComCallWrapperTemplateHolder;
 
 
 //--------------------------------------------------------------------------------
@@ -1047,11 +1041,11 @@ FORCEINLINE void CCWRelease(ComCallWrapper* p)
     p->Release();
 }
 
-class CCWHolder : public Wrapper<ComCallWrapper*, CCWHolderDoNothing, CCWRelease, NULL>
+class CCWHolder : public Wrapper<ComCallWrapper*, CCWHolderDoNothing, CCWRelease, 0>
 {
 public:
     CCWHolder(ComCallWrapper* p = NULL)
-        : Wrapper<ComCallWrapper*, CCWHolderDoNothing, CCWRelease, NULL>(p)
+        : Wrapper<ComCallWrapper*, CCWHolderDoNothing, CCWRelease, 0>(p)
     {
         WRAPPER_NO_CONTRACT;
     }
@@ -1060,7 +1054,7 @@ public:
     {
         WRAPPER_NO_CONTRACT;
 
-        Wrapper<ComCallWrapper*, CCWHolderDoNothing, CCWRelease, NULL>::operator=(p);
+        Wrapper<ComCallWrapper*, CCWHolderDoNothing, CCWRelease, 0>::operator=(p);
     }
 };
 //

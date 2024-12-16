@@ -1,10 +1,10 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-using System.Xml.Serialization;
+using System.Diagnostics.CodeAnalysis;
 using System.Xml;
 using System.Xml.Schema;
-using System.Diagnostics.CodeAnalysis;
+using System.Xml.Serialization;
 
 namespace System.ServiceModel.Syndication
 {
@@ -159,8 +159,8 @@ namespace System.ServiceModel.Syndication
             {
                 SyndicationFeedFormatter.MoveToStartElement(reader);
                 SetDocument(AtomPub10ServiceDocumentFormatter.ReadCategories(reader, null,
-                    () => CreateInlineCategoriesDocument(),
-                    () => CreateReferencedCategoriesDocument(),
+                    CreateInlineCategoriesDocument,
+                    CreateReferencedCategoriesDocument,
                     Version,
                     _maxExtensionSize));
             }

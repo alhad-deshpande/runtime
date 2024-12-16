@@ -84,12 +84,12 @@
 
 using System;
 using System.Diagnostics;
-using System.Text;
-using System.Runtime.InteropServices;
-using System.Security;
-using System.Runtime.CompilerServices;
-using System.Runtime.Versioning;
 using System.Globalization;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
+using System.Security;
+using System.Text;
 
 namespace System.Text
 {
@@ -801,8 +801,7 @@ namespace System.Text
                 bLeftOver2 = -1;
                 bLeftOver3 = -1;
                 bLeftOver4 = -1;
-                if (m_fallbackBuffer != null)
-                    m_fallbackBuffer.Reset();
+                m_fallbackBuffer?.Reset();
             }
 
             // Anything left in our decoder?

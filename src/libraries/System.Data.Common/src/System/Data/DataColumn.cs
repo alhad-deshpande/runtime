@@ -1,20 +1,20 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-using System.Xml;
-using System.Data.Common;
-using System.ComponentModel;
-using System.Diagnostics;
-using System.Globalization;
-using System.Data.SqlTypes;
-using System.Xml.Serialization;
-using System.Runtime.CompilerServices;
+using System.Collections;
 using System.Collections.Generic;
-using System.Threading;
+using System.ComponentModel;
+using System.Data.Common;
+using System.Data.SqlTypes;
+using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Numerics;
 using System.Reflection;
-using System.Collections;
-using System.Diagnostics.CodeAnalysis;
+using System.Runtime.CompilerServices;
+using System.Threading;
+using System.Xml;
+using System.Xml.Serialization;
 
 namespace System.Data
 {
@@ -318,10 +318,7 @@ namespace System.Data
             get { return _caption ?? _columnName; }
             set
             {
-                if (value == null)
-                {
-                    value = string.Empty;
-                }
+                value ??= string.Empty;
 
                 if (_caption == null || string.Compare(_caption, value, true, Locale) != 0)
                 {
@@ -361,10 +358,7 @@ namespace System.Data
                 long logScopeId = DataCommonEventSource.Log.EnterScope("<ds.DataColumn.set_ColumnName|API> {0}, '{1}'", ObjectID, value);
                 try
                 {
-                    if (value == null)
-                    {
-                        value = string.Empty;
-                    }
+                    value ??= string.Empty;
 
                     if (string.Compare(_columnName, value, true, Locale) != 0)
                     {
@@ -385,20 +379,14 @@ namespace System.Data
                         RaisePropertyChanging(nameof(ColumnName));
                         _columnName = value;
                         _encodedColumnName = null;
-                        if (_table != null)
-                        {
-                            _table.Columns.OnColumnPropertyChanged(new CollectionChangeEventArgs(CollectionChangeAction.Refresh, this));
-                        }
+                        _table?.Columns.OnColumnPropertyChanged(new CollectionChangeEventArgs(CollectionChangeAction.Refresh, this));
                     }
                     else if (_columnName != value)
                     {
                         RaisePropertyChanging(nameof(ColumnName));
                         _columnName = value;
                         _encodedColumnName = null;
-                        if (_table != null)
-                        {
-                            _table.Columns.OnColumnPropertyChanged(new CollectionChangeEventArgs(CollectionChangeAction.Refresh, this));
-                        }
+                        _table?.Columns.OnColumnPropertyChanged(new CollectionChangeEventArgs(CollectionChangeAction.Refresh, this));
                     }
                 }
                 finally
@@ -412,10 +400,7 @@ namespace System.Data
         {
             get
             {
-                if (_encodedColumnName == null)
-                {
-                    _encodedColumnName = XmlConvert.EncodeLocalName(ColumnName);
-                }
+                _encodedColumnName ??= XmlConvert.EncodeLocalName(ColumnName);
 
                 Debug.Assert(!string.IsNullOrEmpty(_encodedColumnName));
                 return _encodedColumnName;
@@ -439,10 +424,7 @@ namespace System.Data
             get { return _columnPrefix; }
             set
             {
-                if (value == null)
-                {
-                    value = string.Empty;
-                }
+                value ??= string.Empty;
 
                 DataCommonEventSource.Log.Trace("<ds.DataColumn.set_Prefix|API> {0}, '{1}'", ObjectID, value);
 
@@ -460,6 +442,7 @@ namespace System.Data
         // If the column type is not string, or the column type is string and the value is not empty string, then a non-empty string is returned
         // This method does not throw any formatting exceptions, since we can always format the field value to a string.
         [RequiresUnreferencedCode(DataSet.RequiresUnreferencedCodeMessage)]
+        [RequiresDynamicCode(DataSet.RequiresDynamicCodeMessage)]
         internal string? GetColumnValueAsString(DataRow row, DataRowVersion version)
         {
             object objValue = this[row.GetRecordFromVersion(version)];
@@ -733,10 +716,7 @@ namespace System.Data
             {
                 long logScopeId = DataCommonEventSource.Log.EnterScope("<ds.DataColumn.set_Expression|API> {0}, '{1}'", ObjectID, value);
 
-                if (value == null)
-                {
-                    value = string.Empty;
-                }
+                value ??= string.Empty;
 
                 try
                 {
@@ -1383,7 +1363,7 @@ namespace System.Data
 
         internal void CheckColumnConstraint(DataRow row, DataRowAction action)
         {
-            if (DataTable.UpdatingCurrent(row, action))
+            if (DataTable.UpdatingCurrent(action))
             {
                 CheckNullable(row);
                 CheckMaxLength(row);
@@ -1493,7 +1473,7 @@ namespace System.Data
             return _storage.Compare(record1, record2);
         }
 
-        internal bool CompareValueTo(int record1, object value, bool checkType)
+        internal bool CompareValueToChecked(int record1, object value)
         {
             // this method is used to make sure value and exact type match.
             int valuesMatch = CompareValueTo(record1, value);
@@ -1506,7 +1486,7 @@ namespace System.Data
                 // if strings, then do exact character by character check
                 if (leftType == typeof(string) && rightType == typeof(string))
                 {
-                    return string.CompareOrdinal((string)_storage.Get(record1), (string)value) == 0 ? true : false;
+                    return (string)_storage.Get(record1) == (string)value;
                 }
                 // make sure same type
                 else if (leftType == rightType)
@@ -1710,10 +1690,7 @@ namespace System.Data
                     {
                         if (value != null && value != DBNull.Value && ((string)value).Length > MaxLength)
                         {
-                            if (errorText == null)
-                            {
-                                errorText = ExceptionBuilder.MaxLengthViolationText(ColumnName);
-                            }
+                            errorText ??= ExceptionBuilder.MaxLengthViolationText(ColumnName);
                             dr.RowError = errorText;
                             dr.SetColumnError(this, errorText);
                             error = true;
@@ -1723,10 +1700,7 @@ namespace System.Data
                     {
                         if (!DataStorage.IsObjectNull(value) && ((SqlString)value).Value.Length > MaxLength)
                         {
-                            if (errorText == null)
-                            {
-                                errorText = ExceptionBuilder.MaxLengthViolationText(ColumnName);
-                            }
+                            errorText ??= ExceptionBuilder.MaxLengthViolationText(ColumnName);
                             dr.RowError = errorText;
                             dr.SetColumnError(this, errorText);
                             error = true;
@@ -1766,15 +1740,8 @@ namespace System.Data
             OnPropertyChanging(new PropertyChangedEventArgs(name));
         }
 
-        private DataStorage InsureStorage()
-        {
-            if (_storage == null)
-            {
-                _storage = DataStorage.CreateStorage(this, _dataType, _storageType);
-            }
-
-            return _storage;
-        }
+        private DataStorage InsureStorage() =>
+            _storage ??= DataStorage.CreateStorage(this, _dataType, _storageType);
 
         internal void SetCapacity(int capacity)
         {
@@ -1789,29 +1756,33 @@ namespace System.Data
             ColumnName + " + " + Expression;
 
         [RequiresUnreferencedCode(DataSet.RequiresUnreferencedCodeMessage)]
+        [RequiresDynamicCode(DataSet.RequiresDynamicCodeMessage)]
         internal object ConvertXmlToObject(string s)
         {
-            Debug.Assert(s != null, "Caller is resposible for missing element/attribute case");
+            Debug.Assert(s != null, "Caller is responsible for missing element/attribute case");
             return InsureStorage().ConvertXmlToObject(s);
         }
 
         [RequiresUnreferencedCode(DataSet.RequiresUnreferencedCodeMessage)]
+        [RequiresDynamicCode(DataSet.RequiresDynamicCodeMessage)]
         internal object ConvertXmlToObject(XmlReader xmlReader, XmlRootAttribute? xmlAttrib)
         {
             return InsureStorage().ConvertXmlToObject(xmlReader, xmlAttrib);
         }
 
         [RequiresUnreferencedCode(DataSet.RequiresUnreferencedCodeMessage)]
+        [RequiresDynamicCode(DataSet.RequiresDynamicCodeMessage)]
         internal string ConvertObjectToXml(object value)
         {
-            Debug.Assert(value != null && (value != DBNull.Value), "Caller is resposible for checking on DBNull");
+            Debug.Assert(value != null && (value != DBNull.Value), "Caller is responsible for checking on DBNull");
             return InsureStorage().ConvertObjectToXml(value);
         }
 
         [RequiresUnreferencedCode(DataSet.RequiresUnreferencedCodeMessage)]
+        [RequiresDynamicCode(DataSet.RequiresDynamicCodeMessage)]
         internal void ConvertObjectToXml(object value, XmlWriter xmlWriter, XmlRootAttribute? xmlAttrib)
         {
-            Debug.Assert(value != null && (value != DBNull.Value), "Caller is resposible for checking on DBNull");
+            Debug.Assert(value != null && (value != DBNull.Value), "Caller is responsible for checking on DBNull");
             InsureStorage().ConvertObjectToXml(value, xmlWriter, xmlAttrib);
         }
 
@@ -1834,10 +1805,7 @@ namespace System.Data
 
         internal void AddDependentColumn(DataColumn expressionColumn)
         {
-            if (_dependentColumns == null)
-            {
-                _dependentColumns = new List<DataColumn>();
-            }
+            _dependentColumns ??= new List<DataColumn>();
 
             Debug.Assert(!_dependentColumns.Contains(expressionColumn), "duplicate column - expected to be unique");
             _dependentColumns.Add(expressionColumn);

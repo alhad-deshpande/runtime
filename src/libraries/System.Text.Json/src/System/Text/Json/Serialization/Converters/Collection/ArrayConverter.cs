@@ -18,11 +18,13 @@ namespace System.Text.Json.Serialization.Converters
             ((List<TElement>)state.Current.ReturnValue!).Add(value);
         }
 
-        protected override void CreateCollection(ref Utf8JsonReader reader, ref ReadStack state, JsonSerializerOptions options)
+        internal override bool SupportsCreateObjectDelegate => false;
+        protected override void CreateCollection(ref Utf8JsonReader reader, scoped ref ReadStack state, JsonSerializerOptions options)
         {
             state.Current.ReturnValue = new List<TElement>();
         }
 
+        internal sealed override bool IsConvertibleCollection => true;
         protected override void ConvertCollection(ref ReadStack state, JsonSerializerOptions options)
         {
             List<TElement> list = (List<TElement>)state.Current.ReturnValue!;
@@ -55,7 +57,7 @@ namespace System.Text.Json.Serialization.Converters
 
                     state.Current.EndCollectionElement();
 
-                    if (ShouldFlush(writer, ref state))
+                    if (ShouldFlush(ref state, writer))
                     {
                         state.Current.EnumeratorIndex = ++index;
                         return false;

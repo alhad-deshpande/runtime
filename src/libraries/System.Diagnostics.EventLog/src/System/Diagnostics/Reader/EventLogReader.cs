@@ -1,8 +1,8 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-using System.IO;
 using System.Collections.Generic;
+using System.IO;
 using Microsoft.Win32;
 
 namespace System.Diagnostics.Eventing.Reader
@@ -218,7 +218,7 @@ namespace System.Diagnostics.Eventing.Reader
             // fact that we've already read some events in our buffer that the user
             // hasn't seen yet.
             //
-            offset = offset - (_eventCount - _currentIndex);
+            offset -= (_eventCount - _currentIndex);
 
             SeekReset();
 

@@ -214,6 +214,30 @@ namespace System.Collections.Immutable
             }
 
             /// <summary>
+            /// Returns the current contents as an <see cref="ImmutableArray{T}"/> and sets the collection to a zero length array.
+            /// </summary>
+            /// <remarks>
+            /// If <see cref="Capacity"/> equals <see cref="Count"/>, the internal array will be extracted
+            /// as an <see cref="ImmutableArray{T}"/> without copying the contents. Otherwise, the contents
+            /// will be copied into a new array. The collection will then be set to a zero length array.
+            /// </remarks>
+            /// <returns>An immutable array.</returns>
+            public ImmutableArray<T> DrainToImmutable()
+            {
+                T[] result = _elements;
+
+                if (result.Length != _count)
+                {
+                    result = ToArray();
+                }
+
+                _elements = ImmutableArray<T>.Empty.array!;
+                _count = 0;
+
+                return new ImmutableArray<T>(result);
+            }
+
+            /// <summary>
             /// Removes all items from the <see cref="ICollection{T}"/>.
             /// </summary>
             public void Clear()
@@ -260,7 +284,7 @@ namespace System.Collections.Immutable
 
                 if (!items.TryCopyTo(_elements, index))
                 {
-                    foreach (var item in items)
+                    foreach (T item in items)
                     {
                         _elements[index++] = item;
                     }
@@ -327,7 +351,7 @@ namespace System.Collections.Immutable
                     }
                 }
 
-                foreach (var item in items)
+                foreach (T item in items)
                 {
                     this.Add(item);
                 }
@@ -341,7 +365,7 @@ namespace System.Collections.Immutable
             {
                 Requires.NotNull(items, nameof(items));
 
-                var offset = this.Count;
+                int offset = this.Count;
                 this.Count += items.Length;
 
                 Array.Copy(items, 0, _elements, offset, items.Length);
@@ -350,12 +374,13 @@ namespace System.Collections.Immutable
             /// <summary>
             /// Adds the specified items to the end of the array.
             /// </summary>
+            /// <typeparam name="TDerived">The type that derives from the type of item already in the array.</typeparam>
             /// <param name="items">The items.</param>
             public void AddRange<TDerived>(TDerived[] items) where TDerived : T
             {
                 Requires.NotNull(items, nameof(items));
 
-                var offset = this.Count;
+                int offset = this.Count;
                 this.Count += items.Length;
 
                 Array.Copy(items, 0, _elements, offset, items.Length);
@@ -371,7 +396,7 @@ namespace System.Collections.Immutable
                 Requires.NotNull(items, nameof(items));
                 Requires.Range(length >= 0 && length <= items.Length, nameof(length));
 
-                var offset = this.Count;
+                int offset = this.Count;
                 this.Count += length;
 
                 Array.Copy(items, 0, _elements, offset, length);
@@ -405,7 +430,7 @@ namespace System.Collections.Immutable
             /// Adds the specified items to the end of the array.
             /// </summary>
             /// <param name="items">The items to add at the end of the array.</param>
-            public void AddRange(ReadOnlySpan<T> items)
+            public void AddRange(params ReadOnlySpan<T> items)
             {
                 int offset = this.Count;
                 this.Count += items.Length;
@@ -416,8 +441,9 @@ namespace System.Collections.Immutable
             /// <summary>
             /// Adds the specified items to the end of the array.
             /// </summary>
+            /// <typeparam name="TDerived">The type that derives from the type of item already in the array.</typeparam>
             /// <param name="items">The items to add at the end of the array.</param>
-            public void AddRange<TDerived>(ReadOnlySpan<TDerived> items) where TDerived : T
+            public void AddRange<TDerived>(params ReadOnlySpan<TDerived> items) where TDerived : T
             {
                 int offset = this.Count;
                 this.Count += items.Length;
@@ -432,6 +458,7 @@ namespace System.Collections.Immutable
             /// <summary>
             /// Adds the specified items to the end of the array.
             /// </summary>
+            /// <typeparam name="TDerived">The type that derives from the type of item already in the array.</typeparam>
             /// <param name="items">The items to add at the end of the array.</param>
             public void AddRange<TDerived>(ImmutableArray<TDerived> items) where TDerived : T
             {
@@ -454,6 +481,7 @@ namespace System.Collections.Immutable
             /// <summary>
             /// Adds the specified items to the end of the array.
             /// </summary>
+            /// <typeparam name="TDerived">The type that derives from the type of item already in the array.</typeparam>
             /// <param name="items">The items to add at the end of the array.</param>
             public void AddRange<TDerived>(ImmutableArray<TDerived>.Builder items) where TDerived : T
             {
@@ -551,7 +579,8 @@ namespace System.Collections.Immutable
             /// <param name="length">The number of elements to remove.</param>
             public void RemoveRange(int index, int length)
             {
-                Requires.Range(index >= 0 && index + length <= _count, nameof(index));
+                Requires.Range(index >= 0 && index <= _count, nameof(index));
+                Requires.Range(length >= 0 && index <= _count - length, nameof(length));
 
                 if (length == 0)
                 {
@@ -561,7 +590,7 @@ namespace System.Collections.Immutable
                 if (index + length < this._count)
                 {
 
-#if NET6_0_OR_GREATER
+#if NET
                     if (RuntimeHelpers.IsReferenceOrContainsReferences<T>())
                     {
                         Array.Clear(_elements, index, length); // Clear the elements so that the gc can reclaim the references.
@@ -595,7 +624,7 @@ namespace System.Collections.Immutable
                 Requires.NotNull(items, nameof(items));
 
                 var indicesToRemove = new SortedSet<int>();
-                foreach (var item in items)
+                foreach (T item in items)
                 {
                     int index = this.IndexOf(item, 0, _count, equalityComparer);
                     while (index >= 0 && !indicesToRemove.Add(index) && index + 1 < _count)
@@ -770,7 +799,7 @@ namespace System.Collections.Immutable
                 Requires.Range(startIndex >= 0 && startIndex < this.Count, nameof(startIndex));
                 Requires.Range(count >= 0 && startIndex + count <= this.Count, nameof(count));
 
-                equalityComparer = equalityComparer ?? EqualityComparer<T>.Default;
+                equalityComparer ??= EqualityComparer<T>.Default;
                 if (equalityComparer == EqualityComparer<T>.Default)
                 {
                     return Array.IndexOf(_elements, item, startIndex, count);
@@ -867,7 +896,7 @@ namespace System.Collections.Immutable
                 Requires.Range(startIndex >= 0 && startIndex < this.Count, nameof(startIndex));
                 Requires.Range(count >= 0 && startIndex - count + 1 >= 0, nameof(count));
 
-                equalityComparer = equalityComparer ?? EqualityComparer<T>.Default;
+                equalityComparer ??= EqualityComparer<T>.Default;
                 if (equalityComparer == EqualityComparer<T>.Default)
                 {
                     return Array.LastIndexOf(_elements, item, startIndex, count);
@@ -891,10 +920,11 @@ namespace System.Collections.Immutable
             /// </summary>
             public void Reverse()
             {
+#if NET || NETSTANDARD2_1_OR_GREATER
+                Array.Reverse<T>(_elements, 0, _count);
+#else
                 // The non-generic Array.Reverse is not used because it does not perform
                 // well for non-primitive value types.
-                // If/when a generic Array.Reverse<T> becomes available, the below code
-                // can be deleted and replaced with a call to Array.Reverse<T>.
                 int i = 0;
                 int j = _count - 1;
                 T[] array = _elements;
@@ -906,6 +936,7 @@ namespace System.Collections.Immutable
                     i++;
                     j--;
                 }
+#endif
             }
 
             /// <summary>
@@ -933,11 +964,17 @@ namespace System.Collections.Immutable
 
                 if (Count > 1)
                 {
+#if NET
+                    // MemoryExtensions.Sort is not available in .NET Framework / Standard 2.0.
+                    // But the overload with a Comparison argument doesn't allocate.
+                    _elements.AsSpan(0, _count).Sort(comparison);
+#else
                     // Array.Sort does not have an overload that takes both bounds and a Comparison.
                     // We could special case _count == _elements.Length in order to try to avoid
                     // the IComparer allocation, but the Array.Sort overload that takes a Comparison
                     // allocates such an IComparer internally, anyway.
                     Array.Sort(_elements, 0, _count, Comparer<T>.Create(comparison));
+#endif
                 }
             }
 
@@ -1022,10 +1059,10 @@ namespace System.Collections.Immutable
             {
                 this.EnsureCapacity(this.Count + length);
 
-                var offset = this.Count;
+                int offset = this.Count;
                 this.Count += length;
 
-                var nodes = _elements;
+                T[] nodes = _elements;
                 for (int i = 0; i < length; i++)
                 {
                     nodes[offset + i] = items[i];
@@ -1044,7 +1081,7 @@ namespace System.Collections.Immutable
                 int copied = 0;
                 int removed = 0;
                 int lastIndexRemoved = -1;
-                foreach (var indexToRemove in indicesToRemove)
+                foreach (int indexToRemove in indicesToRemove)
                 {
                     Debug.Assert(lastIndexRemoved < indexToRemove);
                     int copyLength = lastIndexRemoved == -1 ? indexToRemove : (indexToRemove - lastIndexRemoved - 1);

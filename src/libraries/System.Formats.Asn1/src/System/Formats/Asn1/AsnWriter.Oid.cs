@@ -2,6 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System.Diagnostics;
+using System.Globalization;
 using System.Numerics;
 using System.Security.Cryptography;
 
@@ -58,6 +59,19 @@ namespace System.Formats.Asn1
         {
             CheckUniversalTag(tag, UniversalTagNumber.ObjectIdentifier);
 
+#if NET
+            ReadOnlySpan<byte> wellKnownContents = WellKnownOids.GetContents(oidValue);
+
+            if (!wellKnownContents.IsEmpty)
+            {
+                WriteTag(tag?.AsPrimitive() ?? Asn1Tag.ObjectIdentifier);
+                WriteLength(wellKnownContents.Length);
+                wellKnownContents.CopyTo(_buffer.AsSpan(_offset));
+                _offset += wellKnownContents.Length;
+                return;
+            }
+#endif
+
             WriteObjectIdentifierCore(tag?.AsPrimitive() ?? Asn1Tag.ObjectIdentifier, oidValue);
         }
 
@@ -103,6 +117,12 @@ namespace System.Formats.Asn1
                 ReadOnlySpan<char> remaining = oidValue.Slice(2);
 
                 BigInteger subIdentifier = ParseSubIdentifier(ref remaining);
+
+                if (firstComponent <= 1 && subIdentifier >= 40)
+                {
+                    throw new ArgumentException(SR.Argument_InvalidOidValue, nameof(oidValue));
+                }
+
                 subIdentifier += 40 * firstComponent;
 
                 int localLen = EncodeSubIdentifier(tmp.AsSpan(tmpOffset), ref subIdentifier);
@@ -140,9 +160,6 @@ namespace System.Formats.Asn1
                 throw new ArgumentException(SR.Argument_InvalidOidValue, nameof(oidValue));
             }
 
-            // The following code is equivalent to
-            // BigInteger.TryParse(temp, NumberStyles.None, CultureInfo.InvariantCulture, out value)
-            // TODO: Split this for netstandard vs netcoreapp for span-perf?.
             BigInteger value = BigInteger.Zero;
 
             for (int position = 0; position < endIndex; position++)
@@ -156,7 +173,6 @@ namespace System.Formats.Asn1
                 value *= 10;
                 value += AtoI(oidValue[position]);
             }
-
             oidValue = oidValue.Slice(Math.Min(oidValue.Length, endIndex + 1));
             return value;
         }
@@ -201,7 +217,7 @@ namespace System.Formats.Asn1
             }
             while (unencoded != BigInteger.Zero);
 
-            Reverse(dest.Slice(0, idx));
+            dest.Slice(0, idx).Reverse();
             return idx;
         }
     }

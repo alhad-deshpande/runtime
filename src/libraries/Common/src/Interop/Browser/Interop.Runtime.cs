@@ -2,111 +2,73 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System;
+using System.Reflection;
 using System.Runtime.CompilerServices;
-
-using JSObject = System.Runtime.InteropServices.JavaScript.JSObject;
-using JSException = System.Runtime.InteropServices.JavaScript.JSException;
-using Uint8Array = System.Runtime.InteropServices.JavaScript.Uint8Array;
 
 internal static partial class Interop
 {
-    internal static partial class Runtime
+    // WARNING: until https://github.com/dotnet/runtime/issues/37955 is fixed
+    // make sure that the native side always sets the out parameters
+    // otherwise out parameters could stay un-initialized, when the method is used in inlined context
+    internal static unsafe partial class Runtime
     {
         [MethodImplAttribute(MethodImplOptions.InternalCall)]
-        internal static extern string InvokeJS(string str, out int exceptionalResult);
+        internal static extern void ReleaseCSOwnedObject(nint jsHandle);
+#if FEATURE_WASM_MANAGED_THREADS
         [MethodImplAttribute(MethodImplOptions.InternalCall)]
-        internal static extern void InvokeJSWithArgsRef(IntPtr jsHandle, in string method, in object?[] parms, out int exceptionalResult, out object result);
-        // FIXME: All of these signatures need to be object? in various places and not object, but the nullability
-        //  warnings will take me hours and hours to fix so I'm not doing that right now since they're already broken
-        [MethodImplAttribute(MethodImplOptions.InternalCall)]
-        internal static extern void GetObjectPropertyRef(IntPtr jsHandle, in string propertyName, out int exceptionalResult, out object result);
-        [MethodImplAttribute(MethodImplOptions.InternalCall)]
-        internal static extern void SetObjectPropertyRef(IntPtr jsHandle, in string propertyName, in object? value, bool createIfNotExists, bool hasOwnProperty, out int exceptionalResult, out object result);
-        [MethodImplAttribute(MethodImplOptions.InternalCall)]
-        internal static extern void GetByIndexRef(IntPtr jsHandle, int index, out int exceptionalResult, out object result);
-        [MethodImplAttribute(MethodImplOptions.InternalCall)]
-        internal static extern void SetByIndexRef(IntPtr jsHandle, int index, in object? value, out int exceptionalResult, out object result);
-        [MethodImplAttribute(MethodImplOptions.InternalCall)]
-        internal static extern void GetGlobalObjectRef(in string? globalName, out int exceptionalResult, out object result);
+        internal static extern void ReleaseCSOwnedObjectPost(nint targetNativeTID, nint jsHandle);
+#endif
 
-        [MethodImplAttribute(MethodImplOptions.InternalCall)]
-        internal static extern void TypedArrayToArrayRef(IntPtr jsHandle, out int exceptionalResult, out object result);
-        [MethodImplAttribute(MethodImplOptions.InternalCall)]
-        internal static extern void ReleaseCSOwnedObject(IntPtr jsHandle);
-        [MethodImplAttribute(MethodImplOptions.InternalCall)]
-        internal static extern void CreateCSOwnedObjectRef(in string className, in object[] parms, out int exceptionalResult, out object result);
-        [MethodImplAttribute(MethodImplOptions.InternalCall)]
-        internal static extern void TypedArrayCopyToRef(IntPtr jsHandle, int arrayPtr, int begin, int end, int bytesPerElement, out int exceptionalResult, out object result);
-        [MethodImplAttribute(MethodImplOptions.InternalCall)]
-        internal static extern void TypedArrayFromRef(int arrayPtr, int begin, int end, int bytesPerElement, int type, out int exceptionalResult, out object result);
-        [MethodImplAttribute(MethodImplOptions.InternalCall)]
-        internal static extern void TypedArrayCopyFromRef(IntPtr jsHandle, int arrayPtr, int begin, int end, int bytesPerElement, out int exceptionalResult, out object result);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        public static extern void InvokeJSFunction(nint functionHandle, nint data);
+#if FEATURE_WASM_MANAGED_THREADS
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        public static extern void InvokeJSFunctionSend(nint targetNativeTID, nint functionHandle, nint data);
+#endif
 
-        // FIXME: Why are these IntPtr?
-        [MethodImplAttribute(MethodImplOptions.InternalCall)]
-        internal static extern void WebSocketSend(IntPtr webSocketJSHandle, IntPtr messagePtr, int offset, int length, int messageType, bool endOfMessage, out IntPtr promiseJSHandle, out int exceptionalResult, out object result);
-        [MethodImplAttribute(MethodImplOptions.InternalCall)]
-        internal static extern void WebSocketReceive(IntPtr webSocketJSHandle, IntPtr bufferPtr, int offset, int length, IntPtr responsePtr, out IntPtr promiseJSHandle, out int exceptionalResult, out object result);
-        [MethodImplAttribute(MethodImplOptions.InternalCall)]
-        internal static extern void WebSocketOpenRef(in string uri, in object[]? subProtocols, in Delegate onClosed, out IntPtr webSocketJSHandle, out IntPtr promiseJSHandle, out int exceptionalResult, out object result);
-        [MethodImplAttribute(MethodImplOptions.InternalCall)]
-        internal static extern void WebSocketAbort(IntPtr webSocketJSHandle, out int exceptionalResult, out string result);
-        [MethodImplAttribute(MethodImplOptions.InternalCall)]
-        internal static extern void WebSocketCloseRef(IntPtr webSocketJSHandle, int code, in string? reason, bool waitForCloseReceived, out IntPtr promiseJSHandle, out int exceptionalResult, out object result);
-        [MethodImplAttribute(MethodImplOptions.InternalCall)]
-        internal static extern void CancelPromiseRef(IntPtr promiseJSHandle, out int exceptionalResult, out string result);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        public static extern void ResolveOrRejectPromise(nint data);
+#if FEATURE_WASM_MANAGED_THREADS
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        public static extern void ResolveOrRejectPromisePost(nint targetNativeTID, nint data);
+#endif
 
-        // / <summary>
-        // / Execute the provided string in the JavaScript context
-        // / </summary>
-        // / <returns>The js.</returns>
-        // / <param name="str">String.</param>
-        public static string InvokeJS(string str)
-        {
-            string res = InvokeJS(str, out int exception);
-            if (exception != 0)
-                throw new JSException(res);
-            return res;
-        }
+#if !ENABLE_JS_INTEROP_BY_VALUE
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        public static extern nint RegisterGCRoot(void* start, int bytesSize, IntPtr name);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        public static extern void DeregisterGCRoot(nint handle);
+#endif
 
-        public static object GetGlobalObject(string? str = null)
-        {
-            int exception;
-            GetGlobalObjectRef(str, out exception, out object jsObj);
+#if FEATURE_WASM_MANAGED_THREADS
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        public static extern void InstallWebWorkerInterop(nint proxyContextGCHandle, void* beforeSyncJSImport, void* afterSyncJSImport, void* pumpHandler);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        public static extern void UninstallWebWorkerInterop();
 
-            if (exception != 0)
-                throw new JSException($"Error obtaining a handle to global {str}");
-
-            ReleaseInFlight(jsObj);
-            return jsObj;
-        }
-
-        [MethodImplAttribute(MethodImplOptions.NoInlining)]
-        public static void StopProfile()
-        {
-        }
-
-        // Called by the AOT profiler to save profile data into INTERNAL.aot_profile_data
-        [MethodImplAttribute(MethodImplOptions.NoInlining)]
-        public static unsafe void DumpAotProfileData(ref byte buf, int len, string extraArg)
-        {
-            if (len == 0)
-                throw new JSException("Profile data length is 0");
-
-            var arr = new byte[len];
-            fixed (void *p = &buf)
-            {
-                var span = new ReadOnlySpan<byte>(p, len);
-                // Send it to JS
-                var module = (JSObject)Runtime.GetGlobalObject("Module");
-                module.SetObjectProperty("aot_profile_data", Uint8Array.From(span));
-            }
-        }
-
-        internal static void ReleaseInFlight(object? obj)
-        {
-            JSObject? jsObj = obj as JSObject;
-            jsObj?.ReleaseInFlight();
-        }
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        public static extern void InvokeJSImportSync(nint signature, nint args);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        public static extern void InvokeJSImportSyncSend(nint targetNativeTID, nint signature, nint args);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        public static extern void InvokeJSImportAsyncPost(nint targetNativeTID, nint signature, nint args);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        public static extern void CancelPromise(nint taskHolderGCHandle);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        public static extern void CancelPromisePost(nint targetNativeTID, nint taskHolderGCHandle);
+#else
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        public static extern unsafe nint BindJSImportST(void* signature);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        public static extern void InvokeJSImportST(int importHandle, nint args);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        public static extern void CancelPromise(nint gcHandle);
+#endif
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        public static extern void AssemblyGetEntryPoint(IntPtr assemblyNamePtr, int auto_insert_breakpoint, void** monoMethodPtrPtr);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        public static extern void BindAssemblyExports(IntPtr assemblyNamePtr);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        public static extern void GetAssemblyExport(IntPtr assemblyNamePtr, IntPtr namespacePtr, IntPtr classnamePtr, IntPtr methodNamePtr, int signatureHash, IntPtr* monoMethodPtrPtr);
     }
 }

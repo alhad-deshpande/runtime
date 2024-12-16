@@ -1,9 +1,9 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-using System.IO;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Xml;
 using System.Xml.Serialization;
 
@@ -125,17 +125,8 @@ namespace System.Xml.Schema
                 _reader = reader;
             }
 
-            public override string? LookupNamespace(string prefix)
-            {
-                string? ns = _nsMgr.LookupNamespace(prefix);
-
-                if (ns == null)
-                {
-                    ns = _reader.LookupNamespace(prefix);
-                }
-
-                return ns;
-            }
+            public override string? LookupNamespace(string prefix) =>
+                _nsMgr.LookupNamespace(prefix) ?? _reader.LookupNamespace(prefix);
         }
 
         //////////////////////////////////////////////////////////////////////////////////////////////
@@ -607,22 +598,24 @@ namespace System.Xml.Schema
         //
         // for 'block' and 'final' attribute values
         //
-        private static readonly int[] s_derivationMethodValues = {
+        private static ReadOnlySpan<int> DerivationMethodValues =>
+        [
             (int)XmlSchemaDerivationMethod.Substitution,
             (int)XmlSchemaDerivationMethod.Extension,
             (int)XmlSchemaDerivationMethod.Restriction,
             (int)XmlSchemaDerivationMethod.List,
             (int)XmlSchemaDerivationMethod.Union,
             (int)XmlSchemaDerivationMethod.All,
-        };
-        private static readonly string[] s_derivationMethodStrings = {
+        ];
+        private static readonly string[] s_derivationMethodStrings =
+        [
             "substitution",
             "extension",
             "restriction",
             "list",
             "union",
             "#all",
-        };
+        ];
 
         private static readonly string[] s_formStringValues = { "qualified", "unqualified" };
         private static readonly string[] s_useStringValues = { "optional", "prohibited", "required" };
@@ -757,10 +750,7 @@ namespace System.Xml.Schema
             {
                 if (ns == _schemaNames.NsXmlNs)
                 {
-                    if (_namespaces == null)
-                    {
-                        _namespaces = new List<XmlQualifiedName>();
-                    }
+                    _namespaces ??= new List<XmlQualifiedName>();
                     _namespaces.Add(new XmlQualifiedName((name == _schemaNames.QnXmlNs.Name) ? string.Empty : name, value));
                 }
                 else
@@ -2537,12 +2527,12 @@ namespace System.Xml.Schema
                 {
                     if (stringValues[i] == s_derivationMethodStrings[j])
                     {
-                        if ((r & s_derivationMethodValues[j]) != 0 && (r & s_derivationMethodValues[j]) != s_derivationMethodValues[j])
+                        if ((r & DerivationMethodValues[j]) != 0 && (r & DerivationMethodValues[j]) != DerivationMethodValues[j])
                         {
                             SendValidationEvent(SR.Sch_InvalidXsdAttributeValue, attributeName, value, null);
                             return 0;
                         }
-                        r |= s_derivationMethodValues[j];
+                        r |= DerivationMethodValues[j];
                         matched = true;
                         break;
                     }

@@ -1,14 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
+
   <PropertyGroup>
-    <TargetFrameworks>$(NetCoreAppCurrent);$(NetCoreAppMinimum);netstandard2.0;$(NetFrameworkMinimum)</TargetFrameworks>
+    <TargetFrameworks>$(NetCoreAppCurrent);$(NetCoreAppPrevious);$(NetCoreAppMinimum);netstandard2.0;$(NetFrameworkMinimum)</TargetFrameworks>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <DefineConstants>$(DefineConstants);CP_NO_ZEROMEMORY</DefineConstants>
     <IsPackable>true</IsPackable>
-    <PackageDescription>Provides classes that can read and write the ASN.1 BER, CER, and DER data formats.
-
-Commonly Used Types:
-System.Formats.Asn1.AsnReader
-System.Formats.Asn1.AsnWriter</PackageDescription>
+    <PackageDescription>Provides classes that can read and write the ASN.1 BER, CER, and DER data formats.</PackageDescription>
   </PropertyGroup>
 
   <ItemGroup>
@@ -52,6 +49,8 @@ System.Formats.Asn1.AsnWriter</PackageDescription>
     <Compile Include="System\Formats\Asn1\SetOfValueComparer.cs" />
     <Compile Include="System\Formats\Asn1\TagClass.cs" />
     <Compile Include="System\Formats\Asn1\UniversalTagNumber.cs" />
+    <Compile Include="System\Formats\Asn1\WellKnownOids.cs" />
+    <Compile Include="$(CommonPath)System\Obsoletions.cs" Link="Common\System\Obsoletions.cs" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(TargetFramework)' == '$(NetCoreAppCurrent)'">
@@ -64,7 +63,6 @@ System.Formats.Asn1.AsnWriter</PackageDescription>
   </ItemGroup>
 
   <ItemGroup Condition="'$(TargetFrameworkIdentifier)' != '.NETCoreApp'">
-    <PackageReference Include="System.Buffers" Version="$(SystemBuffersVersion)" />
     <PackageReference Include="System.Memory" Version="$(SystemMemoryVersion)" />
   </ItemGroup>
 
@@ -72,4 +70,5 @@ System.Formats.Asn1.AsnWriter</PackageDescription>
     <PackageReference Include="System.ValueTuple" Version="$(SystemValueTupleVersion)" />
     <Reference Include="System.Numerics" />
   </ItemGroup>
+
 </Project>

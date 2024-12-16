@@ -34,8 +34,7 @@ CordbClass::CordbClass(CordbModule *m, mdTypeDef classMetadataToken)
     m_fIsValueClassKnown(false),
     m_fIsValueClass(false),
     m_fHasTypeParams(false),
-    m_continueCounterLastSync(0),
-    m_fCustomNotificationsEnabled(false)
+    m_continueCounterLastSync(0)
 {
     m_classInfo.Clear();
 }
@@ -132,6 +131,7 @@ HRESULT CordbClass::GetStaticFieldValue(mdFieldDef fieldDef,
     IMetaDataImport * pImport = NULL;
     EX_TRY
     {
+        RSLockHolder lockHolder(GetProcess()->GetProcessLock());
         pImport = GetModule()->GetMetaDataImporter(); // throws
 
         // Validate the token.
@@ -236,7 +236,7 @@ HRESULT CordbClass::GetStaticFieldValue2(CordbModule * pModule,
         return CORDBG_E_FIELD_NOT_STATIC;
     }
 
-    CORDB_ADDRESS pRmtStaticValue = NULL;
+    CORDB_ADDRESS pRmtStaticValue = (CORDB_ADDRESS)NULL;
     CordbProcess * pProcess = pModule->GetProcess();
 
     if (!pFieldData->m_fFldIsTLS)
@@ -299,7 +299,7 @@ HRESULT CordbClass::GetStaticFieldValue2(CordbModule * pModule,
         }
     }
 
-    if (pRmtStaticValue == NULL)
+    if (pRmtStaticValue == (CORDB_ADDRESS)NULL)
     {
         // type probably wasn't loaded yet.
         // The debugger may chose to func-eval the creation of an instance of this type and try again.
@@ -328,7 +328,7 @@ HRESULT CordbClass::GetStaticFieldValue2(CordbModule * pModule,
 
     // Static value classes are stored as handles so that GC can deal with them properly.  Thus, we need to follow the
     // handle like an objectref.  Do this by forcing CreateValueByType to think this is an objectref. Note: we don't do
-    // this for value classes that have an RVA, since they're layed out at the RVA with no handle.
+    // this for value classes that have an RVA, since they're laid out at the RVA with no handle.
     bool fIsBoxed = (fIsValueClass &&
                      !pFieldData->m_fFldIsRVA &&
                      !pFieldData->m_fFldIsPrimitive &&
@@ -621,7 +621,7 @@ HRESULT CordbClass::SetJMCStatus(BOOL fIsUserCode)
 // We have to go the EE to find out if a class is a value
 // class or not.  This is because there is no flag for this, but rather
 // it depends on whether the class subclasses System.ValueType (apart
-// from System.Enum...).  Replicating all that resoultion logic
+// from System.Enum...).  Replicating all that resolution logic
 // does not seem like a good plan.
 //
 // We also accept other "evidence" that the class is or isn't a VC, in
@@ -811,7 +811,7 @@ BOOL CordbClass::GotUnallocatedStatic(DacDbiArrayList<FieldData> * pFieldList)
     while ((count < pFieldList->Count()) && !fGotUnallocatedStatic )
     {
         if ((*pFieldList)[count].OkToGetOrSetStaticAddress() &&
-            (*pFieldList)[count].GetStaticAddress() == NULL )
+            (*pFieldList)[count].GetStaticAddress() == (CORDB_ADDRESS)NULL )
         {
             // The address for a regular static field isn't available yet
             // How can this happen?  Statics appear to get allocated during domain load.
@@ -937,7 +937,7 @@ void CordbClass::InitEnCFieldInfo(EnCHangingFieldInfo * pEncField,
     {
         // the field is static, we don't need any additional data
         pEncField->Init(VMPTR_Object::NullPtr(),      /* vmObject */
-                        NULL,                         /* offsetToVars */
+                        0,                            /* offsetToVars */
                         fieldToken,
                         ELEMENT_TYPE_MAX,
                         classToken,
@@ -1191,4 +1191,3 @@ HRESULT CordbClass::SearchFieldInfo(
     // Well, the field doesn't even belong to this class...
     ThrowHR(E_INVALIDARG);
 }
-

@@ -8,7 +8,7 @@ using System.Threading;
 
 namespace System.Security.Permissions
 {
-#if NETCOREAPP
+#if NET
     [Obsolete(Obsoletions.CodeAccessSecurityMessage, DiagnosticId = Obsoletions.CodeAccessSecurityDiagId, UrlFormat = Obsoletions.SharedUrlFormat)]
 #endif
     public sealed class PrincipalPermission : IPermission, ISecurityEncodable, IUnrestrictedPermission
@@ -161,8 +161,7 @@ namespace System.Security.Permissions
                         }
                         if (addToNewIDRoles)
                         {
-                            if (idroles == null)
-                                idroles = new List<IDRole>();
+                            idroles ??= new List<IDRole>();
                             idroles.Add(new IDRole(newAuthenticated, newID, newRole));
                         }
                     }

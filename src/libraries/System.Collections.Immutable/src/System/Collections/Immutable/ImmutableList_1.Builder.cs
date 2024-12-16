@@ -18,7 +18,7 @@ namespace System.Collections.Immutable
         /// </summary>
         /// <remarks>
         /// <para>
-        /// While <see cref="ImmutableList{T}.AddRange"/> and other bulk change methods
+        /// While <see cref="M:ImmutableList{T}.AddRange"/> and other bulk change methods
         /// already provide fast bulk change operations on the collection, this class allows
         /// multiple combinations of changes to be made to a set with equal efficiency.
         /// </para>
@@ -28,7 +28,7 @@ namespace System.Collections.Immutable
         /// </remarks>
         [DebuggerDisplay("Count = {Count}")]
         [DebuggerTypeProxy(typeof(ImmutableListBuilderDebuggerProxy<>))]
-        public sealed class Builder : IList<T>, IList, IOrderedCollection<T>, IImmutableListQueries<T>, IReadOnlyList<T>
+        public sealed class Builder : IList<T>, IList, IReadOnlyList<T>
         {
             /// <summary>
             /// The binary tree used to store the contents of the list.  Contents are typically not entirely frozen.
@@ -134,17 +134,6 @@ namespace System.Collections.Immutable
                 set
                 {
                     this.Root = this.Root.ReplaceAt(index, value);
-                }
-            }
-
-            /// <summary>
-            /// Gets the element in the collection at a given index.
-            /// </summary>
-            T IOrderedCollection<T>.this[int index]
-            {
-                get
-                {
-                    return this[index];
                 }
             }
 
@@ -758,6 +747,7 @@ namespace System.Collections.Immutable
             /// The equality comparer to use in the search.
             /// If <c>null</c>, <see cref="EqualityComparer{T}.Default"/> is used.
             /// </param>
+            /// <returns>A value indicating whether the specified element was found and removed from the collection.</returns>
             public bool Remove(T item, IEqualityComparer<T>? equalityComparer)
             {
                 int index = this.IndexOf(item, 0, this.Count, equalityComparer);
@@ -778,7 +768,7 @@ namespace System.Collections.Immutable
             public void RemoveRange(int index, int count)
             {
                 Requires.Range(index >= 0 && index <= this.Count, nameof(index));
-                Requires.Range(count >= 0 && index + count <= this.Count, nameof(count));
+                Requires.Range(count >= 0 && index <= this.Count - count, nameof(count));
 
                 int remaining = count;
                 while (remaining-- > 0)
@@ -1023,12 +1013,7 @@ namespace System.Collections.Immutable
                 // Creating an instance of ImmutableList<T> with our root node automatically freezes our tree,
                 // ensuring that the returned instance is immutable.  Any further mutations made to this builder
                 // will clone (and unfreeze) the spine of modified nodes until the next time this method is invoked.
-                if (_immutable == null)
-                {
-                    _immutable = ImmutableList<T>.WrapNode(this.Root);
-                }
-
-                return _immutable;
+                return _immutable ??= ImmutableList<T>.WrapNode(this.Root);
             }
 
             #endregion
@@ -1219,17 +1204,6 @@ namespace System.Collections.Immutable
         /// Gets a simple debugger-viewable list.
         /// </summary>
         [DebuggerBrowsable(DebuggerBrowsableState.RootHidden)]
-        public T[] Contents
-        {
-            get
-            {
-                if (_cachedContents == null)
-                {
-                    _cachedContents = _list.ToArray(_list.Count);
-                }
-
-                return _cachedContents;
-            }
-        }
+        public T[] Contents => _cachedContents ??= _list.ToArray(_list.Count);
     }
 }

@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+
 using Debug = global::System.Diagnostics.Debug;
 
 namespace Internal.Reflection.Execution
@@ -12,9 +13,9 @@ namespace Internal.Reflection.Execution
     {
         private static bool SatisfiesConstraints(this Type genericVariable, SigTypeContext typeContextOfConstraintDeclarer, Type typeArg)
         {
-            GenericParameterAttributes specialConstraints = genericVariable.GenericParameterAttributes & GenericParameterAttributes.SpecialConstraintMask;
+            GenericParameterAttributes attributes = genericVariable.GenericParameterAttributes;
 
-            if ((specialConstraints & GenericParameterAttributes.NotNullableValueTypeConstraint) != 0)
+            if ((attributes & GenericParameterAttributes.NotNullableValueTypeConstraint) != 0)
             {
                 if (!typeArg.IsValueType)
                 {
@@ -29,19 +30,19 @@ namespace Internal.Reflection.Execution
                 }
             }
 
-            if ((specialConstraints & GenericParameterAttributes.ReferenceTypeConstraint) != 0)
+            if ((attributes & GenericParameterAttributes.ReferenceTypeConstraint) != 0)
             {
                 if (typeArg.IsValueType)
                     return false;
             }
 
-            if ((specialConstraints & GenericParameterAttributes.DefaultConstructorConstraint) != 0)
+            if ((attributes & GenericParameterAttributes.DefaultConstructorConstraint) != 0)
             {
-                if (!typeArg.HasExplicitOrImplicitPublicDefaultConstructor())
+                if (!typeArg.HasExplicitOrImplicitPublicDefaultConstructor() || typeArg.IsAbstract)
                     return false;
             }
 
-            if (typeArg.IsByRefLike && (specialConstraints & (GenericParameterAttributes)0x20 /* GenericParameterAttributes.AcceptByRefLike */) == 0)
+            if (typeArg.IsByRefLike && (attributes & (GenericParameterAttributes)0x20 /* GenericParameterAttributes.AllowByRefLike */) == 0)
                 return false;
 
             // Now check general subtype constraints
@@ -53,7 +54,7 @@ namespace Internal.Reflection.Execution
                 if (instantiatedTypeConstraint.IsSystemObject())
                     continue;
 
-                // if a concrete type can be cast to the constraint, then this constraint will be satisifed
+                // if a concrete type can be cast to the constraint, then this constraint will be satisfied
                 if (!AreTypesAssignable(typeArg, instantiatedTypeConstraint))
                     return false;
             }
@@ -74,7 +75,7 @@ namespace Internal.Reflection.Execution
             {
                 Type actualArg = typeArguments[i];
 
-                if (actualArg.IsSystemVoid() || (actualArg.HasElementType && !actualArg.IsArray))
+                if (actualArg.IsSystemVoid() || (actualArg.HasElementType && !actualArg.IsArray) || actualArg.IsFunctionPointer)
                 {
                     throw new ArgumentException(SR.Format(SR.Argument_NeverValidGenericArgument, actualArg));
                 }
@@ -87,8 +88,7 @@ namespace Internal.Reflection.Execution
 
                 if (!formalArg.SatisfiesConstraints(typeContext, actualArg))
                 {
-                    throw new ArgumentException(SR.Format(SR.Argument_ConstraintFailed, actualArg, definition.ToString(), formalArg),
-                        string.Format("GenericArguments[{0}]", i));
+                    throw new ArgumentException(SR.Format(SR.Argument_ConstraintFailed, actualArg, definition.ToString(), formalArg));
                 }
             }
         }

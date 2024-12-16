@@ -14,7 +14,7 @@ namespace Internal.IL
 {
     public sealed class NativeAotILProvider : ILProvider
     {
-        private MethodIL TryGetRuntimeImplementedMethodIL(MethodDesc method)
+        private static MethodIL TryGetRuntimeImplementedMethodIL(MethodDesc method)
         {
             // Provides method bodies for runtime implemented methods. It can return null for
             // methods that are treated specially by the codegen.
@@ -36,7 +36,7 @@ namespace Internal.IL
         /// It can return null if it's not an intrinsic recognized by the compiler,
         /// but an intrinsic e.g. recognized by codegen.
         /// </summary>
-        private MethodIL TryGetIntrinsicMethodIL(MethodDesc method)
+        private static MethodIL TryGetIntrinsicMethodIL(MethodDesc method)
         {
             Debug.Assert(method.IsIntrinsic);
 
@@ -46,28 +46,10 @@ namespace Internal.IL
 
             switch (owningType.Name)
             {
-                case "Interlocked":
-                    {
-                        if (owningType.Namespace == "System.Threading")
-                            return InterlockedIntrinsics.EmitIL(method);
-                    }
-                    break;
                 case "Unsafe":
                     {
                         if (owningType.Namespace == "System.Runtime.CompilerServices")
                             return UnsafeIntrinsics.EmitIL(method);
-                    }
-                    break;
-                case "MemoryMarshal":
-                    {
-                        if (owningType.Namespace == "System.Runtime.InteropServices")
-                            return MemoryMarshalIntrinsics.EmitIL(method);
-                    }
-                    break;
-                case "Volatile":
-                    {
-                        if (owningType.Namespace == "System.Threading")
-                            return VolatileIntrinsics.EmitIL(method);
                     }
                     break;
                 case "Debug":
@@ -92,6 +74,12 @@ namespace Internal.IL
                         }
                     }
                     break;
+                case "Stream":
+                    {
+                        if (owningType.Namespace == "System.IO")
+                            return StreamIntrinsics.EmitIL(method);
+                    }
+                    break;
             }
 
             return null;
@@ -102,7 +90,7 @@ namespace Internal.IL
         /// are specialized per instantiation. It can return null if the intrinsic
         /// is not recognized.
         /// </summary>
-        private MethodIL TryGetPerInstantiationIntrinsicMethodIL(MethodDesc method)
+        private static MethodIL TryGetPerInstantiationIntrinsicMethodIL(MethodDesc method)
         {
             Debug.Assert(method.IsIntrinsic);
 
@@ -114,6 +102,12 @@ namespace Internal.IL
 
             switch (owningType.Name)
             {
+                case "Interlocked":
+                    {
+                        if (owningType.Namespace == "System.Threading")
+                            return InterlockedIntrinsics.EmitIL(method);
+                    }
+                    break;
                 case "Activator":
                     {
                         TypeSystemContext context = owningType.Context;
@@ -251,26 +245,9 @@ namespace Internal.IL
                             {
                                 Debug.Assert(elementType.IsValueType);
 
-                                TypeSystemContext context = elementType.Context;
-                                MetadataType helperType = context.SystemModule.GetKnownType("Internal.IntrinsicSupport", "EqualityComparerHelpers");
-
-                                MethodDesc methodToCall;
-                                if (elementType.IsEnum)
-                                {
-                                    methodToCall = helperType.GetKnownMethod("EnumOnlyEquals", null).MakeInstantiatedMethod(elementType);
-                                }
-                                else if (elementType.IsNullable && ComparerIntrinsics.ImplementsIEquatable(elementType.Instantiation[0]))
-                                {
-                                    methodToCall = helperType.GetKnownMethod("StructOnlyEqualsNullable", null).MakeInstantiatedMethod(elementType.Instantiation[0]);
-                                }
-                                else if (ComparerIntrinsics.ImplementsIEquatable(elementType))
-                                {
-                                    methodToCall = helperType.GetKnownMethod("StructOnlyEqualsIEquatable", null).MakeInstantiatedMethod(elementType);
-                                }
-                                else
-                                {
-                                    methodToCall = helperType.GetKnownMethod("StructOnlyNormalEquals", null).MakeInstantiatedMethod(elementType);
-                                }
+                                MethodDesc methodToCall = GetMethodToCall(elementType);
+                                if (methodToCall == null)
+                                    return null;
 
                                 return new ILStubMethodIL(method, new byte[]
                                 {
@@ -280,6 +257,31 @@ namespace Internal.IL
                                     (byte)ILOpcode.ret
                                 },
                                 Array.Empty<LocalVariableDefinition>(), new object[] { methodToCall });
+
+                                static MethodDesc GetMethodToCall(TypeDesc elementType)
+                                {
+                                    TypeSystemContext context = elementType.Context;
+                                    MetadataType helperType = context.SystemModule.GetKnownType("Internal.IntrinsicSupport", "EqualityComparerHelpers");
+
+                                    if (elementType.IsEnum)
+                                        return helperType.GetKnownMethod("EnumOnlyEquals", null)
+                                            .MakeInstantiatedMethod(elementType);
+
+                                    if (elementType.IsNullable)
+                                    {
+                                        bool? nullableOfEquatable = ComparerIntrinsics.ImplementsIEquatable(elementType.Instantiation[0]);
+                                        if (nullableOfEquatable.HasValue && nullableOfEquatable.Value)
+                                            return helperType.GetKnownMethod("StructOnlyEqualsNullable", null)
+                                                .MakeInstantiatedMethod(elementType.Instantiation[0]);
+                                        return null; // Fallback to default implementation based on EqualityComparer
+                                    }
+
+                                    bool? equatable = ComparerIntrinsics.ImplementsIEquatable(elementType);
+                                    if (!equatable.HasValue)
+                                        return null;
+                                    return helperType.GetKnownMethod(equatable.Value ? "StructOnlyEqualsIEquatable" : "StructOnlyNormalEquals", null)
+                                        .MakeInstantiatedMethod(elementType);
+                                }
                             }
                         }
                     }
@@ -311,6 +313,10 @@ namespace Internal.IL
                 if (methodIL != null)
                     return methodIL;
 
+                methodIL = UnsafeAccessors.TryGetIL(ecmaMethod);
+                if (methodIL != null)
+                    return methodIL;
+
                 return null;
             }
             else
@@ -324,7 +330,15 @@ namespace Internal.IL
                         return methodIL;
                 }
 
-                var methodDefinitionIL = GetMethodIL(method.GetTypicalMethodDefinition());
+                MethodDesc typicalMethod = method.GetTypicalMethodDefinition();
+                if (typicalMethod is SpecializableILStubMethod specializableMethod)
+                {
+                    MethodIL methodIL = specializableMethod.EmitIL(method);
+                    if (methodIL != null)
+                        return methodIL;
+                }
+
+                var methodDefinitionIL = GetMethodIL(typicalMethod);
                 if (methodDefinitionIL == null)
                     return null;
                 return new InstantiatedMethodIL(method, methodDefinitionIL);

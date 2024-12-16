@@ -1,18 +1,20 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
-using System.Collections.Generic;
 using System.Reflection.Runtime.BindingFlagSupport;
+using System.Reflection.Runtime.General;
 
 namespace System.Reflection.Runtime.TypeInfos
 {
     internal abstract partial class RuntimeTypeInfo
     {
-        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)]
-        public sealed override object? InvokeMember(
+        [UnconditionalSuppressMessage("ReflectionAnalysis", "IL2072:UnrecognizedReflectionPattern",
+            Justification = "Analysis does not track annotations for RuntimeTypeInfo")]
+        public object? InvokeMember(
             string name, BindingFlags bindingFlags, Binder? binder, object? target,
             object?[]? providedArgs, ParameterModifier[]? modifiers, CultureInfo? culture, string[]? namedParams)
         {
@@ -63,7 +65,7 @@ namespace System.Reflection.Runtime.TypeInfos
                 throw new PlatformNotSupportedException(SR.PlatformNotSupported_ComInterop);
             #endregion
 
-            #region Check that any named paramters are not null
+            #region Check that any named parameters are not null
             if (namedParams != null && Array.IndexOf(namedParams, null) != -1)
                 // "Named parameter value must not be null."
                 throw new ArgumentException(SR.Arg_NamedParamNull, nameof(namedParams));
@@ -72,8 +74,7 @@ namespace System.Reflection.Runtime.TypeInfos
             int argCnt = (providedArgs != null) ? providedArgs.Length : 0;
 
             #region Get a Binder
-            if (binder == null)
-                binder = DefaultBinder;
+            binder ??= Type.DefaultBinder;
 
             #endregion
 
@@ -84,7 +85,7 @@ namespace System.Reflection.Runtime.TypeInfos
                     // "Can not specify both CreateInstance and another access type."
                     throw new ArgumentException(SR.Arg_CreatInstAccess, nameof(bindingFlags));
 
-                return Activator.CreateInstance(this, bindingFlags, binder, providedArgs, culture);
+                return Activator.CreateInstance(this.ToType(), bindingFlags, binder, providedArgs, culture);
             }
             #endregion
 
@@ -93,8 +94,7 @@ namespace System.Reflection.Runtime.TypeInfos
                 bindingFlags |= BindingFlags.SetProperty;
 
             #region Name
-            if (name == null)
-                throw new ArgumentNullException(nameof(name));
+            ArgumentNullException.ThrowIfNull(name);
 
             if (name.Length == 0 || name.Equals(@"[DISPID=0]"))
             {
@@ -124,8 +124,7 @@ namespace System.Reflection.Runtime.TypeInfos
                 {
                     Debug.Assert(IsSetField);
 
-                    if (providedArgs == null)
-                        throw new ArgumentNullException(nameof(providedArgs));
+                    ArgumentNullException.ThrowIfNull(providedArgs);
 
                     if ((bindingFlags & BindingFlags.GetProperty) != 0)
                         // "Can not specify both SetField and GetProperty."
@@ -267,7 +266,7 @@ namespace System.Reflection.Runtime.TypeInfos
             {
                 #region Lookup Methods
                 MethodInfo[] semiFinalists = (MethodInfo[])GetMember(name, MemberTypes.Method, bindingFlags);
-                LowLevelListWithIList<MethodInfo>? results = null;
+                ArrayBuilder<MethodInfo> results = default;
 
                 for (int i = 0; i < semiFinalists.Length; i++)
                 {
@@ -283,9 +282,8 @@ namespace System.Reflection.Runtime.TypeInfos
                     }
                     else
                     {
-                        if (results == null)
+                        if (results.Count == 0)
                         {
-                            results = new LowLevelListWithIList<MethodInfo>(semiFinalists.Length);
                             results.Add(finalist);
                         }
 
@@ -293,11 +291,9 @@ namespace System.Reflection.Runtime.TypeInfos
                     }
                 }
 
-                if (results != null)
+                if (results.Count > 0)
                 {
-                    Debug.Assert(results.Count > 1);
-                    finalists = new MethodInfo[results.Count];
-                    results.CopyTo(finalists, 0);
+                    finalists = results.ToArray();
                 }
                 #endregion
             }
@@ -310,7 +306,7 @@ namespace System.Reflection.Runtime.TypeInfos
             {
                 #region Lookup Property
                 PropertyInfo[] semiFinalists = (PropertyInfo[])GetMember(name, MemberTypes.Property, bindingFlags);
-                LowLevelListWithIList<MethodInfo>? results = null;
+                ArrayBuilder<MethodInfo> results = default;
 
                 for (int i = 0; i < semiFinalists.Length; i++)
                 {
@@ -341,9 +337,8 @@ namespace System.Reflection.Runtime.TypeInfos
                     }
                     else
                     {
-                        if (results == null)
+                        if (results.Count == 0)
                         {
-                            results = new LowLevelListWithIList<MethodInfo>(semiFinalists.Length);
                             results.Add(finalist);
                         }
 
@@ -351,11 +346,9 @@ namespace System.Reflection.Runtime.TypeInfos
                     }
                 }
 
-                if (results != null)
+                if (results.Count > 0)
                 {
-                    Debug.Assert(results.Count > 1);
-                    finalists = new MethodInfo[results.Count];
-                    results.CopyTo(finalists, 0);
+                    finalists = results.ToArray();
                 }
                 #endregion
             }
@@ -366,7 +359,7 @@ namespace System.Reflection.Runtime.TypeInfos
                 #region Invoke
                 if (finalists == null &&
                     argCnt == 0 &&
-                    finalist.GetParametersNoCopy().Length == 0 &&
+                    finalist.GetParametersAsSpan().Length == 0 &&
                     (bindingFlags & BindingFlags.OptionalParamBinding) == 0)
                 {
                     //if (useCache && argCnt == props[0].GetParameters().Length)
@@ -375,11 +368,9 @@ namespace System.Reflection.Runtime.TypeInfos
                     return finalist.Invoke(target, bindingFlags, binder, providedArgs, culture);
                 }
 
-                if (finalists == null)
-                    finalists = new MethodInfo[] { finalist };
+                finalists ??= new MethodInfo[] { finalist };
 
-                if (providedArgs == null)
-                    providedArgs = Array.Empty<object>();
+                providedArgs ??= Array.Empty<object>();
 
                 object? state = null;
 

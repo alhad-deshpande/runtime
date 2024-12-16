@@ -41,6 +41,8 @@ namespace System.Reflection.Emit.Tests
 
     public static class Helpers
     {
+        public const string s_512Chars = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
         public const BindingFlags AllFlags = BindingFlags.Static | BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
 
         public static AssemblyBuilder DynamicAssembly(string name = "TestAssembly", AssemblyBuilderAccess access = AssemblyBuilderAccess.Run)
@@ -98,7 +100,7 @@ namespace System.Reflection.Emit.Tests
 
             if (declaringType == null && !type.IsInterface && (implementedInterfaces == null || implementedInterfaces.Length == 0))
             {
-                Type createdType = type.CreateTypeInfo().AsType();
+                Type createdType = type.CreateType();
                 Assert.Equal(createdType, module.GetType(name, false, false));
                 Assert.Equal(createdType, module.GetType(name, true, false));
 
@@ -125,7 +127,7 @@ namespace System.Reflection.Emit.Tests
             Assert.Throws<NotSupportedException>(() => constructor.Invoke(null));
             Assert.Throws<NotSupportedException>(() => constructor.Invoke(null, null));
 
-            Type createdType = type.CreateTypeInfo().AsType();
+            Type createdType = type.CreateType();
             Assert.Equal(type.AsType().GetConstructors(AllFlags), createdType.GetConstructors(AllFlags));
             Assert.Equal(type.AsType().GetConstructor(parameterTypes), createdType.GetConstructor(parameterTypes));
 

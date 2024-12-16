@@ -9,8 +9,6 @@ using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 
-#nullable enable
-
 namespace Microsoft.Extensions.Hosting
 {
     internal sealed class HostFactoryResolver
@@ -23,15 +21,15 @@ namespace Microsoft.Extensions.Hosting
         private const string TimeoutEnvironmentKey = "DOTNET_HOST_FACTORY_RESOLVER_DEFAULT_TIMEOUT_IN_SECONDS";
 
         // The amount of time we wait for the diagnostic source events to fire
-        private static readonly TimeSpan s_defaultWaitTimeout = SetupDefaultTimout();
+        private static readonly TimeSpan s_defaultWaitTimeout = SetupDefaultTimeout();
 
-        private static TimeSpan SetupDefaultTimout()
+        private static TimeSpan SetupDefaultTimeout()
         {
             if (Debugger.IsAttached)
             {
                 return Timeout.InfiniteTimeSpan;
             }
-            
+
             if (uint.TryParse(Environment.GetEnvironmentVariable(TimeoutEnvironmentKey), out uint timeoutInSeconds))
             {
                 return TimeSpan.FromSeconds((int)timeoutInSeconds);
@@ -165,9 +163,10 @@ namespace Microsoft.Extensions.Hosting
                         => arg.Equals("--applicationName", StringComparison.OrdinalIgnoreCase) ||
                             arg.Equals("/applicationName", StringComparison.OrdinalIgnoreCase);
 
-                    args = args.Any(arg => IsApplicationNameArg(arg)) || assembly.FullName is null
-                        ? args
-                        : args.Concat(new[] { "--applicationName", assembly.FullName }).ToArray();
+                    if (!args.Any(arg => IsApplicationNameArg(arg)) && assembly.GetName().Name is string assemblyName)
+                    {
+                        args = args.Concat(new[] { "--applicationName", assemblyName }).ToArray();
+                    }
 
                     var host = hostFactory(args);
                     return GetServiceProvider(host);

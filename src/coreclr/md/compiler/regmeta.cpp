@@ -17,11 +17,11 @@
 #include "mdlog.h"
 #include "importhelper.h"
 #include "filtermanager.h"
-#include "mdperf.h"
 #include "switches.h"
 #include "posterror.h"
 #include "stgio.h"
 #include "sstring.h"
+#include <minipal/guid.h>
 
 #include "mdinternalrw.h"
 
@@ -32,7 +32,7 @@
 #define DEFINE_CUSTOM_DUPCHECK      2
 #define SET_CUSTOM                  3
 
-#if defined(_DEBUG) && defined(_TRACE_REMAPS)
+#if defined(_DEBUG)
 #define LOGGING
 #endif
 #include <log.h>
@@ -87,8 +87,6 @@ RegMeta::RegMeta() :
 
 RegMeta::~RegMeta()
 {
-    BEGIN_CLEANUP_ENTRYPOINT;
-
     _ASSERTE(!m_bCached);
 
     HRESULT hr = S_OK;
@@ -166,8 +164,6 @@ RegMeta::~RegMeta()
 
     if (m_OptionValue.m_RuntimeVersion != NULL)
         delete[] m_OptionValue.m_RuntimeVersion;
-
-    END_CLEANUP_ENTRYPOINT;
 
 } // RegMeta::~RegMeta()
 
@@ -251,7 +247,7 @@ RegMeta::CreateNewMD()
     ModuleRec *pModule;
     GUID       mvid;
     IfFailGo(m_pStgdb->m_MiniMd.AddModuleRecord(&pModule, &iRecord));
-    IfFailGo(CoCreateGuid(&mvid));
+    IfFailGo(minipal_guid_v4_create(&mvid) ? S_OK : E_FAIL);
     IfFailGo(m_pStgdb->m_MiniMd.PutGuid(TBL_Module, ModuleRec::COL_Mvid, pModule, mvid));
 
     // Add the dummy module typedef which we are using to parent global items.
@@ -542,7 +538,6 @@ RegMeta::QueryInterface(
     void ** ppUnk)
 {
     HRESULT hr = S_OK;
-    BEGIN_ENTRYPOINT_NOTHROW;
     int fIsInterfaceRW = false;
     *ppUnk = 0;
 
@@ -700,9 +695,6 @@ RegMeta::QueryInterface(
 
     AddRef();
 ErrExit:
-
-    END_ENTRYPOINT_NOTHROW;
-
     return hr;
 } // RegMeta::QueryInterface
 

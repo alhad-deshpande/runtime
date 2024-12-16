@@ -23,16 +23,18 @@ namespace System.Text.Json.Serialization.Converters
 
         protected override void Add(TKey key, in TValue value, JsonSerializerOptions options, ref ReadStack state)
         {
-            ((List<Tuple<TKey, TValue>>)state.Current.ReturnValue!).Add (new Tuple<TKey, TValue>(key, value));
+            ((List<Tuple<TKey, TValue>>)state.Current.ReturnValue!).Add(new Tuple<TKey, TValue>(key, value));
         }
 
         internal override bool CanHaveMetadata => false;
 
-        protected override void CreateCollection(ref Utf8JsonReader reader, ref ReadStack state)
+        internal override bool SupportsCreateObjectDelegate => false;
+        protected override void CreateCollection(ref Utf8JsonReader reader, scoped ref ReadStack state)
         {
             state.Current.ReturnValue = new List<Tuple<TKey, TValue>>();
         }
 
+        internal sealed override bool IsConvertibleCollection => true;
         protected override void ConvertCollection(ref ReadStack state, JsonSerializerOptions options)
         {
             state.Current.ReturnValue = _mapConstructor((List<Tuple<TKey, TValue>>)state.Current.ReturnValue!);

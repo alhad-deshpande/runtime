@@ -8,6 +8,7 @@ using System.Diagnostics.CodeAnalysis;
 
 namespace System.Data
 {
+    [RequiresUnreferencedCode(RequiresUnreferencedCodeMessage)]
     internal sealed class Select
     {
         internal const string RequiresUnreferencedCodeMessage = "Members of types used in the filter expression might be trimmed.";
@@ -36,7 +37,6 @@ namespace System.Data
         private int _nCandidates;
         private int _matchedCandidates;
 
-        [RequiresUnreferencedCode(RequiresUnreferencedCodeMessage)]
         public Select(DataTable table, string? filterExpression, string? sort, DataViewRowState recordStates)
         {
             _table = table;
@@ -452,7 +452,7 @@ namespace System.Data
         }
 
 
-        private bool IsOperatorIn(ExpressionNode? enode)
+        private static bool IsOperatorIn(ExpressionNode? enode)
         {
             BinaryNode? bnode = (enode as BinaryNode);
             if (null != bnode)
@@ -599,8 +599,6 @@ namespace System.Data
             return newRows;
         }
 
-        [UnconditionalSuppressMessage("ReflectionAnalysis", "IL2026:RequiresUnreferencedCode",
-            Justification = "All constructors are marked as unsafe.")]
         private bool AcceptRecord(int record)
         {
             DataRow? row = _table._recordManager[record];
@@ -630,13 +628,11 @@ namespace System.Data
             }
             catch (Exception e) when (ADP.IsCatchableExceptionType(e))
             {
-                throw ExprException.FilterConvertion(_rowFilter!.Expression);
+                throw ExprException.FilterConversion(_rowFilter!.Expression);
             }
             return result;
         }
 
-        [UnconditionalSuppressMessage("ReflectionAnalysis", "IL2026:RequiresUnreferencedCode",
-            Justification = "All constructors are marked as unsafe.")]
         private int Eval(BinaryNode expr, DataRow row, DataRowVersion version)
         {
             if (expr._op == Operators.And)
@@ -676,7 +672,7 @@ namespace System.Data
                 StorageType resultType;
                 if (expr._left.IsSqlColumn || expr._right.IsSqlColumn)
                 {
-                    resultType = BinaryNode.ResultSqlType(leftType, rightType, isLConst, isRConst, expr._op);
+                    resultType = BinaryNode.ResultSqlType(leftType, rightType, expr._op);
                 }
                 else
                 {

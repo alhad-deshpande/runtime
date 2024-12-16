@@ -236,10 +236,7 @@ namespace System.Speech.Synthesis
                             sVolumeLevel = style.Volume.ToString().ToLowerInvariant();
                             break;
                     }
-                    if (prosodyElement._attributes == null)
-                    {
-                        prosodyElement._attributes = new Collection<AttributeItem>();
-                    }
+                    prosodyElement._attributes ??= new Collection<AttributeItem>();
                     prosodyElement._attributes.Add(new AttributeItem("volume", sVolumeLevel));
                 }
 
@@ -827,7 +824,7 @@ namespace System.Speech.Synthesis
                 return _elements.Count == 0;
             }
         }
-        public            CultureInfo Culture
+        public CultureInfo Culture
         {
             get
             {
@@ -994,7 +991,7 @@ namespace System.Speech.Synthesis
         private List<Element> _elements = new();
 
         // Resource loader for the prompt builder
-        private static ResourceLoader s_resourceLoader = new();
+        private static readonly ResourceLoader s_resourceLoader = new();
 
         private const string _xmlnsDefault = @"http://www.w3.org/2001/10/synthesis";
 

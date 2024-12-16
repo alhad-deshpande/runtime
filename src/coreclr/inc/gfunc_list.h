@@ -10,13 +10,8 @@
 #define DEFINE_DACGFN_STATIC(class, func)
 #endif
 
-DEFINE_DACGFN_STATIC(ThreadpoolMgr, AsyncTimerCallbackCompletion)
 DEFINE_DACGFN(DACNotifyCompilationFinished)
 DEFINE_DACGFN(ThePreStub)
-
-#ifdef TARGET_ARM
-DEFINE_DACGFN(ThePreStubCompactARM)
-#endif
 
 DEFINE_DACGFN(ThePreStubPatchLabel)
 #ifdef FEATURE_COMINTEROP

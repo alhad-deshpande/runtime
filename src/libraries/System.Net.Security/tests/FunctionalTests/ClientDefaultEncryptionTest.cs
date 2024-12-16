@@ -21,7 +21,6 @@ namespace System.Net.Security.Tests
         }
 
         [Fact]
-        [ActiveIssue("https://github.com/dotnet/runtime/issues/68206", TestPlatforms.Android)]
         public async Task ClientDefaultEncryption_ServerRequireEncryption_ConnectWithEncryption()
         {
             (NetworkStream clientStream, NetworkStream serverStream) = TestHelper.GetConnectedTcpStreams();
@@ -35,16 +34,17 @@ namespace System.Net.Security.Tests
                         client.AuthenticateAsClientAsync("localhost", null, SslProtocolSupport.DefaultSslProtocols, false),
                         server.AuthenticateAsServerAsync(TestConfiguration.ServerCertificate));
 
+#pragma warning disable SYSLIB0058 // Use NegotiatedCipherSuite.
                     _log.WriteLine("Client authenticated to server({0}) with encryption cipher: {1} {2}-bit strength",
-                        clientStream.Socket.RemoteEndPoint, client.CipherAlgorithm, client.CipherStrength) ;
+                        clientStream.Socket.RemoteEndPoint, client.CipherAlgorithm, client.CipherStrength);
                     Assert.True(client.CipherAlgorithm != CipherAlgorithmType.Null, "Cipher algorithm should not be NULL");
                     Assert.True(client.CipherStrength > 0, "Cipher strength should be greater than 0");
+#pragma warning restore SYSLIB0058 // Use NegotiatedCipherSuite.
                 }
             }
         }
 
         [Fact]
-        [ActiveIssue("https://github.com/dotnet/runtime/issues/68206", TestPlatforms.Android)]
         public async Task ClientDefaultEncryption_ServerAllowNoEncryption_ConnectWithEncryption()
         {
             (NetworkStream clientStream, NetworkStream serverStream) = TestHelper.GetConnectedTcpStreams();
@@ -58,10 +58,12 @@ namespace System.Net.Security.Tests
                         client.AuthenticateAsClientAsync("localhost", null, SslProtocolSupport.DefaultSslProtocols, false),
                         server.AuthenticateAsServerAsync(TestConfiguration.ServerCertificate));
 
+#pragma warning disable SYSLIB0058 // Use NegotiatedCipherSuite.
                     _log.WriteLine("Client authenticated to server({0}) with encryption cipher: {1} {2}-bit strength",
                         clientStream.Socket.RemoteEndPoint, client.CipherAlgorithm, client.CipherStrength);
                     Assert.True(client.CipherAlgorithm != CipherAlgorithmType.Null, "Cipher algorithm should not be NULL");
                     Assert.True(client.CipherStrength > 0, "Cipher strength should be greater than 0");
+#pragma warning restore SYSLIB0058 // Use NegotiatedCipherSuite.
                 }
             }
         }

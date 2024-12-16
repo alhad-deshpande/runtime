@@ -34,12 +34,12 @@
 namespace vxsort {
 namespace smallsort {
 
-extern "C" const uint8_t mask_table_4[16];
-extern "C" const uint8_t mask_table_8[64];
+extern "C" const uint8_t mask_table_4[M4_SIZE];
+extern "C" const uint8_t mask_table_8[M8_SIZE];
 
 template<> struct bitonic<int64_t, AVX2> {
     static const int N = 4;
-    static constexpr int64_t MAX = std::numeric_limits<int64_t>::Max();
+    static constexpr int64_t MAX = std::numeric_limits<int64_t>::max();
 public:
 
     static INLINE void sort_01v_ascending(__m256i& d01) {

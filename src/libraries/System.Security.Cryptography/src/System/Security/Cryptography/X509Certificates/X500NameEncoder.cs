@@ -1,6 +1,7 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Formats.Asn1;
@@ -10,26 +11,26 @@ namespace System.Security.Cryptography.X509Certificates
 {
     internal static partial class X500NameEncoder
     {
-        private const string OidTagPrefix = "OID.";
-
-        private static readonly char[] s_quoteNeedingChars =
+        private enum EncodingRules
         {
-            ',',
-            '+',
-            '=',
-            '\"',
-            '\n',
-            // \r is NOT in this list, because it isn't in Windows.
-            '<',
-            '>',
-            '#',
-            ';',
-        };
+            Unknown,
+            IA5String,
+            DirectoryString,
+            PrintableString,
+            UTF8String,
+            NumericString,
+        }
 
-        private static readonly List<char> s_useSemicolonSeparators = new List<char>(1) { ';' };
-        private static readonly List<char> s_useCommaSeparators = new List<char>(1) { ',' };
-        private static readonly List<char> s_useNewlineSeparators = new List<char>(2) { '\r', '\n' };
-        private static readonly List<char> s_defaultSeparators = new List<char>(2) { ',', ';' };
+        private const string OidTagPrefix = "OID.";
+        private const string UseSemicolonSeparators = ";";
+        private const string UseCommaSeparators = ",";
+        private const string UseNewlineSeparators = "\r\n";
+        private const string DefaultSeparators = ",;";
+
+        private static readonly SearchValues<char> s_needsQuotingChars =
+            SearchValues.Create(",+=\"\n<>#;"); // \r is NOT in this list, because it isn't in Windows.
+
+        private static readonly Lazy<Dictionary<string, EncodingRules>> s_lazyEncodingRulesLookup = new(CreateEncodingRulesLookup);
 
         internal static string X500DistinguishedNameDecode(
             byte[] encodedName,
@@ -84,34 +85,35 @@ namespace System.Security.Cryptography.X509Certificates
         {
             bool reverse = (flags & X500DistinguishedNameFlags.Reversed) == X500DistinguishedNameFlags.Reversed;
             bool noQuotes = (flags & X500DistinguishedNameFlags.DoNotUseQuotes) == X500DistinguishedNameFlags.DoNotUseQuotes;
+            bool forceUtf8Encoding = (flags & X500DistinguishedNameFlags.ForceUTF8Encoding) == X500DistinguishedNameFlags.ForceUTF8Encoding;
 
-            List<char> dnSeparators;
+            string dnSeparators;
 
             // This rank ordering is based off of testing against the Windows implementation.
             if ((flags & X500DistinguishedNameFlags.UseSemicolons) == X500DistinguishedNameFlags.UseSemicolons)
             {
                 // Just semicolon.
-                dnSeparators = s_useSemicolonSeparators;
+                dnSeparators = UseSemicolonSeparators;
             }
             else if ((flags & X500DistinguishedNameFlags.UseCommas) == X500DistinguishedNameFlags.UseCommas)
             {
                 // Just comma
-                dnSeparators = s_useCommaSeparators;
+                dnSeparators = UseCommaSeparators;
             }
             else if ((flags & X500DistinguishedNameFlags.UseNewLines) == X500DistinguishedNameFlags.UseNewLines)
             {
                 // CR or LF.  Not "and".  Whichever is first was the separator, the later one is trimmed as whitespace.
-                dnSeparators = s_useNewlineSeparators;
+                dnSeparators = UseNewlineSeparators;
             }
             else
             {
                 // Comma or semicolon, but not CR or LF.
-                dnSeparators = s_defaultSeparators;
+                dnSeparators = DefaultSeparators;
             }
 
-            Debug.Assert(dnSeparators.Count != 0);
+            Debug.Assert(dnSeparators.Length != 0);
 
-            List<byte[]> encodedSets = ParseDistinguishedName(stringForm, dnSeparators, noQuotes);
+            List<byte[]> encodedSets = ParseDistinguishedName(stringForm, dnSeparators, noQuotes, forceUtf8Encoding);
 
             if (reverse)
             {
@@ -131,23 +133,11 @@ namespace System.Security.Cryptography.X509Certificates
             return writer.Encode();
         }
 
-        private static bool NeedsQuoting(string rdnValue)
-        {
-            if (string.IsNullOrEmpty(rdnValue))
-            {
-                return true;
-            }
-
-            if (IsQuotableWhitespace(rdnValue[0]) ||
-                IsQuotableWhitespace(rdnValue[rdnValue.Length - 1]))
-            {
-                return true;
-            }
-
-            int index = rdnValue.IndexOfAny(s_quoteNeedingChars);
-
-            return index != -1;
-        }
+        private static bool NeedsQuoting(ReadOnlySpan<char> rdnValue) =>
+            rdnValue.IsEmpty ||
+            IsQuotableWhitespace(rdnValue[0]) ||
+            IsQuotableWhitespace(rdnValue[^1]) ||
+            rdnValue.ContainsAny(s_needsQuotingChars);
 
         private static bool IsQuotableWhitespace(char c)
         {
@@ -196,8 +186,9 @@ namespace System.Security.Cryptography.X509Certificates
 
         private static List<byte[]> ParseDistinguishedName(
             string stringForm,
-            List<char> dnSeparators,
-            bool noQuotes)
+            string dnSeparators,
+            bool noQuotes,
+            bool forceUtf8Encoding)
         {
             // 16 is way more RDNs than we should ever need. A fairly standard set of values is
             // { E, CN, O, OU, L, S, C } = 7;
@@ -400,7 +391,7 @@ namespace System.Security.Cryptography.X509Certificates
                             Debug.Assert(valueEnd != -1);
                             Debug.Assert(valueStart != -1);
 
-                            encodedSets.Add(ParseRdn(tagOid, chars[valueStart..valueEnd], hadEscapedQuote));
+                            encodedSets.Add(ParseRdn(tagOid, chars[valueStart..valueEnd], hadEscapedQuote, forceUtf8Encoding));
                             hasTagOid = false;
                             valueStart = -1;
                             valueEnd = -1;
@@ -465,11 +456,10 @@ namespace System.Security.Cryptography.X509Certificates
                 // then some whitespace.
                 case ParseState.MaybeEndQuote:
                 case ParseState.SeekComma:
-                    Debug.Assert(tagOid != null);
                     Debug.Assert(valueStart != -1);
                     Debug.Assert(valueEnd != -1);
 
-                    encodedSets.Add(ParseRdn(tagOid, chars[valueStart..valueEnd], hadEscapedQuote));
+                    encodedSets.Add(ParseRdn(tagOid, chars[valueStart..valueEnd], hadEscapedQuote, forceUtf8Encoding));
                     break;
 
                 // If the entire string was empty, or ended in a dnSeparator.
@@ -499,19 +489,16 @@ namespace System.Security.Cryptography.X509Certificates
             return new Oid(str.ToString()).Value; // Value can be null, but permit the null-to-empty conversion.
         }
 
-        private static byte[] ParseRdn(ReadOnlySpan<char> tagOid, ReadOnlySpan<char> chars, bool hadEscapedQuote)
+        private static byte[] ParseRdn(ReadOnlySpan<char> tagOid, ReadOnlySpan<char> chars, bool hadEscapedQuote, bool forceUtf8Encoding)
         {
-            ReadOnlySpan<char> data = stackalloc char[0];
+            scoped ReadOnlySpan<char> data;
 
             if (hadEscapedQuote)
             {
                 const int MaxStackAllocSize = 256;
-                Span<char> destination = stackalloc char[MaxStackAllocSize];
-
-                if (chars.Length > MaxStackAllocSize)
-                {
-                    destination = new char[chars.Length];
-                }
+                Span<char> destination = chars.Length > MaxStackAllocSize ?
+                    new char[chars.Length] :
+                    stackalloc char[MaxStackAllocSize];
 
                 int written = ExtractValue(chars, destination);
                 data = destination.Slice(0, written);
@@ -535,28 +522,35 @@ namespace System.Security.Cryptography.X509Certificates
                     throw new CryptographicException(SR.Cryptography_Invalid_X500Name, e);
                 }
 
-                if (tagOid.SequenceEqual(Oids.EmailAddress))
+                switch (LookupEncodingRules(tagOid))
                 {
-                    try
-                    {
-                        // An email address with an invalid value will throw.
-                        writer.WriteCharacterString(UniversalTagNumber.IA5String, data);
-                    }
-                    catch (EncoderFallbackException)
-                    {
-                        throw new CryptographicException(SR.Cryptography_Invalid_IA5String);
-                    }
-                }
-                else
-                {
-                    try
-                    {
-                        writer.WriteCharacterString(UniversalTagNumber.PrintableString, data);
-                    }
-                    catch (EncoderFallbackException)
-                    {
-                        writer.WriteCharacterString(UniversalTagNumber.UTF8String, data);
-                    }
+                    case EncodingRules.IA5String:
+                        WriteCryptoCharacterString(writer, UniversalTagNumber.IA5String, data);
+                        break;
+                    case EncodingRules.UTF8String:
+                    case EncodingRules.DirectoryString or EncodingRules.Unknown when forceUtf8Encoding:
+                        WriteCryptoCharacterString(writer, UniversalTagNumber.UTF8String, data);
+                        break;
+                    case EncodingRules.NumericString:
+                        WriteCryptoCharacterString(writer, UniversalTagNumber.NumericString, data);
+                        break;
+                    case EncodingRules.PrintableString:
+                        WriteCryptoCharacterString(writer, UniversalTagNumber.PrintableString, data);
+                        break;
+                    case EncodingRules.DirectoryString:
+                    case EncodingRules.Unknown:
+                        try
+                        {
+                            writer.WriteCharacterString(UniversalTagNumber.PrintableString, data);
+                        }
+                        catch (EncoderFallbackException)
+                        {
+                            WriteCryptoCharacterString(writer, UniversalTagNumber.UTF8String, data);
+                        }
+                        break;
+                    default:
+                        Debug.Fail("Encoding rule was not handled.");
+                        goto case EncodingRules.Unknown;
                 }
             }
 
@@ -587,6 +581,92 @@ namespace System.Security.Cryptography.X509Certificates
             }
 
             return written;
+        }
+
+        private static Dictionary<string, EncodingRules> CreateEncodingRulesLookup()
+        {
+            // Attributes that are not "obsolete" from ITU T-REC X.520-2019.
+            // Attributes that are included are attributes that are string-like and can be represented by a String.
+            // Windows does not have any restrictions on encoding non-string encodable types, it will encode them
+            // anyway, such as OID.2.5.4.14=test will encode test as a PrintableString, even though the OID is a SET.
+            // To maintain similar behavior as Windows, those types will remain treated as unknown.
+            const int LookupDictionarySize = 43;
+            Dictionary<string, EncodingRules> lookup = new(LookupDictionarySize, StringComparer.Ordinal)
+            {
+                { Oids.KnowledgeInformation, EncodingRules.DirectoryString },
+                { Oids.CommonName, EncodingRules.DirectoryString },
+                { Oids.Surname, EncodingRules.DirectoryString },
+                { Oids.SerialNumber, EncodingRules.PrintableString },
+                { Oids.CountryOrRegionName, EncodingRules.PrintableString },
+                { Oids.LocalityName, EncodingRules.DirectoryString },
+                { Oids.StateOrProvinceName, EncodingRules.DirectoryString },
+                { Oids.StreetAddress, EncodingRules.DirectoryString },
+                { Oids.Organization, EncodingRules.DirectoryString },
+                { Oids.OrganizationalUnit, EncodingRules.DirectoryString },
+                { Oids.Title, EncodingRules.DirectoryString },
+                { Oids.Description, EncodingRules.DirectoryString },
+                { Oids.BusinessCategory, EncodingRules.DirectoryString },
+                { Oids.PostalCode, EncodingRules.DirectoryString },
+                { Oids.PostOfficeBox, EncodingRules.DirectoryString },
+                { Oids.PhysicalDeliveryOfficeName, EncodingRules.DirectoryString },
+                { Oids.TelephoneNumber, EncodingRules.PrintableString },
+                { Oids.X121Address, EncodingRules.NumericString },
+                { Oids.InternationalISDNNumber, EncodingRules.NumericString },
+                { Oids.DestinationIndicator, EncodingRules.PrintableString },
+                { Oids.Name, EncodingRules.DirectoryString },
+                { Oids.GivenName, EncodingRules.DirectoryString },
+                { Oids.Initials, EncodingRules.DirectoryString },
+                { Oids.GenerationQualifier, EncodingRules.DirectoryString },
+                { Oids.DnQualifier, EncodingRules.PrintableString },
+                { Oids.HouseIdentifier, EncodingRules.DirectoryString },
+                { Oids.DmdName, EncodingRules.DirectoryString },
+                { Oids.Pseudonym, EncodingRules.DirectoryString },
+                { Oids.UiiInUrn, EncodingRules.UTF8String },
+                { Oids.ContentUrl, EncodingRules.UTF8String },
+                { Oids.Uri, EncodingRules.UTF8String },
+                { Oids.Urn, EncodingRules.UTF8String },
+                { Oids.Url, EncodingRules.UTF8String },
+                { Oids.UrnC, EncodingRules.PrintableString },
+                { Oids.EpcInUrn, EncodingRules.DirectoryString },
+                { Oids.LdapUrl, EncodingRules.UTF8String },
+                { Oids.OrganizationIdentifier, EncodingRules.DirectoryString },
+                { Oids.CountryOrRegionName3C, EncodingRules.PrintableString },
+                { Oids.CountryOrRegionName3N, EncodingRules.NumericString },
+                { Oids.DnsName, EncodingRules.UTF8String },
+                { Oids.IntEmail, EncodingRules.UTF8String },
+                { Oids.JabberId, EncodingRules.UTF8String },
+                { Oids.EmailAddress, EncodingRules.IA5String },
+            };
+
+            Debug.Assert(lookup.Count == LookupDictionarySize);
+            return lookup;
+        }
+
+        private static void WriteCryptoCharacterString(AsnWriter writer, UniversalTagNumber tagNumber, ReadOnlySpan<char> data)
+        {
+            try
+            {
+                writer.WriteCharacterString(tagNumber, data);
+            }
+            catch (EncoderFallbackException)
+            {
+                if (tagNumber == UniversalTagNumber.IA5String)
+                {
+                    throw new CryptographicException(SR.Cryptography_Invalid_IA5String);
+                }
+                else
+                {
+                    throw new CryptographicException(SR.Cryptography_Invalid_X500Name);
+                }
+            }
+        }
+
+        private static EncodingRules LookupEncodingRules(ReadOnlySpan<char> oid)
+        {
+            Dictionary<string, EncodingRules> lookup = s_lazyEncodingRulesLookup.Value;
+            Dictionary<string, EncodingRules>.AlternateLookup<ReadOnlySpan<char>> alternateLookup =
+                lookup.GetAlternateLookup<ReadOnlySpan<char>>();
+            return alternateLookup.TryGetValue(oid, out EncodingRules rules) ? rules : EncodingRules.Unknown;
         }
     }
 }

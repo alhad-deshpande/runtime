@@ -3,98 +3,31 @@
 
 using System.Collections.Generic;
 using System.Numerics;
+using System.Runtime.Intrinsics;
 
 namespace System.Linq
 {
     public static partial class Enumerable
     {
-        public static int Max(this IEnumerable<int> source) => MaxInteger(source);
+        public static int Max(this IEnumerable<int> source) => MinMaxInteger<int, MaxCalc<int>>(source);
+
+        public static long Max(this IEnumerable<long> source) => MinMaxInteger<long, MaxCalc<long>>(source);
+
+        private readonly struct MaxCalc<T> : IMinMaxCalc<T> where T : struct, IBinaryInteger<T>
+        {
+            public static bool Compare(T left, T right) => left > right;
+            public static Vector128<T> Compare(Vector128<T> left, Vector128<T> right) => Vector128.Max(left, right);
+            public static Vector256<T> Compare(Vector256<T> left, Vector256<T> right) => Vector256.Max(left, right);
+            public static Vector512<T> Compare(Vector512<T> left, Vector512<T> right) => Vector512.Max(left, right);
+        }
 
         public static int? Max(this IEnumerable<int?> source) => MaxInteger(source);
 
-        public static long Max(this IEnumerable<long> source) => MaxInteger(source);
-
         public static long? Max(this IEnumerable<long?> source) => MaxInteger(source);
-
-        private static T MaxInteger<T>(this IEnumerable<T> source) where T : struct, IBinaryInteger<T>
-        {
-            T value;
-
-            if (source.TryGetSpan(out ReadOnlySpan<T> span))
-            {
-                if (span.IsEmpty)
-                {
-                    ThrowHelper.ThrowNoElementsException();
-                }
-
-                // Vectorize the search if possible.
-                int index;
-                if (Vector.IsHardwareAccelerated && span.Length >= Vector<T>.Count * 2)
-                {
-                    // The span is at least two vectors long. Create a vector from the first N elements,
-                    // and then repeatedly compare that against the next vector from the span.  At the end,
-                    // the resulting vector will contain the maximum values found, and we then need only
-                    // to find the max of those.
-                    var maxes = new Vector<T>(span);
-                    index = Vector<T>.Count;
-                    do
-                    {
-                        maxes = Vector.Max(maxes, new Vector<T>(span.Slice(index)));
-                        index += Vector<T>.Count;
-                    }
-                    while (index + Vector<T>.Count <= span.Length);
-
-                    value = maxes[0];
-                    for (int i = 1; i < Vector<T>.Count; i++)
-                    {
-                        if (maxes[i] > value)
-                        {
-                            value = maxes[i];
-                        }
-                    }
-                }
-                else
-                {
-                    value = span[0];
-                    index = 1;
-                }
-
-                // Iterate through the remaining elements, comparing against the max.
-                for (int i = index; (uint)i < (uint)span.Length; i++)
-                {
-                    if (span[i] > value)
-                    {
-                        value = span[i];
-                    }
-                }
-
-                return value;
-            }
-
-            using (IEnumerator<T> e = source.GetEnumerator())
-            {
-                if (!e.MoveNext())
-                {
-                    ThrowHelper.ThrowNoElementsException();
-                }
-
-                value = e.Current;
-                while (e.MoveNext())
-                {
-                    T x = e.Current;
-                    if (x > value)
-                    {
-                        value = x;
-                    }
-                }
-            }
-
-            return value;
-        }
 
         private static T? MaxInteger<T>(this IEnumerable<T?> source) where T : struct, IBinaryInteger<T>
         {
-            if (source == null)
+            if (source is null)
             {
                 ThrowHelper.ThrowArgumentNullException(ExceptionArgument.source);
             }
@@ -166,6 +99,11 @@ namespace System.Linq
         {
             T value;
 
+            if (source is null)
+            {
+                ThrowHelper.ThrowArgumentNullException(ExceptionArgument.source);
+            }
+
             if (source.TryGetSpan(out ReadOnlySpan<T> span))
             {
                 if (span.IsEmpty)
@@ -229,7 +167,7 @@ namespace System.Linq
 
         private static T? MaxFloat<T>(this IEnumerable<T?> source) where T : struct, IFloatingPointIeee754<T>
         {
-            if (source == null)
+            if (source is null)
             {
                 ThrowHelper.ThrowArgumentNullException(ExceptionArgument.source);
             }
@@ -285,6 +223,11 @@ namespace System.Linq
         {
             decimal value;
 
+            if (source is null)
+            {
+                ThrowHelper.ThrowArgumentNullException(ExceptionArgument.source);
+            }
+
             if (source.TryGetSpan(out ReadOnlySpan<decimal> span))
             {
                 if (span.IsEmpty)
@@ -328,7 +271,7 @@ namespace System.Linq
 
         public static decimal? Max(this IEnumerable<decimal?> source)
         {
-            if (source == null)
+            if (source is null)
             {
                 ThrowHelper.ThrowArgumentNullException(ExceptionArgument.source);
             }
@@ -379,17 +322,32 @@ namespace System.Linq
         /// </remarks>
         public static TSource? Max<TSource>(this IEnumerable<TSource> source, IComparer<TSource>? comparer)
         {
-            if (source == null)
+            if (source is null)
             {
                 ThrowHelper.ThrowArgumentNullException(ExceptionArgument.source);
             }
 
             comparer ??= Comparer<TSource>.Default;
 
+            // TODO https://github.com/dotnet/csharplang/discussions/6308: Update this to use generic constraint bridging if/when available.
+            if (typeof(TSource) == typeof(byte) && comparer == Comparer<TSource>.Default) return (TSource)(object)MinMaxInteger<byte, MaxCalc<byte>>((IEnumerable<byte>)source);
+            if (typeof(TSource) == typeof(sbyte) && comparer == Comparer<TSource>.Default) return (TSource)(object)MinMaxInteger<sbyte, MaxCalc<sbyte>>((IEnumerable<sbyte>)source);
+            if (typeof(TSource) == typeof(ushort) && comparer == Comparer<TSource>.Default) return (TSource)(object)MinMaxInteger<ushort, MaxCalc<ushort>>((IEnumerable<ushort>)source);
+            if (typeof(TSource) == typeof(short) && comparer == Comparer<TSource>.Default) return (TSource)(object)MinMaxInteger<short, MaxCalc<short>>((IEnumerable<short>)source);
+            if (typeof(TSource) == typeof(char) && comparer == Comparer<TSource>.Default) return (TSource)(object)MinMaxInteger<char, MaxCalc<char>>((IEnumerable<char>)source);
+            if (typeof(TSource) == typeof(uint) && comparer == Comparer<TSource>.Default) return (TSource)(object)MinMaxInteger<uint, MaxCalc<uint>>((IEnumerable<uint>)source);
+            if (typeof(TSource) == typeof(int) && comparer == Comparer<TSource>.Default) return (TSource)(object)MinMaxInteger<int, MaxCalc<int>>((IEnumerable<int>)source);
+            if (typeof(TSource) == typeof(ulong) && comparer == Comparer<TSource>.Default) return (TSource)(object)MinMaxInteger<ulong, MaxCalc<ulong>>((IEnumerable<ulong>)source);
+            if (typeof(TSource) == typeof(long) && comparer == Comparer<TSource>.Default) return (TSource)(object)MinMaxInteger<long, MaxCalc<long>>((IEnumerable<long>)source);
+            if (typeof(TSource) == typeof(nuint) && comparer == Comparer<TSource>.Default) return (TSource)(object)MinMaxInteger<nuint, MaxCalc<nuint>>((IEnumerable<nuint>)source);
+            if (typeof(TSource) == typeof(nint) && comparer == Comparer<TSource>.Default) return (TSource)(object)MinMaxInteger<nint, MaxCalc<nint>>((IEnumerable<nint>)source);
+            if (typeof(TSource) == typeof(Int128) && comparer == Comparer<TSource>.Default) return (TSource)(object)MinMaxInteger<Int128, MaxCalc<Int128>>((IEnumerable<Int128>)source);
+            if (typeof(TSource) == typeof(UInt128) && comparer == Comparer<TSource>.Default) return (TSource)(object)MinMaxInteger<UInt128, MaxCalc<UInt128>>((IEnumerable<UInt128>)source);
+
             TSource? value = default;
             using (IEnumerator<TSource> e = source.GetEnumerator())
             {
-                if (value == null)
+                if (value is null)
                 {
                     do
                     {
@@ -400,12 +358,12 @@ namespace System.Linq
 
                         value = e.Current;
                     }
-                    while (value == null);
+                    while (value is null);
 
                     while (e.MoveNext())
                     {
                         TSource next = e.Current;
-                        if (next != null && comparer.Compare(next, value) > 0)
+                        if (next is not null && comparer.Compare(next, value) > 0)
                         {
                             value = next;
                         }
@@ -474,12 +432,12 @@ namespace System.Linq
         /// </remarks>
         public static TSource? MaxBy<TSource, TKey>(this IEnumerable<TSource> source, Func<TSource, TKey> keySelector, IComparer<TKey>? comparer)
         {
-            if (source == null)
+            if (source is null)
             {
                 ThrowHelper.ThrowArgumentNullException(ExceptionArgument.source);
             }
 
-            if (keySelector == null)
+            if (keySelector is null)
             {
                 ThrowHelper.ThrowArgumentNullException(ExceptionArgument.keySelector);
             }
@@ -505,7 +463,7 @@ namespace System.Linq
 
             if (default(TKey) is null)
             {
-                if (key == null)
+                if (key is null)
                 {
                     TSource firstValue = value;
 
@@ -520,14 +478,14 @@ namespace System.Linq
                         value = e.Current;
                         key = keySelector(value);
                     }
-                    while (key == null);
+                    while (key is null);
                 }
 
                 while (e.MoveNext())
                 {
                     TSource nextValue = e.Current;
                     TKey nextKey = keySelector(nextValue);
-                    if (nextKey != null && comparer.Compare(nextKey, key) > 0)
+                    if (nextKey is not null && comparer.Compare(nextKey, key) > 0)
                     {
                         key = nextKey;
                         value = nextValue;
@@ -577,12 +535,12 @@ namespace System.Linq
 
         private static TResult MaxInteger<TSource, TResult>(this IEnumerable<TSource> source, Func<TSource, TResult> selector) where TResult : struct, IBinaryInteger<TResult>
         {
-            if (source == null)
+            if (source is null)
             {
                 ThrowHelper.ThrowArgumentNullException(ExceptionArgument.source);
             }
 
-            if (selector == null)
+            if (selector is null)
             {
                 ThrowHelper.ThrowArgumentNullException(ExceptionArgument.selector);
             }
@@ -611,12 +569,12 @@ namespace System.Linq
 
         private static TResult? MaxInteger<TSource, TResult>(this IEnumerable<TSource> source, Func<TSource, TResult?> selector) where TResult : struct, IBinaryInteger<TResult>
         {
-            if (source == null)
+            if (source is null)
             {
                 ThrowHelper.ThrowArgumentNullException(ExceptionArgument.source);
             }
 
-            if (selector == null)
+            if (selector is null)
             {
                 ThrowHelper.ThrowArgumentNullException(ExceptionArgument.selector);
             }
@@ -686,12 +644,12 @@ namespace System.Linq
 
         private static TResult MaxFloat<TSource, TResult>(this IEnumerable<TSource> source, Func<TSource, TResult> selector) where TResult : struct, IFloatingPointIeee754<TResult>
         {
-            if (source == null)
+            if (source is null)
             {
                 ThrowHelper.ThrowArgumentNullException(ExceptionArgument.source);
             }
 
-            if (selector == null)
+            if (selector is null)
             {
                 ThrowHelper.ThrowArgumentNullException(ExceptionArgument.selector);
             }
@@ -730,12 +688,12 @@ namespace System.Linq
 
         private static TResult? MaxFloat<TSource, TResult>(this IEnumerable<TSource> source, Func<TSource, TResult?> selector) where TResult : struct, IFloatingPointIeee754<TResult>
         {
-            if (source == null)
+            if (source is null)
             {
                 ThrowHelper.ThrowArgumentNullException(ExceptionArgument.source);
             }
 
-            if (selector == null)
+            if (selector is null)
             {
                 ThrowHelper.ThrowArgumentNullException(ExceptionArgument.selector);
             }
@@ -789,12 +747,12 @@ namespace System.Linq
 
         public static decimal Max<TSource>(this IEnumerable<TSource> source, Func<TSource, decimal> selector)
         {
-            if (source == null)
+            if (source is null)
             {
                 ThrowHelper.ThrowArgumentNullException(ExceptionArgument.source);
             }
 
-            if (selector == null)
+            if (selector is null)
             {
                 ThrowHelper.ThrowArgumentNullException(ExceptionArgument.selector);
             }
@@ -823,12 +781,12 @@ namespace System.Linq
 
         public static decimal? Max<TSource>(this IEnumerable<TSource> source, Func<TSource, decimal?> selector)
         {
-            if (source == null)
+            if (source is null)
             {
                 ThrowHelper.ThrowArgumentNullException(ExceptionArgument.source);
             }
 
-            if (selector == null)
+            if (selector is null)
             {
                 ThrowHelper.ThrowArgumentNullException(ExceptionArgument.selector);
             }
@@ -865,12 +823,12 @@ namespace System.Linq
 
         public static TResult? Max<TSource, TResult>(this IEnumerable<TSource> source, Func<TSource, TResult> selector)
         {
-            if (source == null)
+            if (source is null)
             {
                 ThrowHelper.ThrowArgumentNullException(ExceptionArgument.source);
             }
 
-            if (selector == null)
+            if (selector is null)
             {
                 ThrowHelper.ThrowArgumentNullException(ExceptionArgument.selector);
             }
@@ -878,7 +836,7 @@ namespace System.Linq
             TResult? value = default;
             using (IEnumerator<TSource> e = source.GetEnumerator())
             {
-                if (value == null)
+                if (value is null)
                 {
                     do
                     {
@@ -889,13 +847,13 @@ namespace System.Linq
 
                         value = selector(e.Current);
                     }
-                    while (value == null);
+                    while (value is null);
 
                     Comparer<TResult> comparer = Comparer<TResult>.Default;
                     while (e.MoveNext())
                     {
                         TResult x = selector(e.Current);
-                        if (x != null && comparer.Compare(x, value) > 0)
+                        if (x is not null && comparer.Compare(x, value) > 0)
                         {
                             value = x;
                         }

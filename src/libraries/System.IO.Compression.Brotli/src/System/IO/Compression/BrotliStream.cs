@@ -18,12 +18,13 @@ namespace System.IO.Compression
         private readonly CompressionMode _mode;
 
         /// <summary>Initializes a new instance of the <see cref="System.IO.Compression.BrotliStream" /> class by using the specified stream and compression mode.</summary>
-        /// <param name="stream">The stream to compress.</param>
-        /// <param name="mode">One of the enumeration values that indicates whether to compress or decompress the stream.</param>
+        /// <param name="stream">The stream to which compressed data is written or from which data to decompress is read.</param>
+        /// <param name="mode">One of the enumeration values that indicates whether to compress data to the stream or decompress data from the stream.</param>
         public BrotliStream(Stream stream, CompressionMode mode) : this(stream, mode, leaveOpen: false) { }
+
         /// <summary>Initializes a new instance of the <see cref="System.IO.Compression.BrotliStream" /> class by using the specified stream and compression mode, and optionally leaves the stream open.</summary>
-        /// <param name="stream">The stream to compress.</param>
-        /// <param name="mode">One of the enumeration values that indicates whether to compress or decompress the stream.</param>
+        /// <param name="stream">The stream to which compressed data is written or from which data to decompress is read.</param>
+        /// <param name="mode">One of the enumeration values that indicates whether to compress data to the stream or decompress data from the stream.</param>
         /// <param name="leaveOpen"><see langword="true" /> to leave the stream open after the <see cref="System.IO.Compression.BrotliStream" /> object is disposed; otherwise, <see langword="false" />.</param>
         public BrotliStream(Stream stream, CompressionMode mode, bool leaveOpen)
         {
@@ -33,12 +34,21 @@ namespace System.IO.Compression
             {
                 case CompressionMode.Compress:
                     if (!stream.CanWrite)
+                    {
                         throw new ArgumentException(SR.Stream_FalseCanWrite, nameof(stream));
+                    }
+
+                    _encoder.SetQuality(BrotliUtils.Quality_Default);
+                    _encoder.SetWindow(BrotliUtils.WindowBits_Default);
                     break;
+
                 case CompressionMode.Decompress:
                     if (!stream.CanRead)
+                    {
                         throw new ArgumentException(SR.Stream_FalseCanRead, nameof(stream));
+                    }
                     break;
+
                 default:
                     throw new ArgumentException(SR.ArgumentOutOfRange_Enum, nameof(mode));
             }
@@ -51,8 +61,7 @@ namespace System.IO.Compression
 
         private void EnsureNotDisposed()
         {
-            if (_stream == null)
-                throw new ObjectDisposedException(GetType().Name, SR.ObjectDisposed_StreamClosed);
+            ObjectDisposedException.ThrowIf(_stream is null, this);
         }
 
         /// <summary>Releases the unmanaged resources used by the <see cref="System.IO.Compression.BrotliStream" /> and optionally releases the managed resources.</summary>
@@ -119,7 +128,7 @@ namespace System.IO.Compression
             if (buffer != null)
             {
                 _buffer = null!;
-                if (!AsyncOperationIsActive)
+                if (!_activeAsyncOperation)
                 {
                     ArrayPool<byte>.Shared.Return(buffer);
                 }
@@ -161,18 +170,19 @@ namespace System.IO.Compression
         /// <param name="value">The length of the stream.</param>
         public override void SetLength(long value) => throw new NotSupportedException();
 
-        private int _activeAsyncOperation; // 1 == true, 0 == false
-        private bool AsyncOperationIsActive => _activeAsyncOperation != 0;
+        private volatile bool _activeAsyncOperation;
 
         private void EnsureNoActiveAsyncOperation()
         {
-            if (AsyncOperationIsActive)
+            if (_activeAsyncOperation)
+            {
                 ThrowInvalidBeginCall();
+            }
         }
 
         private void AsyncOperationStarting()
         {
-            if (Interlocked.Exchange(ref _activeAsyncOperation, 1) != 0)
+            if (Interlocked.Exchange(ref _activeAsyncOperation, true))
             {
                 ThrowInvalidBeginCall();
             }
@@ -180,8 +190,8 @@ namespace System.IO.Compression
 
         private void AsyncOperationCompleting()
         {
-            Debug.Assert(_activeAsyncOperation == 1);
-            Volatile.Write(ref _activeAsyncOperation, 0);
+            Debug.Assert(_activeAsyncOperation);
+            _activeAsyncOperation = false;
         }
 
         private static void ThrowInvalidBeginCall() =>

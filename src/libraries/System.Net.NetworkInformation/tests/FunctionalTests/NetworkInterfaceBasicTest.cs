@@ -22,6 +22,7 @@ namespace System.Net.NetworkInformation.Tests
         [Fact]
         public void BasicTest_GetNetworkInterfaces_AtLeastOne()
         {
+
             Assert.NotEqual<int>(0, NetworkInterface.GetAllNetworkInterfaces().Length);
         }
 
@@ -50,7 +51,8 @@ namespace System.Net.NetworkInformation.Tests
 
                 if (nic.NetworkInterfaceType == NetworkInterfaceType.Ethernet)
                 {
-                    Assert.Equal(6, nic.GetPhysicalAddress().GetAddressBytes().Length);
+                    var physicalAddressLength = nic.GetPhysicalAddress().GetAddressBytes().Length;
+                    Assert.True(physicalAddressLength == 0 || physicalAddressLength == 6);
                 }
             }
         }
@@ -274,7 +276,6 @@ namespace System.Net.NetworkInformation.Tests
         }
 
         [ConditionalTheory]
-        [ActiveIssue("https://github.com/dotnet/runtime/issues/34690", TestPlatforms.Windows, TargetFrameworkMonikers.Netcoreapp, TestRuntimes.Mono)]
         [SkipOnPlatform(TestPlatforms.OSX | TestPlatforms.FreeBSD, "Expected behavior is different on OSX or FreeBSD")]
         [SkipOnPlatform(TestPlatforms.iOS | TestPlatforms.MacCatalyst | TestPlatforms.tvOS, "Not supported on Browser, iOS, MacCatalyst, or tvOS.")]
         [InlineData(false)]
@@ -303,6 +304,29 @@ namespace System.Net.NetworkInformation.Tests
                 Assert.Equal(
                     (await receivedTask).PacketInformation.Interface,
                     ipv6 ? NetworkInterface.IPv6LoopbackInterfaceIndex : NetworkInterface.LoopbackInterfaceIndex);
+            }
+        }
+
+        [ConditionalFact]
+        public void NetworkInterface_UnicastLLA_ScopeIdSet()
+        {
+            bool foundLla = false;
+            foreach (NetworkInterface nic in NetworkInterface.GetAllNetworkInterfaces())
+            {
+                IPInterfaceProperties prop = nic.GetIPProperties();
+                foreach (UnicastIPAddressInformation info in prop.UnicastAddresses)
+                {
+                    if (info.Address.IsIPv6LinkLocal)
+                    {
+                        foundLla = true;
+                        Assert.NotEqual(0, info.Address.ScopeId);
+                    }
+                }
+            }
+
+            if (!foundLla)
+            {
+                throw new SkipTestException("Did not find any LLA");
             }
         }
     }

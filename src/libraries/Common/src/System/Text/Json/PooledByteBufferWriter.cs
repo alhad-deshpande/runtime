@@ -5,25 +5,47 @@ using System.Buffers;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
+using System.IO.Pipelines;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace System.Text.Json
 {
-    internal sealed class PooledByteBufferWriter : IBufferWriter<byte>, IDisposable
+    internal sealed class PooledByteBufferWriter : PipeWriter, IDisposable
     {
-        private byte[] _rentedBuffer;
+        // This class allows two possible configurations: if rentedBuffer is not null then
+        // it can be used as an IBufferWriter and holds a buffer that should eventually be
+        // returned to the shared pool. If rentedBuffer is null, then the instance is in a
+        // cleared/disposed state and it must re-rent a buffer before it can be used again.
+        private byte[]? _rentedBuffer;
         private int _index;
+        private readonly Stream? _stream;
 
         private const int MinimumBufferSize = 256;
 
-        public PooledByteBufferWriter(int initialCapacity)
+        // Value copied from Array.MaxLength in System.Private.CoreLib/src/libraries/System.Private.CoreLib/src/System/Array.cs.
+        public const int MaximumBufferSize = 0X7FFFFFC7;
+
+        private PooledByteBufferWriter()
+        {
+#if NET
+            // Ensure we are in sync with the Array.MaxLength implementation.
+            Debug.Assert(MaximumBufferSize == Array.MaxLength);
+#endif
+        }
+
+        public PooledByteBufferWriter(int initialCapacity) : this()
         {
             Debug.Assert(initialCapacity > 0);
 
             _rentedBuffer = ArrayPool<byte>.Shared.Rent(initialCapacity);
             _index = 0;
+        }
+
+        public PooledByteBufferWriter(int initialCapacity, Stream stream) : this(initialCapacity)
+        {
+            _stream = stream;
         }
 
         public ReadOnlyMemory<byte> WrittenMemory
@@ -68,6 +90,16 @@ namespace System.Text.Json
             ClearHelper();
         }
 
+        public void ClearAndReturnBuffers()
+        {
+            Debug.Assert(_rentedBuffer != null);
+
+            ClearHelper();
+            byte[] toReturn = _rentedBuffer;
+            _rentedBuffer = null;
+            ArrayPool<byte>.Shared.Return(toReturn);
+        }
+
         private void ClearHelper()
         {
             Debug.Assert(_rentedBuffer != null);
@@ -87,49 +119,50 @@ namespace System.Text.Json
 
             ClearHelper();
             byte[] toReturn = _rentedBuffer;
-            _rentedBuffer = null!;
+            _rentedBuffer = null;
             ArrayPool<byte>.Shared.Return(toReturn);
         }
 
-        public void Advance(int count)
+        public void InitializeEmptyInstance(int initialCapacity)
+        {
+            Debug.Assert(initialCapacity > 0);
+            Debug.Assert(_rentedBuffer is null);
+
+            _rentedBuffer = ArrayPool<byte>.Shared.Rent(initialCapacity);
+            _index = 0;
+        }
+
+        public static PooledByteBufferWriter CreateEmptyInstanceForCaching() => new PooledByteBufferWriter();
+
+        public override void Advance(int count)
         {
             Debug.Assert(_rentedBuffer != null);
             Debug.Assert(count >= 0);
             Debug.Assert(_index <= _rentedBuffer.Length - count);
-
             _index += count;
         }
 
-        public Memory<byte> GetMemory(int sizeHint = 0)
+        public override Memory<byte> GetMemory(int sizeHint = MinimumBufferSize)
         {
             CheckAndResizeBuffer(sizeHint);
             return _rentedBuffer.AsMemory(_index);
         }
 
-        public Span<byte> GetSpan(int sizeHint = 0)
+        public override Span<byte> GetSpan(int sizeHint = MinimumBufferSize)
         {
             CheckAndResizeBuffer(sizeHint);
             return _rentedBuffer.AsSpan(_index);
         }
 
-#if BUILDING_INBOX_LIBRARY
-        internal ValueTask WriteToStreamAsync(Stream destination, CancellationToken cancellationToken)
-        {
-            return destination.WriteAsync(WrittenMemory, cancellationToken);
-        }
-
+#if NET
         internal void WriteToStream(Stream destination)
         {
             destination.Write(WrittenMemory.Span);
         }
 #else
-        internal Task WriteToStreamAsync(Stream destination, CancellationToken cancellationToken)
-        {
-            return destination.WriteAsync(_rentedBuffer, 0, _index, cancellationToken);
-        }
-
         internal void WriteToStream(Stream destination)
         {
+            Debug.Assert(_rentedBuffer != null);
             destination.Write(_rentedBuffer, 0, _index);
         }
 #endif
@@ -137,26 +170,28 @@ namespace System.Text.Json
         private void CheckAndResizeBuffer(int sizeHint)
         {
             Debug.Assert(_rentedBuffer != null);
-            Debug.Assert(sizeHint >= 0);
+            Debug.Assert(sizeHint > 0);
 
-            if (sizeHint == 0)
+            int currentLength = _rentedBuffer.Length;
+            int availableSpace = currentLength - _index;
+
+            // If we've reached ~1GB written, grow to the maximum buffer
+            // length to avoid incessant minimal growths causing perf issues.
+            if (_index >= MaximumBufferSize / 2)
             {
-                sizeHint = MinimumBufferSize;
+                sizeHint = Math.Max(sizeHint, MaximumBufferSize - currentLength);
             }
-
-            int availableSpace = _rentedBuffer.Length - _index;
 
             if (sizeHint > availableSpace)
             {
-                int currentLength = _rentedBuffer.Length;
                 int growBy = Math.Max(sizeHint, currentLength);
 
                 int newSize = currentLength + growBy;
 
-                if ((uint)newSize > int.MaxValue)
+                if ((uint)newSize > MaximumBufferSize)
                 {
                     newSize = currentLength + sizeHint;
-                    if ((uint)newSize > int.MaxValue)
+                    if ((uint)newSize > MaximumBufferSize)
                     {
                         ThrowHelper.ThrowOutOfMemoryException_BufferMaximumSizeExceeded((uint)newSize);
                     }
@@ -169,15 +204,37 @@ namespace System.Text.Json
                 Debug.Assert(oldBuffer.Length >= _index);
                 Debug.Assert(_rentedBuffer.Length >= _index);
 
-                Span<byte> previousBuffer = oldBuffer.AsSpan(0, _index);
-                previousBuffer.CopyTo(_rentedBuffer);
-                previousBuffer.Clear();
+                Span<byte> oldBufferAsSpan = oldBuffer.AsSpan(0, _index);
+                oldBufferAsSpan.CopyTo(_rentedBuffer);
+                oldBufferAsSpan.Clear();
                 ArrayPool<byte>.Shared.Return(oldBuffer);
             }
 
             Debug.Assert(_rentedBuffer.Length - _index > 0);
             Debug.Assert(_rentedBuffer.Length - _index >= sizeHint);
         }
+
+        public override async ValueTask<FlushResult> FlushAsync(CancellationToken cancellationToken = default)
+        {
+            Debug.Assert(_stream is not null);
+#if NET
+            await _stream.WriteAsync(WrittenMemory, cancellationToken).ConfigureAwait(false);
+#else
+            Debug.Assert(_rentedBuffer != null);
+            await _stream.WriteAsync(_rentedBuffer, 0, _index, cancellationToken).ConfigureAwait(false);
+#endif
+            Clear();
+
+            return new FlushResult(isCanceled: false, isCompleted: false);
+        }
+
+        public override bool CanGetUnflushedBytes => true;
+        public override long UnflushedBytes => _index;
+
+        // This type is used internally in JsonSerializer to help buffer and flush bytes to the underlying Stream.
+        // It's only pretending to be a PipeWriter and doesn't need Complete or CancelPendingFlush for the internal usage.
+        public override void CancelPendingFlush() => throw new NotImplementedException();
+        public override void Complete(Exception? exception = null) => throw new NotImplementedException();
     }
 
     internal static partial class ThrowHelper

@@ -24,7 +24,7 @@
 static gboolean
 mono_bb_is_fall_through (MonoCompile *cfg, MonoBasicBlock *bb)
 {
-	return  bb->next_bb && bb->next_bb->region == bb->region && /*fall throught between regions is not really interesting or useful*/
+	return  bb->next_bb && bb->next_bb->region == bb->region && /*fallthrough between regions is not really interesting or useful*/
 			(bb->last_ins == NULL || !MONO_IS_BRANCH_OP (bb->last_ins)); /*and the last op can't be a branch too*/
 }
 
@@ -41,7 +41,6 @@ mono_branch_optimize_exception_target (MonoCompile *cfg, MonoBasicBlock *bb, con
 	MonoMethodHeader *header = cfg->header;
 	MonoExceptionClause *clause;
 	MonoClass *exclass;
-	int i;
 
 	if (!(cfg->opt & MONO_OPT_EXCEPTION))
 		return NULL;
@@ -51,7 +50,7 @@ mono_branch_optimize_exception_target (MonoCompile *cfg, MonoBasicBlock *bb, con
 
 	exclass = mono_class_load_from_name (mono_get_corlib (), "System", exname);
 	/* search for the handler */
-	for (i = 0; i < header->num_clauses; ++i) {
+	for (guint i = 0; i < header->num_clauses; ++i) {
 		clause = &header->clauses [i];
 		if (MONO_OFFSET_IN_CLAUSE (clause, bb->real_offset)) {
 			if (clause->flags == MONO_EXCEPTION_CLAUSE_NONE && clause->data.catch_class && mono_class_is_assignable_from_internal (clause->data.catch_class, exclass)) {
@@ -429,6 +428,9 @@ mono_if_conversion (MonoCompile *cfg)
 			mono_bblock_insert_before_ins (bb, compare, ins2);
 			mono_bblock_insert_before_ins (bb, ins2, ins1);
 
+			bb->needs_decompose |= true_bb->needs_decompose;
+			bb->needs_decompose |= false_bb->needs_decompose;
+
 			/* Add cmov instruction */
 			MONO_INST_NEW (cfg, cmov, OP_NOP);
 			cmov->dreg = dreg;
@@ -774,7 +776,7 @@ mono_if_conversion (MonoCompile *cfg)
 }
 
 void
-mono_nullify_basic_block (MonoBasicBlock *bb)
+mono_nullify_basic_block (MonoCompile *cfg, MonoBasicBlock *bb)
 {
 	bb->in_count = 0;
 	bb->out_count = 0;
@@ -958,7 +960,7 @@ remove_block_if_useless (MonoCompile *cfg, MonoBasicBlock *bb, MonoBasicBlock *p
 		}
 
 		previous_bb->next_bb = bb->next_bb;
-		mono_nullify_basic_block (bb);
+		mono_nullify_basic_block (cfg, bb);
 
 		return TRUE;
 	} else {
@@ -1044,7 +1046,7 @@ mono_merge_basic_blocks (MonoCompile *cfg, MonoBasicBlock *bb, MonoBasicBlock *b
 		if (bb->next_bb == bbn)
 			bb->next_bb = bbn->next_bb;
 	}
-	mono_nullify_basic_block (bbn);
+	mono_nullify_basic_block (cfg, bbn);
 
 	/*
 	 * If bbn fell through to its next bblock, have to add a branch, since bb
@@ -1289,7 +1291,7 @@ mono_optimize_branches (MonoCompile *cfg)
 				for (i = 0; i < bbn->out_count; i++)
 					replace_in_block (bbn->out_bb [i], bbn, NULL);
 
-				mono_nullify_basic_block (bbn);
+				mono_nullify_basic_block (cfg, bbn);
 				changed = TRUE;
 			}
 
@@ -1309,7 +1311,7 @@ mono_optimize_branches (MonoCompile *cfg)
 					/* the block are in sequence anyway ... */
 
 					/* branches to the following block can be removed */
-					if (bb->last_ins && bb->last_ins->opcode == OP_BR && !bbn->out_of_line) {
+					if (!COMPILE_LLVM (cfg) && bb->last_ins && bb->last_ins->opcode == OP_BR && !bbn->out_of_line) {
 						NULLIFY_INS (bb->last_ins);
 						changed = TRUE;
 						if (cfg->verbose_level > 2)
@@ -1339,7 +1341,7 @@ mono_optimize_branches (MonoCompile *cfg)
 				for (i = 0; i < bbn->out_count; i++)
 					replace_in_block (bbn->out_bb [i], bbn, NULL);
 
-				mono_nullify_basic_block (bbn);
+				mono_nullify_basic_block (cfg, bbn);
 				changed = TRUE;
 				continue;
 			}
@@ -1461,7 +1463,7 @@ mono_optimize_branches (MonoCompile *cfg)
 				}
 
 				if (bb->last_ins && MONO_IS_COND_BRANCH_NOFP (bb->last_ins)) {
-					if (bb->last_ins->inst_false_bb && bb->last_ins->inst_false_bb->out_of_line && (bb->region == bb->last_ins->inst_false_bb->region) && !cfg->disable_out_of_line_bblocks) {
+					if (!COMPILE_LLVM (cfg) && bb->last_ins->inst_false_bb && bb->last_ins->inst_false_bb->out_of_line && (bb->region == bb->last_ins->inst_false_bb->region) && !cfg->disable_out_of_line_bblocks) {
 						/* Reverse the branch */
 						bb->last_ins->opcode = GUINT32_TO_OPCODE (mono_reverse_branch_op (bb->last_ins->opcode));
 						bbn = bb->last_ins->inst_false_bb;

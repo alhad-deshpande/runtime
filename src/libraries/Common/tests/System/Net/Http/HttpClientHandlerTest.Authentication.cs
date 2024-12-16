@@ -546,7 +546,7 @@ namespace System.Net.Http.Functional.Tests
 
         public static IEnumerable<object[]> EchoServersData()
         {
-            foreach (Uri serverUri in Configuration.Http.EchoServerList)
+            foreach (Uri serverUri in Configuration.Http.GetEchoServerList())
             {
                 yield return new object[] { serverUri };
             }
@@ -717,7 +717,7 @@ namespace System.Net.Http.Functional.Tests
                     Assert.Equal(0, requestData.GetHeaderValueCount("Authorization"));
 
                     // Establish a session connection
-                    using var connection = await server.EstablishConnectionAsync();
+                    await using LoopbackServer.Connection connection = await server.EstablishConnectionAsync();
                     requestData = await connection.ReadRequestDataAsync();
                     string authHeaderValue = requestData.GetSingleHeaderValue("Authorization");
                     Assert.Contains("NTLM", authHeaderValue);

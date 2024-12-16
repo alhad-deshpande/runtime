@@ -3,12 +3,12 @@
 
 using System;
 using System.Buffers.Binary;
-using System.IO;
 using System.Diagnostics;
+using System.IO;
+using System.Runtime.CompilerServices;
+using System.Security;
 using System.Text;
 using System.Threading;
-using System.Security;
-using System.Runtime.CompilerServices;
 
 namespace System.Text
 {
@@ -1171,8 +1171,7 @@ namespace System.Text
             public override void Reset()
             {
                 bLeftOver = 0;
-                if (m_fallbackBuffer != null)
-                    m_fallbackBuffer.Reset();
+                m_fallbackBuffer?.Reset();
             }
 
             // Anything left in our decoder?

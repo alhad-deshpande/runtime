@@ -3,9 +3,9 @@
 
 using System.Collections.Generic;
 using System.ComponentModel.Composition.Primitives;
-using System.Linq;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using System.Linq;
 
 namespace System.ComponentModel.Composition.Hosting
 {
@@ -82,10 +82,7 @@ namespace System.ComponentModel.Composition.Hosting
                             {
                                 if (import.IsImportDependentOnPart(part, export, part.IsGeneric() != candidateReachablePart.IsGeneric()))
                                 {
-                                    if (reachablePartList == null)
-                                    {
-                                        reachablePartList = new List<ComposablePartDefinition>();
-                                    }
+                                    reachablePartList ??= new List<ComposablePartDefinition>();
                                     reachablePartList.Add(candidateReachablePart);
                                 }
                             }

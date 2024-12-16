@@ -2,12 +2,12 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System;
-using System.Diagnostics.CodeAnalysis;
-using System.Text;
-using System.Globalization;
-using System.Runtime.InteropServices;
 using System.Collections;
 using System.Collections.Specialized;
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
+using System.Runtime.InteropServices;
+using System.Text;
 
 namespace System.Diagnostics
 {
@@ -42,15 +42,7 @@ namespace System.Diagnostics
             _listenerName = name;
         }
 
-        public StringDictionary Attributes
-        {
-            get
-            {
-                if (_attributes == null)
-                    _attributes = new StringDictionary();
-                return _attributes;
-            }
-        }
+        public StringDictionary Attributes => _attributes ??= new StringDictionary();
 
         /// <devdoc>
         /// <para> Gets or sets a name for this <see cref='System.Diagnostics.TraceListener'/>.</para>
@@ -59,7 +51,6 @@ namespace System.Diagnostics
         public virtual string Name
         {
             get { return _listenerName ?? ""; }
-
             set { _listenerName = value; }
         }
 

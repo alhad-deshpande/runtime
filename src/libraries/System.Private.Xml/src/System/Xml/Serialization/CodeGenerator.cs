@@ -13,10 +13,10 @@ using System.Reflection;
 using System.Reflection.Emit;
 using System.Resources;
 using System.Runtime.CompilerServices;
-using System.Xml;
-using System.Xml.Serialization.Configuration;
 using System.Security;
 using System.Text.RegularExpressions;
+using System.Xml;
+using System.Xml.Serialization.Configuration;
 
 namespace System.Xml.Serialization
 {
@@ -140,15 +140,7 @@ namespace System.Xml.Serialization
 
         internal LocalBuilder? retLocal;
         internal Label retLabel;
-        internal LocalBuilder ReturnLocal
-        {
-            get
-            {
-                if (retLocal == null)
-                    retLocal = DeclareLocal(_methodBuilder!.ReturnType, "_ret");
-                return retLocal;
-            }
-        }
+        internal LocalBuilder ReturnLocal => retLocal ??= DeclareLocal(_methodBuilder!.ReturnType, "_ret");
         internal Label ReturnLabel
         {
             get { return retLabel; }
@@ -311,6 +303,11 @@ namespace System.Xml.Serialization
                           CodeGenerator.InstanceBindingFlags,
                           Type.EmptyTypes
                           )!;
+                    // ICollection is not a value type, and ICollection::get_Count is a virtual method. So Call() here
+                    // will do a 'callvirt'. If we are working with a value type, box it before calling.
+                    Debug.Assert(ICollection_get_Count.IsVirtual && !ICollection_get_Count.DeclaringType!.IsValueType);
+                    if (varType.IsValueType)
+                        Box(varType);
                     Call(ICollection_get_Count);
                 }
                 Blt(forState.BeginLabel);
@@ -432,6 +429,7 @@ namespace System.Xml.Serialization
             _ilGen!.Emit(OpCodes.Newarr, elementType);
         }
 
+        [RequiresDynamicCode(XmlSerializer.AotSerializationWarning)]
         internal void StackallocSpan(Type elementType, int len)
         {
             Ldc(len);
@@ -537,9 +535,8 @@ namespace System.Xml.Serialization
         internal Type LoadMember(MemberInfo memberInfo)
         {
             Type? memberType;
-            if (memberInfo is FieldInfo)
+            if (memberInfo is FieldInfo fieldInfo)
             {
-                FieldInfo fieldInfo = (FieldInfo)memberInfo;
                 memberType = fieldInfo.FieldType;
                 if (fieldInfo.IsStatic)
                 {
@@ -557,12 +554,7 @@ namespace System.Xml.Serialization
                 memberType = property.PropertyType;
                 if (property != null)
                 {
-                    MethodInfo? getMethod = property.GetMethod;
-
-                    if (getMethod == null)
-                    {
-                        getMethod = GetPropertyMethodFromBaseType(property, true);
-                    }
+                    MethodInfo? getMethod = property.GetMethod ?? GetPropertyMethodFromBaseType(property, true);
 
                     System.Diagnostics.Debug.Assert(getMethod != null);
                     Call(getMethod);
@@ -576,9 +568,8 @@ namespace System.Xml.Serialization
         internal Type LoadMemberAddress(MemberInfo memberInfo)
         {
             Type? memberType;
-            if (memberInfo is FieldInfo)
+            if (memberInfo is FieldInfo fieldInfo)
             {
-                FieldInfo fieldInfo = (FieldInfo)memberInfo;
                 memberType = fieldInfo.FieldType;
                 if (fieldInfo.IsStatic)
                 {
@@ -596,12 +587,7 @@ namespace System.Xml.Serialization
                 memberType = property.PropertyType;
                 if (property != null)
                 {
-                    MethodInfo? getMethod = property.GetMethod;
-
-                    if (getMethod == null)
-                    {
-                        getMethod = GetPropertyMethodFromBaseType(property, true);
-                    }
+                    MethodInfo? getMethod = property.GetMethod ?? GetPropertyMethodFromBaseType(property, true);
 
                     System.Diagnostics.Debug.Assert(getMethod != null);
                     Call(getMethod);
@@ -618,9 +604,8 @@ namespace System.Xml.Serialization
         [RequiresUnreferencedCode("calls GetPropertyMethodFromBaseType")]
         internal void StoreMember(MemberInfo memberInfo)
         {
-            if (memberInfo is FieldInfo)
+            if (memberInfo is FieldInfo fieldInfo)
             {
-                FieldInfo fieldInfo = (FieldInfo)memberInfo;
                 if (fieldInfo.IsStatic)
                 {
                     _ilGen!.Emit(OpCodes.Stsfld, fieldInfo);
@@ -636,12 +621,7 @@ namespace System.Xml.Serialization
                 PropertyInfo property = (PropertyInfo)memberInfo;
                 if (property != null)
                 {
-                    MethodInfo? setMethod = property.SetMethod;
-
-                    if (setMethod == null)
-                    {
-                        setMethod = GetPropertyMethodFromBaseType(property, false);
-                    }
+                    MethodInfo? setMethod = property.SetMethod ?? GetPropertyMethodFromBaseType(property, false);
 
                     System.Diagnostics.Debug.Assert(setMethod != null);
                     Call(setMethod);
@@ -1267,6 +1247,7 @@ namespace System.Xml.Serialization
             return ifState;
         }
 
+        [RequiresDynamicCode(XmlSerializer.AotSerializationWarning)]
         internal static AssemblyBuilder CreateAssemblyBuilder(string name)
         {
             AssemblyName assemblyName = new AssemblyName();
@@ -1649,7 +1630,7 @@ namespace System.Xml.Serialization
         private readonly string _reason;
 
         public CodeGeneratorConversionException(Type sourceType, Type targetType, bool isAddress, string reason)
-            : base()
+            : base(SR.Format(SR.CodeGenConvertError, reason, sourceType.ToString(), targetType.ToString()))
         {
             _sourceType = sourceType;
             _targetType = targetType;

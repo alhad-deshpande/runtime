@@ -13,7 +13,11 @@ namespace System.Net.Mail
     [Flags]
     public enum DeliveryNotificationOptions
     {
-        None = 0, OnSuccess = 1, OnFailure = 2, Delay = 4, Never = (int)0x08000000
+        None = 0,
+        OnSuccess = 1,
+        OnFailure = 2,
+        Delay = 4,
+        Never = (int)0x08000000
     }
 
     public class MailMessage : IDisposable
@@ -299,18 +303,9 @@ namespace System.Net.Mail
             {
                 _disposed = true;
 
-                if (_views != null)
-                {
-                    _views.Dispose();
-                }
-                if (_attachments != null)
-                {
-                    _attachments.Dispose();
-                }
-                if (_bodyView != null)
-                {
-                    _bodyView.Dispose();
-                }
+                _views?.Dispose();
+                _attachments?.Dispose();
+                _bodyView?.Dispose();
             }
         }
 
@@ -440,11 +435,11 @@ namespace System.Net.Mail
             _message.Send(writer, sendEnvelope, allowUnicode);
         }
 
-        internal IAsyncResult BeginSend(BaseWriter writer, bool sendEnvelope, bool allowUnicode,
+        internal IAsyncResult BeginSend(BaseWriter writer, bool allowUnicode,
             AsyncCallback? callback, object? state)
         {
             SetContent(allowUnicode);
-            return _message.BeginSend(writer, sendEnvelope, allowUnicode, callback, state);
+            return _message.BeginSend(writer, allowUnicode, callback, state);
         }
 
         internal void EndSend(IAsyncResult asyncResult)

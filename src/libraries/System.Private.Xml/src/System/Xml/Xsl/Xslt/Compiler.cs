@@ -70,12 +70,12 @@ namespace System.Xml.Xsl.Xslt
             Scripts = new Scripts(this);
         }
 
-        public CompilerErrorCollection Compile(object stylesheet, XmlResolver? xmlResolver, out QilExpression qil)
+        public CompilerErrorCollection Compile(object stylesheet, XmlResolver? xmlResolver, XmlResolver? origResolver, out QilExpression qil)
         {
             Debug.Assert(stylesheet != null);
             Debug.Assert(Root == null, "Compiler cannot be reused");
 
-            new XsltLoader().Load(this, stylesheet, xmlResolver);
+            new XsltLoader().Load(this, stylesheet, xmlResolver, origResolver);
             qil = QilGenerator.CompileStylesheet(this);
             SortErrors();
             return CompilerErrorColl;
@@ -445,7 +445,7 @@ namespace System.Xml.Xsl.Xslt
         public readonly string NanSymbol;
         public readonly char[] Characters;
 
-        public static DecimalFormatDecl Default = new DecimalFormatDecl(new XmlQualifiedName(), "Infinity", "NaN", ".,%\u20300#;-");
+        public static readonly DecimalFormatDecl Default = new DecimalFormatDecl(new XmlQualifiedName(), "Infinity", "NaN", ".,%\u20300#;-");
 
         public DecimalFormatDecl(XmlQualifiedName name, string infinitySymbol, string nanSymbol, string characters)
         {

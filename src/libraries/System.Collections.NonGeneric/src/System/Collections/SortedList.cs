@@ -11,6 +11,7 @@
 **
 ===========================================================*/
 
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
@@ -93,8 +94,7 @@ namespace System.Collections
         //
         public SortedList(int initialCapacity)
         {
-            if (initialCapacity < 0)
-                throw new ArgumentOutOfRangeException(nameof(initialCapacity), SR.ArgumentOutOfRange_NeedNonNegNum);
+            ArgumentOutOfRangeException.ThrowIfNegative(initialCapacity);
 
             keys = new object[initialCapacity];
             values = new object[initialCapacity];
@@ -337,8 +337,7 @@ namespace System.Collections
 
             if (array.Rank != 1)
                 throw new ArgumentException(SR.Arg_RankMultiDimNotSupported, nameof(array));
-            if (arrayIndex < 0)
-                throw new ArgumentOutOfRangeException(nameof(arrayIndex), SR.ArgumentOutOfRange_NeedNonNegNum);
+            ArgumentOutOfRangeException.ThrowIfNegative(arrayIndex);
             if (array.Length - arrayIndex < Count)
                 throw new ArgumentException(SR.Arg_ArrayPlusOffTooSmall);
 
@@ -353,12 +352,12 @@ namespace System.Collections
         // KeyValuePairs is different from Dictionary Entry in that it has special
         // debugger attributes on its fields.
 
-        internal virtual KeyValuePairs[] ToKeyValuePairsArray()
+        internal virtual DebugViewDictionaryItem<object, object?>[] ToDebugViewDictionaryItemArray()
         {
-            KeyValuePairs[] array = new KeyValuePairs[Count];
+            var array = new DebugViewDictionaryItem<object, object?>[Count];
             for (int i = 0; i < Count; i++)
             {
-                array[i] = new KeyValuePairs(keys[i], values[i]);
+                array[i] = new DebugViewDictionaryItem<object, object?>(keys[i], values[i]);
             }
             return array;
         }
@@ -426,11 +425,7 @@ namespace System.Collections
         // Remove and RemoveRange methods or through an enumerator).
         // Null is an invalid key value.
         //
-        public virtual IList GetKeyList()
-        {
-            if (keyList == null) keyList = new KeyList(this);
-            return keyList;
-        }
+        public virtual IList GetKeyList() => keyList ??= new KeyList(this);
 
         // Returns an IList representing the values of this sorted list. The
         // returned list is an alias for the values of this sorted list, so
@@ -443,11 +438,7 @@ namespace System.Collections
         // elements (through the Remove, RemoveRange, Set and
         // SetRange methods or through an enumerator).
         //
-        public virtual IList GetValueList()
-        {
-            if (valueList == null) valueList = new ValueList(this);
-            return valueList;
-        }
+        public virtual IList GetValueList() => valueList ??= new ValueList(this);
 
         // Returns the value associated with the given key. If an entry with the
         // given key is not found, the returned value is null.
@@ -776,9 +767,9 @@ namespace System.Collections
                 }
             }
 
-            internal override KeyValuePairs[] ToKeyValuePairsArray()
+            internal override DebugViewDictionaryItem<object, object?>[] ToDebugViewDictionaryItemArray()
             {
-                return _list.ToKeyValuePairsArray();
+                return _list.ToDebugViewDictionaryItemArray();
             }
 
             public override void TrimToSize()
@@ -1107,11 +1098,11 @@ namespace System.Collections
             }
 
             [DebuggerBrowsable(DebuggerBrowsableState.RootHidden)]
-            public KeyValuePairs[] Items
+            public DebugViewDictionaryItem<object, object?>[] Items
             {
                 get
                 {
-                    return _sortedList.ToKeyValuePairsArray();
+                    return _sortedList.ToDebugViewDictionaryItemArray();
                 }
             }
         }

@@ -98,9 +98,8 @@ namespace System.Security.Cryptography
             // .NET Framework compat
             if (value == 0)
             {
-                Span<byte> single = stackalloc byte[1];
-                single[0] = 0;
-                WriteCryptoBinary(name, single, builder);
+                byte single = 0;
+                WriteCryptoBinary(name, new ReadOnlySpan<byte>(in single), builder);
                 return;
             }
 
@@ -202,10 +201,7 @@ namespace System.Security.Cryptography
                     return null;
                 }
 
-                if (_enumerator == null)
-                {
-                    _enumerator = _enumerable.GetEnumerator();
-                }
+                _enumerator ??= _enumerable.GetEnumerator();
 
                 int origIdx = _index;
                 int idx = origIdx;
@@ -292,7 +288,7 @@ namespace System.Security.Cryptography
                     s_elementNameProperty = xElement.GetProperty("Name")!;
                     s_elementValueProperty = xElement.GetProperty("Value")!;
 
-                    Type xName= Type.GetType("System.Xml.Linq.XName" + XmlLinqAssemblyString)!;
+                    Type xName = Type.GetType("System.Xml.Linq.XName" + XmlLinqAssemblyString)!;
                     s_nameNameProperty = xName.GetProperty("LocalName")!;
                 }
 #pragma warning restore CA1810

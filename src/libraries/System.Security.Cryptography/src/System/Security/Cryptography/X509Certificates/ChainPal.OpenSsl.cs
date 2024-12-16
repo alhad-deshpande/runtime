@@ -10,6 +10,7 @@ namespace System.Security.Cryptography.X509Certificates
     {
         private static readonly TimeSpan s_maxUrlRetrievalTimeout = TimeSpan.FromMinutes(1);
 
+#pragma warning disable IDE0060
         internal static partial IChainPal FromHandle(IntPtr chainContext)
         {
             throw new PlatformNotSupportedException();
@@ -19,6 +20,7 @@ namespace System.Security.Cryptography.X509Certificates
         {
             return true;
         }
+#pragma warning restore IDE0060
 
         public static void FlushStores()
         {
@@ -69,7 +71,7 @@ namespace System.Security.Cryptography.X509Certificates
             }
         }
 
-        private static IChainPal? BuildChainCore(
+        private static OpenSslX509ChainProcessor? BuildChainCore(
             bool useMachineContext,
             ICertificatePal cert,
             X509Certificate2Collection? extraStore,
@@ -191,8 +193,8 @@ namespace System.Security.Cryptography.X509Certificates
             if (chainPal.ChainElements!.Length > 0)
             {
                 X509Certificate2 reportedLeaf = chainPal.ChainElements[0].Certificate;
-                Debug.Assert(reportedLeaf != null, "reportedLeaf != null");
-                Debug.Assert(!ReferenceEquals(cert, reportedLeaf.Pal), "!ReferenceEquals(cert, reportedLeaf.Pal)");
+                Debug.Assert(reportedLeaf != null);
+                Debug.Assert(!ReferenceEquals(cert, reportedLeaf.Pal));
             }
 #endif
             return chainPal;
@@ -235,7 +237,7 @@ namespace System.Security.Cryptography.X509Certificates
 
                         if (OpenSslX509ChainEventSource.Log.IsEnabled())
                         {
-                            OpenSslX509ChainEventSource.Log.CachingIntermediateFailed(cert);
+                            OpenSslX509ChainEventSource.Log.CachingIntermediateFailedMessage();
                         }
                     }
                 }

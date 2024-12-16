@@ -46,10 +46,7 @@ namespace System.ComponentModel.DataAnnotations
             object? otherPropertyValue = otherPropertyInfo.GetValue(validationContext.ObjectInstance, null);
             if (!Equals(value, otherPropertyValue))
             {
-                if (OtherPropertyDisplayName == null)
-                {
-                    OtherPropertyDisplayName = GetDisplayNameForProperty(otherPropertyInfo);
-                }
+                OtherPropertyDisplayName ??= GetDisplayNameForProperty(otherPropertyInfo);
 
                 string[]? memberNames = validationContext.MemberName != null
                    ? new[] { validationContext.MemberName }
@@ -67,7 +64,7 @@ namespace System.ComponentModel.DataAnnotations
             {
                 if (attribute is DisplayAttribute display)
                 {
-                   return display.GetName();
+                    return display.GetName();
                 }
             }
 

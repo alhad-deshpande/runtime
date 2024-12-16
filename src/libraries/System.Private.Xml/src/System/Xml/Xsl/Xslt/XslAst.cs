@@ -1,18 +1,17 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-using System.Text;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Globalization;
+using System.Text;
 using System.Xml.Xsl.Qil;
+using ContextInfo = System.Xml.Xsl.Xslt.XsltInput.ContextInfo;
+using XPathQilFactory = System.Xml.Xsl.XPath.XPathQilFactory;
 
 namespace System.Xml.Xsl.Xslt
 {
-    using ContextInfo = XsltInput.ContextInfo;
-    using XPathQilFactory = System.Xml.Xsl.XPath.XPathQilFactory;
-
     // Set of classes that represent XSLT AST
 
     // XSLT AST is a tree of nodes that represent content of xsl template.
@@ -118,10 +117,7 @@ namespace System.Xml.Xsl.Xslt
         public void AddContent(XslNode node)
         {
             Debug.Assert(node != null);
-            if (_content == null)
-            {
-                _content = new List<XslNode>();
-            }
+            _content ??= new List<XslNode>();
             _content.Add(node);
         }
 

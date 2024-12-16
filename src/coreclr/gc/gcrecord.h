@@ -73,7 +73,8 @@ enum gc_condemn_reason_condition
     gen_joined_servo_postpone = 27,
     gen_joined_stress_mix = 28,
     gen_joined_stress = 29,
-    gcrc_max = 30
+    gen_joined_aggressive = 30,
+    gcrc_max = 31
 };
 
 #ifdef DT_LOG
@@ -286,7 +287,7 @@ static char* str_heap_compact_reasons[] =
     "low on ephemeral space",
     "high fragmentation",
     "couldn't allocate gaps",
-    "user specfied compact LOH",
+    "user specified compact LOH",
     "last GC before OOM",
     "induced compacting GC",
     "fragmented gen0 (ephemeral GC)",

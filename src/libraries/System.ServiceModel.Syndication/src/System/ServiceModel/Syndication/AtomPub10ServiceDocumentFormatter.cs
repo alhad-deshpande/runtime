@@ -1,11 +1,11 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-using System.Xml.Serialization;
+using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Xml;
 using System.Xml.Schema;
-using System.Diagnostics.CodeAnalysis;
-using System.Diagnostics;
+using System.Xml.Serialization;
 
 namespace System.ServiceModel.Syndication
 {
@@ -221,10 +221,7 @@ namespace System.ServiceModel.Syndication
                         {
                             SyndicationCategory category = CreateCategory(inlineCategories);
                             Atom10FeedFormatter.ReadCategory(reader, category, version, preserveAttributeExtensions: true, preserveElementExtensions: true, maxExtensionSize);
-                            if (category.Scheme == null)
-                            {
-                                category.Scheme = inlineCategories.Scheme;
-                            }
+                            category.Scheme ??= inlineCategories.Scheme;
                             inlineCategories.Categories.Add(category);
                         }
                         else if (!TryParseElement(reader, inlineCategories, version))
@@ -580,10 +577,7 @@ namespace System.ServiceModel.Syndication
                 writer.WriteAttributeString(App10Constants.Href, FeedUtils.GetUriString(collection.Link));
             }
             WriteAttributeExtensions(writer, collection, Version);
-            if (collection.Title != null)
-            {
-                collection.Title.WriteTo(writer, Atom10Constants.TitleTag, Atom10Constants.Atom10Namespace);
-            }
+            collection.Title?.WriteTo(writer, Atom10Constants.TitleTag, Atom10Constants.Atom10Namespace);
             for (int i = 0; i < collection.Accepts.Count; ++i)
             {
                 writer.WriteElementString(App10Constants.Prefix, App10Constants.Accept, App10Constants.Namespace, collection.Accepts[i]);
@@ -628,10 +622,7 @@ namespace System.ServiceModel.Syndication
                 WriteXmlBase(writer, baseUriToWrite);
             }
             WriteAttributeExtensions(writer, workspace, Version);
-            if (workspace.Title != null)
-            {
-                workspace.Title.WriteTo(writer, Atom10Constants.TitleTag, Atom10Constants.Atom10Namespace);
-            }
+            workspace.Title?.WriteTo(writer, Atom10Constants.TitleTag, Atom10Constants.Atom10Namespace);
             for (int i = 0; i < workspace.Collections.Count; ++i)
             {
                 WriteCollection(writer, workspace.Collections[i], baseUri);

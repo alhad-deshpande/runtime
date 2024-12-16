@@ -2,11 +2,11 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System;
-using System.Reflection;
-using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
+using System.Reflection;
 using System.Reflection.Runtime.General;
 using System.Reflection.Runtime.TypeInfos;
 
@@ -22,8 +22,7 @@ namespace System.Reflection.Runtime.CustomAttributes
             Type attributeType, IList<CustomAttributeTypedArgument> constructorArguments)
         {
             _attributeType = attributeType;
-            if (constructorArguments == null)
-                constructorArguments = Array.Empty<CustomAttributeTypedArgument>();
+            constructorArguments ??= Array.Empty<CustomAttributeTypedArgument>();
             _constructorArguments = new ReadOnlyCollection<CustomAttributeTypedArgument>(constructorArguments);
         }
 
@@ -49,14 +48,6 @@ namespace System.Reflection.Runtime.CustomAttributes
                     expectedParameterTypes[i] = _constructorArguments[i].ArgumentType;
                 }
                 return ResolveAttributeConstructor(_attributeType, expectedParameterTypes);
-            }
-        }
-
-        internal sealed override string AttributeTypeString
-        {
-            get
-            {
-                return _attributeType.FormatTypeNameForReflection();
             }
         }
 

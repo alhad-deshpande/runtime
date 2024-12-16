@@ -2,12 +2,77 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System.Collections.Generic;
+using System.Numerics;
 using Xunit;
 
 namespace System.Linq.Tests
 {
     public class MinTests : EnumerableTests
     {
+        public static IEnumerable<object[]> Min_AllTypes_TestData()
+        {
+            for (int length = 2; length < 65; length++)
+            {
+                yield return new object[] { Shuffler.Shuffle(Enumerable.Range(length, length).Select(i => (byte)i)), (byte)length };
+                yield return new object[] { Shuffler.Shuffle(Enumerable.Range(length, length).Select(i => (byte)i).ToArray()), (byte)length };
+
+                // Unit Tests does +T.One so we should generate data up to one value below sbyte.MaxValue, otherwise the type overflows
+                if ((length + length) < sbyte.MaxValue) {
+                    yield return new object[] { Shuffler.Shuffle(Enumerable.Range(length, length).Select(i => (sbyte)i)), (sbyte)length };
+                    yield return new object[] { Shuffler.Shuffle(Enumerable.Range(length, length).Select(i => (sbyte)i).ToArray()), (sbyte)length };
+                }
+
+                yield return new object[] { Shuffler.Shuffle(Enumerable.Range(length, length).Select(i => (ushort)i)), (ushort)length };
+                yield return new object[] { Shuffler.Shuffle(Enumerable.Range(length, length).Select(i => (ushort)i).ToArray()), (ushort)length };
+
+                yield return new object[] { Shuffler.Shuffle(Enumerable.Range(length, length).Select(i => (short)i)), (short)length };
+                yield return new object[] { Shuffler.Shuffle(Enumerable.Range(length, length).Select(i => (short)i).ToArray()), (short)length };
+
+                yield return new object[] { Shuffler.Shuffle(Enumerable.Range(length, length).Select(i => (uint)i)), (uint)length };
+                yield return new object[] { Shuffler.Shuffle(Enumerable.Range(length, length).Select(i => (uint)i).ToArray()), (uint)length };
+
+                yield return new object[] { Shuffler.Shuffle(Enumerable.Range(length, length).Select(i => (int)i)), (int)length };
+                yield return new object[] { Shuffler.Shuffle(Enumerable.Range(length, length).Select(i => (int)i).ToArray()), (int)length };
+
+                yield return new object[] { Shuffler.Shuffle(Enumerable.Range(length, length).Select(i => (ulong)i)), (ulong)length };
+                yield return new object[] { Shuffler.Shuffle(Enumerable.Range(length, length).Select(i => (ulong)i).ToArray()), (ulong)length };
+
+                yield return new object[] { Shuffler.Shuffle(Enumerable.Range(length, length).Select(i => (long)i)), (long)length };
+                yield return new object[] { Shuffler.Shuffle(Enumerable.Range(length, length).Select(i => (long)i).ToArray()), (long)length };
+
+                yield return new object[] { Shuffler.Shuffle(Enumerable.Range(length, length).Select(i => (float)i)), (float)length };
+                yield return new object[] { Shuffler.Shuffle(Enumerable.Range(length, length).Select(i => (float)i).ToArray()), (float)length };
+
+                yield return new object[] { Shuffler.Shuffle(Enumerable.Range(length, length).Select(i => (double)i)), (double)length };
+                yield return new object[] { Shuffler.Shuffle(Enumerable.Range(length, length).Select(i => (double)i).ToArray()), (double)length };
+
+                yield return new object[] { Shuffler.Shuffle(Enumerable.Range(length, length).Select(i => (decimal)i)), (decimal)length };
+                yield return new object[] { Shuffler.Shuffle(Enumerable.Range(length, length).Select(i => (decimal)i).ToArray()), (decimal)length };
+
+                yield return new object[] { Shuffler.Shuffle(Enumerable.Range(length, length).Select(i => (nuint)i)), (nuint)length };
+                yield return new object[] { Shuffler.Shuffle(Enumerable.Range(length, length).Select(i => (nuint)i).ToArray()), (nuint)length };
+
+                yield return new object[] { Shuffler.Shuffle(Enumerable.Range(length, length).Select(i => (nint)i)), (nint)length };
+                yield return new object[] { Shuffler.Shuffle(Enumerable.Range(length, length).Select(i => (nint)i).ToArray()), (nint)length };
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(Min_AllTypes_TestData))]
+        public void Min_AllTypes<T>(IEnumerable<T> source, T expected) where T : INumber<T>
+        {
+            Assert.Equal(expected, source.Min());
+
+            Assert.Equal(expected, source.Min(comparer: null));
+            Assert.Equal(expected, source.Min(Comparer<T>.Default));
+            Assert.Equal(expected, source.Min(Comparer<T>.Create(Comparer<T>.Default.Compare)));
+
+            T first = source.First();
+            Assert.Equal(first, source.Min(Comparer<T>.Create((x, y) => x == first ? -1 : 1)));
+
+            Assert.Equal(expected + T.One, source.Min(x => x + T.One));
+        }
+
         [Fact]
         public void SameResultsRepeatCallsIntQuery()
         {
@@ -49,12 +114,6 @@ namespace System.Linq.Tests
                 yield return new object[] { new TestEnumerable<int>(array), expected };
                 yield return new object[] { array, expected };
             }
-
-            for (int length = 2; length < 33; length++)
-            {
-                yield return new object[] { Shuffler.Shuffle(Enumerable.Range(length, length)), length };
-                yield return new object[] { Shuffler.Shuffle(Enumerable.Range(length, length).ToArray()), length };
-            }
         }
 
         [Theory]
@@ -77,6 +136,8 @@ namespace System.Linq.Tests
         {
             Assert.Throws<InvalidOperationException>(() => Enumerable.Empty<int>().Min());
             Assert.Throws<InvalidOperationException>(() => Enumerable.Empty<int>().Min(x => x));
+            Assert.Throws<InvalidOperationException>(() => ForceNotCollection(Enumerable.Empty<int>()).Min());
+            Assert.Throws<InvalidOperationException>(() => ForceNotCollection(Enumerable.Empty<int>()).Min(x => x));
             Assert.Throws<InvalidOperationException>(() => Array.Empty<int>().Min());
             Assert.Throws<InvalidOperationException>(() => new List<int>().Min());
         }
@@ -101,12 +162,6 @@ namespace System.Linq.Tests
                 yield return new object[] { new TestEnumerable<long>(array), expected };
                 yield return new object[] { array, expected };
             }
-
-            for (int length = 2; length < 33; length++)
-            {
-                yield return new object[] { Shuffler.Shuffle(Enumerable.Range(length, length).Select(i => (long)i)), (long)length };
-                yield return new object[] { Shuffler.Shuffle(Enumerable.Range(length, length).Select(i => (long)i).ToArray()), (long)length };
-            }
         }
 
         [Theory]
@@ -129,6 +184,8 @@ namespace System.Linq.Tests
         {
             Assert.Throws<InvalidOperationException>(() => Enumerable.Empty<long>().Min());
             Assert.Throws<InvalidOperationException>(() => Enumerable.Empty<long>().Min(x => x));
+            Assert.Throws<InvalidOperationException>(() => ForceNotCollection(Enumerable.Empty<long>()).Min());
+            Assert.Throws<InvalidOperationException>(() => ForceNotCollection(Enumerable.Empty<long>()).Min(x => x));
             Assert.Throws<InvalidOperationException>(() => Array.Empty<long>().Min());
             Assert.Throws<InvalidOperationException>(() => new List<long>().Min());
         }
@@ -175,12 +232,6 @@ namespace System.Linq.Tests
             // a long time.
             yield return new object[] { Enumerable.Repeat(float.NaN, int.MaxValue), float.NaN };
             yield return new object[] { Enumerable.Repeat(float.NaN, 3).ToArray(), float.NaN };
-
-            for (int length = 2; length < 33; length++)
-            {
-                yield return new object[] { Shuffler.Shuffle(Enumerable.Range(length, length).Select(i => (float)i)), (float)length };
-                yield return new object[] { Shuffler.Shuffle(Enumerable.Range(length, length).Select(i => (float)i).ToArray()), (float)length };
-            }
         }
 
         [Theory]
@@ -203,6 +254,8 @@ namespace System.Linq.Tests
         {
             Assert.Throws<InvalidOperationException>(() => Enumerable.Empty<float>().Min());
             Assert.Throws<InvalidOperationException>(() => Enumerable.Empty<float>().Min(x => x));
+            Assert.Throws<InvalidOperationException>(() => ForceNotCollection(Enumerable.Empty<float>()).Min());
+            Assert.Throws<InvalidOperationException>(() => ForceNotCollection(Enumerable.Empty<float>()).Min(x => x));
             Assert.Throws<InvalidOperationException>(() => Array.Empty<float>().Min());
             Assert.Throws<InvalidOperationException>(() => new List<float>().Min());
         }
@@ -247,12 +300,6 @@ namespace System.Linq.Tests
             // Without this optimization, we would iterate through int.MaxValue elements, which takes
             // a long time.
             yield return new object[] { Enumerable.Repeat(double.NaN, int.MaxValue), double.NaN };
-
-            for (int length = 2; length < 33; length++)
-            {
-                yield return new object[] { Shuffler.Shuffle(Enumerable.Range(length, length).Select(i => (double)i)), (double)length };
-                yield return new object[] { Shuffler.Shuffle(Enumerable.Range(length, length).Select(i => (double)i).ToArray()), (double)length };
-            }
         }
 
         [Theory]
@@ -275,6 +322,8 @@ namespace System.Linq.Tests
         {
             Assert.Throws<InvalidOperationException>(() => Enumerable.Empty<double>().Min());
             Assert.Throws<InvalidOperationException>(() => Enumerable.Empty<double>().Min(x => x));
+            Assert.Throws<InvalidOperationException>(() => ForceNotCollection(Enumerable.Empty<double>()).Min());
+            Assert.Throws<InvalidOperationException>(() => ForceNotCollection(Enumerable.Empty<double>()).Min(x => x));
             Assert.Throws<InvalidOperationException>(() => Array.Empty<double>().Min());
             Assert.Throws<InvalidOperationException>(() => new List<double>().Min());
         }
@@ -299,12 +348,6 @@ namespace System.Linq.Tests
                 yield return new object[] { new TestEnumerable<decimal>(array), expected };
                 yield return new object[] { array, expected };
             }
-
-            for (int length = 2; length < 33; length++)
-            {
-                yield return new object[] { Shuffler.Shuffle(Enumerable.Range(length, length).Select(i => (decimal)i)), (decimal)length };
-                yield return new object[] { Shuffler.Shuffle(Enumerable.Range(length, length).Select(i => (decimal)i).ToArray()), (decimal)length };
-            }
         }
 
         [Theory]
@@ -320,6 +363,8 @@ namespace System.Linq.Tests
         {
             Assert.Throws<InvalidOperationException>(() => Enumerable.Empty<decimal>().Min());
             Assert.Throws<InvalidOperationException>(() => Enumerable.Empty<decimal>().Min(x => x));
+            Assert.Throws<InvalidOperationException>(() => ForceNotCollection(Enumerable.Empty<decimal>()).Min());
+            Assert.Throws<InvalidOperationException>(() => ForceNotCollection(Enumerable.Empty<decimal>()).Min(x => x));
             Assert.Throws<InvalidOperationException>(() => Array.Empty<decimal>().Min());
             Assert.Throws<InvalidOperationException>(() => new List<decimal>().Min());
         }
@@ -560,6 +605,8 @@ namespace System.Linq.Tests
         {
             Assert.Throws<InvalidOperationException>(() => Enumerable.Empty<DateTime>().Min());
             Assert.Throws<InvalidOperationException>(() => Enumerable.Empty<DateTime>().Min(x => x));
+            Assert.Throws<InvalidOperationException>(() => ForceNotCollection(Enumerable.Empty<DateTime>()).Min());
+            Assert.Throws<InvalidOperationException>(() => ForceNotCollection(Enumerable.Empty<DateTime>()).Min(x => x));
             Assert.Throws<InvalidOperationException>(() => Array.Empty<DateTime>().Min());
             Assert.Throws<InvalidOperationException>(() => new List<DateTime>().Min());
         }
@@ -823,6 +870,7 @@ namespace System.Linq.Tests
         public void Min_Bool_EmptySource_ThrowsInvalodOperationException()
         {
             Assert.Throws<InvalidOperationException>(() => Enumerable.Empty<bool>().Min());
+            Assert.Throws<InvalidOperationException>(() => ForceNotCollection(Enumerable.Empty<bool>()).Min());
         }
 
         [Fact]

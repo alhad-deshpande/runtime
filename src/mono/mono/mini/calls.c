@@ -4,6 +4,7 @@
 
 #include <config.h>
 #include <mono/utils/mono-compiler.h>
+#include <minipal/debugger.h>
 
 #ifndef DISABLE_JIT
 
@@ -16,7 +17,6 @@
 #include "aot-compiler.h"
 #include <mono/metadata/abi-details.h>
 #include <mono/metadata/class-abi-details.h>
-#include <mono/utils/mono-utils-debug.h>
 #include "mono/metadata/icall-signatures.h"
 
 static const gboolean debug_tailcall_break_compile = FALSE; // break in method_to_ir
@@ -121,13 +121,20 @@ handle_enum:
 		if (m_class_is_enumtype (type->data.klass)) {
 			type = mono_class_enum_basetype_internal (type->data.klass);
 			goto handle_enum;
-		} else
-			return calli? OP_VCALL_REG: virt? OP_VCALL_MEMBASE: OP_VCALL;
+		} else {
+			if (mini_class_is_simd (cfg, mono_class_from_mono_type_internal (type)))
+				return calli? OP_XCALL_REG: virt? OP_XCALL_MEMBASE: OP_XCALL;
+			else
+				return calli? OP_VCALL_REG: virt? OP_VCALL_MEMBASE: OP_VCALL;
+		}
 	case MONO_TYPE_TYPEDBYREF:
 		return calli? OP_VCALL_REG: virt? OP_VCALL_MEMBASE: OP_VCALL;
-	case MONO_TYPE_GENERICINST:
+	case MONO_TYPE_GENERICINST: {
+		if (mini_class_is_simd (cfg, mono_class_from_mono_type_internal (type)))
+			return calli? OP_XCALL_REG: virt? OP_XCALL_MEMBASE: OP_XCALL;
 		type = m_class_get_byval_arg (type->data.generic_class->container_class);
 		goto handle_enum;
+	}
 	case MONO_TYPE_VAR:
 	case MONO_TYPE_MVAR:
 		/* gsharedvt */
@@ -158,7 +165,7 @@ mini_emit_call_args (MonoCompile *cfg, MonoMethodSignature *sig,
 	}
 
 	if (tailcall && (debug_tailcall_break_compile || debug_tailcall_break_run)
-		&& mono_is_usermode_native_debugger_present ()) {
+		&& minipal_is_native_debugger_present ()) {
 
 		if (debug_tailcall_break_compile)
 			G_BREAKPOINT ();
@@ -348,11 +355,11 @@ mini_emit_calli_full (MonoCompile *cfg, MonoMethodSignature *sig, MonoInst **arg
 	g_assert (!check_sp || !tailcall);
 
 	if (check_sp) {
-		if (!cfg->stack_inbalance_var)
-			cfg->stack_inbalance_var = mono_compile_create_var (cfg, mono_get_int_type (), OP_LOCAL);
+		if (!cfg->stack_imbalance_var)
+			cfg->stack_imbalance_var = mono_compile_create_var (cfg, mono_get_int_type (), OP_LOCAL);
 
 		MONO_INST_NEW (cfg, ins, OP_GET_SP);
-		ins->dreg = cfg->stack_inbalance_var->dreg;
+		ins->dreg = cfg->stack_imbalance_var->dreg;
 		MONO_ADD_INS (cfg->cbb, ins);
 	}
 
@@ -376,10 +383,10 @@ mini_emit_calli_full (MonoCompile *cfg, MonoMethodSignature *sig, MonoInst **arg
 
 		/* Restore the stack so we don't crash when throwing the exception */
 		MONO_INST_NEW (cfg, ins, OP_SET_SP);
-		ins->sreg1 = cfg->stack_inbalance_var->dreg;
+		ins->sreg1 = cfg->stack_imbalance_var->dreg;
 		MONO_ADD_INS (cfg->cbb, ins);
 
-		MONO_EMIT_NEW_BIALU (cfg, OP_COMPARE, -1, cfg->stack_inbalance_var->dreg, sp_reg);
+		MONO_EMIT_NEW_BIALU (cfg, OP_COMPARE, -1, cfg->stack_imbalance_var->dreg, sp_reg);
 		MONO_EMIT_NEW_COND_EXC (cfg, NE_UN, "ExecutionEngineException");
 	}
 
@@ -412,6 +419,8 @@ callvirt_to_call (int opcode)
 		return OP_RCALL;
 	case OP_VCALL_MEMBASE:
 		return OP_VCALL;
+	case OP_XCALL_MEMBASE:
+		return OP_XCALL;
 	case OP_LCALL_MEMBASE:
 		return OP_LCALL;
 	default:

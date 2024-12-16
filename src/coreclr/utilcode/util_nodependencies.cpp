@@ -14,6 +14,10 @@
 #include "utilcode.h"
 #include "ex.h"
 
+#ifdef HOST_WINDOWS
+#include <versionhelpers.h>
+#endif
+
 #if !defined(FEATURE_UTILCODE_NO_DEPENDENCIES) || defined(_DEBUG)
 
 RunningOnStatusEnum gRunningOnStatus = RUNNING_ON_STATUS_UNINITED;
@@ -25,65 +29,26 @@ RunningOnStatusEnum gRunningOnStatus = RUNNING_ON_STATUS_UNINITED;
 //*****************************************************************************
 void InitRunningOnVersionStatus ()
 {
-#ifndef TARGET_UNIX
+#ifdef HOST_WINDOWS
     STATIC_CONTRACT_NOTHROW;
     STATIC_CONTRACT_GC_NOTRIGGER;
     STATIC_CONTRACT_CANNOT_TAKE_LOCK;
 
-    BOOL fSupportedPlatform = FALSE;
-    OSVERSIONINFOEX sVer;
-    DWORDLONG dwlConditionMask;
-
-    ZeroMemory(&sVer, sizeof(OSVERSIONINFOEX));
-    sVer.dwOSVersionInfoSize = sizeof(OSVERSIONINFOEX);
-
-    sVer.dwMajorVersion = 6;
-    sVer.dwMinorVersion = 2;
-    sVer.dwPlatformId = VER_PLATFORM_WIN32_NT;
-
-
-    dwlConditionMask = 0;
-    dwlConditionMask = VER_SET_CONDITION(dwlConditionMask, VER_PLATFORMID, VER_EQUAL);
-    dwlConditionMask = VER_SET_CONDITION(dwlConditionMask, VER_MAJORVERSION, VER_GREATER_EQUAL);
-    dwlConditionMask = VER_SET_CONDITION(dwlConditionMask, VER_MINORVERSION, VER_GREATER_EQUAL);
-
-    if(VerifyVersionInfo(&sVer, VER_MAJORVERSION | VER_PLATFORMID | VER_MINORVERSION, dwlConditionMask))
+    if(IsWindows8OrGreater())
     {
         gRunningOnStatus = RUNNING_ON_WIN8;
-        fSupportedPlatform = TRUE;
-        goto CHECK_SUPPORTED;
     }
-
-
-    ZeroMemory(&sVer, sizeof(OSVERSIONINFOEX));
-    sVer.dwOSVersionInfoSize = sizeof(OSVERSIONINFOEX);
-
-    sVer.dwMajorVersion = 6;
-    sVer.dwMinorVersion = 1;
-    sVer.dwPlatformId = VER_PLATFORM_WIN32_NT;
-
-
-    dwlConditionMask = 0;
-    dwlConditionMask = VER_SET_CONDITION(dwlConditionMask, VER_PLATFORMID, VER_EQUAL);
-    dwlConditionMask = VER_SET_CONDITION(dwlConditionMask, VER_MAJORVERSION, VER_GREATER_EQUAL);
-    dwlConditionMask = VER_SET_CONDITION(dwlConditionMask, VER_MINORVERSION, VER_GREATER_EQUAL);
-
-    if(VerifyVersionInfo(&sVer, VER_MAJORVERSION | VER_PLATFORMID | VER_MINORVERSION, dwlConditionMask))
+    else if(IsWindows7OrGreater())
     {
         gRunningOnStatus = RUNNING_ON_WIN7;
-        fSupportedPlatform = TRUE;
-        goto CHECK_SUPPORTED;
     }
-
-CHECK_SUPPORTED:
-
-    if (!fSupportedPlatform)
+    else
     {
         // The current platform isn't supported. Display a message to this effect and exit.
-        fprintf(stderr, "Platform not supported: The minimum supported platform is Windows 7\n");
+        fprintf(stderr, "Platform not supported: Windows 7 is the minimum supported version\n");
         TerminateProcess(GetCurrentProcess(), NON_SUPPORTED_PLATFORM_TERMINATE_ERROR_CODE);
     }
-#endif // TARGET_UNIX
+#endif // HOST_WINDOWS
 } // InitRunningOnVersionStatus
 
 #ifndef HOST_64BIT
@@ -158,14 +123,14 @@ BOOL GetRegistryLongValue(HKEY    hKeyParent,
         }
     }
 
-    ret = WszRegOpenKeyEx(hKeyParent, szKey, 0, samDesired, &hkey);
+    ret = RegOpenKeyEx(hKeyParent, szKey, 0, samDesired, &hkey);
 
     // If we opened the key, see if there is a value.
     if (ret == ERROR_SUCCESS)
     {
         iType = REG_DWORD;
         iSize = sizeof(long);
-        ret = WszRegQueryValueEx(hkey, szName, NULL, &iType, reinterpret_cast<BYTE*>(&iValue), &iSize);
+        ret = RegQueryValueEx(hkey, szName, NULL, &iType, reinterpret_cast<BYTE*>(&iValue), &iSize);
 
         if (ret == ERROR_SUCCESS && iType == REG_DWORD && iSize == sizeof(long))
         {   // We successfully read a DWORD value.
@@ -179,7 +144,7 @@ BOOL GetRegistryLongValue(HKEY    hKeyParent,
 
 //----------------------------------------------------------------------------
 //
-// GetCurrentModuleFileName - Retrieve the current module's filename
+// GetCurrentExecutableFileName - Retrieve the current executable's filename
 //
 // Arguments:
 //    pBuffer - output string buffer
@@ -190,7 +155,7 @@ BOOL GetRegistryLongValue(HKEY    hKeyParent,
 // Note:
 //
 //----------------------------------------------------------------------------
-HRESULT GetCurrentModuleFileName(SString& pBuffer)
+HRESULT GetCurrentExecutableFileName(SString& pBuffer)
 {
     LIMITED_METHOD_CONTRACT;
 
@@ -235,7 +200,7 @@ BOOL IsCurrentModuleFileNameInAutoExclusionList()
     HKEYHolder hKeyHolder;
 
     // Look for "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\AeDebug\\AutoExclusionList"
-    DWORD ret = WszRegOpenKeyEx(HKEY_LOCAL_MACHINE, kUnmanagedDebuggerAutoExclusionListKey, 0, KEY_READ, &hKeyHolder);
+    DWORD ret = RegOpenKeyEx(HKEY_LOCAL_MACHINE, kUnmanagedDebuggerAutoExclusionListKey, 0, KEY_READ, &hKeyHolder);
 
     if (ret != ERROR_SUCCESS)
     {
@@ -246,7 +211,7 @@ BOOL IsCurrentModuleFileNameInAutoExclusionList()
     PathString wszAppName;
 
     // Get the appname to look up in the exclusion or inclusion list.
-    if (GetCurrentModuleFileName(wszAppName) != S_OK)
+    if (GetCurrentExecutableFileName(wszAppName) != S_OK)
     {
         // Assume it is not on the exclusion list if we cannot find the module's filename.
         return FALSE;
@@ -254,7 +219,7 @@ BOOL IsCurrentModuleFileNameInAutoExclusionList()
 
     // Look in AutoExclusionList key for appName get the size of any value stored there.
     DWORD value, valueType, valueSize = sizeof(value);
-    ret = WszRegQueryValueEx(hKeyHolder, wszAppName, 0, &valueType, reinterpret_cast<BYTE*>(&value), &valueSize);
+    ret = RegQueryValueEx(hKeyHolder, wszAppName, 0, &valueType, reinterpret_cast<BYTE*>(&value), &valueSize);
     if ((ret == ERROR_SUCCESS) && (valueType == REG_DWORD) && (value == 1))
     {
         return TRUE;
@@ -366,7 +331,7 @@ HRESULT GetDebuggerSettingInfoWorker(_Out_writes_to_opt_(*pcchDebuggerString, *p
     HKEYHolder hKeyHolder;
 
     // Look for "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\AeDebug"
-    DWORD ret = WszRegOpenKeyEx(HKEY_LOCAL_MACHINE, kUnmanagedDebuggerKey, 0, KEY_READ, &hKeyHolder);
+    DWORD ret = RegOpenKeyEx(HKEY_LOCAL_MACHINE, kUnmanagedDebuggerKey, 0, KEY_READ, &hKeyHolder);
 
     if (ret != ERROR_SUCCESS)
     {   // Wow, there's not even an AeDebug hive, so no native debugger, no auto.
@@ -375,7 +340,7 @@ HRESULT GetDebuggerSettingInfoWorker(_Out_writes_to_opt_(*pcchDebuggerString, *p
 
     // Look in AeDebug key for "Debugger"; get the size of any value stored there.
     DWORD valueType, valueSize = 0;
-    ret = WszRegQueryValueEx(hKeyHolder, kUnmanagedDebuggerValue, 0, &valueType, 0, &valueSize);
+    ret = RegQueryValueEx(hKeyHolder, kUnmanagedDebuggerValue, 0, &valueType, 0, &valueSize);
 
     _ASSERTE(pcchDebuggerString != NULL);
     if ((wszDebuggerString == NULL) || (*pcchDebuggerString < valueSize / sizeof(WCHAR)))
@@ -395,7 +360,7 @@ HRESULT GetDebuggerSettingInfoWorker(_Out_writes_to_opt_(*pcchDebuggerString, *p
     }
 
     _ASSERTE(wszDebuggerString != NULL);
-    ret = WszRegQueryValueEx(hKeyHolder, kUnmanagedDebuggerValue, NULL, NULL, reinterpret_cast< LPBYTE >(wszDebuggerString), &valueSize);
+    ret = RegQueryValueEx(hKeyHolder, kUnmanagedDebuggerValue, NULL, NULL, reinterpret_cast< LPBYTE >(wszDebuggerString), &valueSize);
     if (ret != ERROR_SUCCESS)
     {
         *wszDebuggerString = W('\0');
@@ -415,7 +380,7 @@ HRESULT GetDebuggerSettingInfoWorker(_Out_writes_to_opt_(*pcchDebuggerString, *p
             long iValue;
 
             // Check DebugApplications setting
-            if ((SUCCEEDED(GetCurrentModuleFileName(wzAppName))) &&
+            if ((SUCCEEDED(GetCurrentExecutableFileName(wzAppName))) &&
                 (
                     GetRegistryLongValue(HKEY_LOCAL_MACHINE, kDebugApplicationsPoliciesKey, wzAppName, &iValue, TRUE) ||
                     GetRegistryLongValue(HKEY_LOCAL_MACHINE, kDebugApplicationsKey, wzAppName, &iValue, TRUE) ||
@@ -429,12 +394,12 @@ HRESULT GetDebuggerSettingInfoWorker(_Out_writes_to_opt_(*pcchDebuggerString, *p
             else
             {
                 // Look in AeDebug key for "Auto"; get the size of any value stored there.
-                ret = WszRegQueryValueEx(hKeyHolder, kUnmanagedDebuggerAutoValue, 0, &valueType, 0, &valueSize);
+                ret = RegQueryValueEx(hKeyHolder, kUnmanagedDebuggerAutoValue, 0, &valueType, 0, &valueSize);
                 if ((ret == ERROR_SUCCESS) && (valueType == REG_SZ) && (valueSize / sizeof(WCHAR) < MAX_LONGPATH))
                 {
                     WCHAR wzAutoKey[MAX_LONGPATH];
                     valueSize = ARRAY_SIZE(wzAutoKey) * sizeof(WCHAR);
-                    WszRegQueryValueEx(hKeyHolder, kUnmanagedDebuggerAutoValue, NULL, NULL, reinterpret_cast< LPBYTE >(wzAutoKey), &valueSize);
+                    RegQueryValueEx(hKeyHolder, kUnmanagedDebuggerAutoValue, NULL, NULL, reinterpret_cast< LPBYTE >(wzAutoKey), &valueSize);
 
                     // The OS's behavior is to consider Auto to be FALSE unless the first character is set
                     // to 1. They don't take into consideration the following characters. Also if the value
@@ -468,6 +433,27 @@ HRESULT GetDebuggerSettingInfoWorker(_Out_writes_to_opt_(*pcchDebuggerString, *p
 #endif // TARGET_UNIX
 
 #endif //!defined(FEATURE_UTILCODE_NO_DEPENDENCIES) || defined(_DEBUG)
+
+
+//*****************************************************************************
+// Convert a GUID into a pointer to a string
+//*****************************************************************************
+int
+GuidToLPSTR(
+                          REFGUID   guid,   // The GUID to convert.
+    _Out_writes_(cchGuid) LPSTR szGuid,     // String into which the GUID is stored
+                          DWORD  cchGuid)   // Count in chars
+{
+    if (cchGuid < GUID_STR_BUFFER_LEN)
+        return 0;
+
+    return sprintf_s(szGuid, cchGuid, "{%08x-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x}",
+            guid.Data1, guid.Data2, guid.Data3,
+            guid.Data4[0], guid.Data4[1],
+            guid.Data4[2], guid.Data4[3],
+            guid.Data4[4], guid.Data4[5],
+            guid.Data4[6], guid.Data4[7]) + 1;
+}
 
 //*****************************************************************************
 // Convert hex value into a wide string of hex digits
@@ -507,9 +493,9 @@ HRESULT GetStr(
 //*****************************************************************************
 int
 GuidToLPWSTR(
-                          GUID   Guid,      // The GUID to convert.
-    _Out_writes_(cchGuid) LPWSTR szGuid,    // String into which the GUID is stored
-                          DWORD  cchGuid)   // Count in wchars
+    REFGUID guid,   // [IN] The GUID to convert.
+    LPWSTR szGuid,  // [OUT] String into which the GUID is stored
+    DWORD cchGuid)  // [IN] Size in wide chars of szGuid
 {
     CONTRACTL
     {
@@ -522,7 +508,7 @@ GuidToLPWSTR(
     // successive fields break the GUID into the form DWORD-WORD-WORD-WORD-WORD.DWORD
     // covering the 128-bit GUID. The string includes enclosing braces, which are an OLE convention.
 
-    if (cchGuid < 39) // 38 chars + 1 null terminating.
+    if (cchGuid < GUID_STR_BUFFER_LEN)
         return 0;
 
     // {xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}
@@ -531,19 +517,19 @@ GuidToLPWSTR(
 
     // {xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}
     //  ^^^^^^^^
-    if (FAILED (GetStr(Guid.Data1, szGuid+1 , 4))) return 0;
+    if (FAILED (GetStr(guid.Data1, szGuid+1 , 4))) return 0;
 
     szGuid[9]  = W('-');
 
     // {xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}
     //           ^^^^
-    if (FAILED (GetStr(Guid.Data2, szGuid+10, 2))) return 0;
+    if (FAILED (GetStr(guid.Data2, szGuid+10, 2))) return 0;
 
     szGuid[14] = W('-');
 
     // {xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}
     //                ^^^^
-    if (FAILED (GetStr(Guid.Data3, szGuid+15, 2))) return 0;
+    if (FAILED (GetStr(guid.Data3, szGuid+15, 2))) return 0;
 
     szGuid[19] = W('-');
 
@@ -551,7 +537,7 @@ GuidToLPWSTR(
     // {xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}
     //                     ^^^^
     for (i=0; i < 2; ++i)
-        if (FAILED(GetStr(Guid.Data4[i], szGuid + 20 + (i * 2), 1)))
+        if (FAILED(GetStr(guid.Data4[i], szGuid + 20 + (i * 2), 1)))
             return (0);
 
     szGuid[24] = W('-');
@@ -559,7 +545,7 @@ GuidToLPWSTR(
     // {xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}
     //                          ^^^^^^^^^^^^
     for (i=0; i < 6; ++i)
-        if (FAILED(GetStr(Guid.Data4[i+2], szGuid + 25 + (i * 2), 1)))
+        if (FAILED(GetStr(guid.Data4[i+2], szGuid + 25 + (i * 2), 1)))
             return (0);
 
     // {xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}
@@ -618,10 +604,9 @@ HRESULT GetHex(
 // Parse a Wide char string into a GUID
 //*****************************************************************************
 BOOL
-LPWSTRToGuid(
-                         GUID  * Guid,      // [OUT] The GUID to fill in
-    _In_reads_(cchGuid) LPCWSTR szGuid,    // [IN] String to parse
-                         DWORD   cchGuid)   // [IN] Count in wchars in string
+LPCWSTRToGuid(
+    LPCWSTR szGuid, // [IN] String to convert.
+    GUID* pGuid)    // [OUT] Buffer for converted GUID.
 {
     CONTRACTL
     {
@@ -635,33 +620,27 @@ LPWSTRToGuid(
     // successive fields break the GUID into the form DWORD-WORD-WORD-WORD-WORD.DWORD
     // covering the 128-bit GUID. The string includes enclosing braces, which are an OLE convention.
 
-    if (cchGuid < 38) // 38 chars + 1 null terminating.
+    // Verify the surrounding syntax.
+    if (u16_strlen(szGuid) != 38 || szGuid[0] != '{' || szGuid[9] != '-' ||
+        szGuid[14] != '-' || szGuid[19] != '-' || szGuid[24] != '-' || szGuid[37] != '}')
+    {
         return FALSE;
-
-    // {xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}
-    // ^
-    if (szGuid[0] != W('{')) return FALSE;
+    }
 
     // {xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}
     //  ^^^^^^^^
     if (FAILED (GetHex(&dw, szGuid+1 , 4))) return FALSE;
-    Guid->Data1 = dw;
-
-    if (szGuid[9] != W('-')) return FALSE;
+    pGuid->Data1 = dw;
 
     // {xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}
     //           ^^^^
     if (FAILED (GetHex(&dw, szGuid+10, 2))) return FALSE;
-    Guid->Data2 = (WORD)dw;
-
-    if (szGuid[14] != W('-')) return FALSE;
+    pGuid->Data2 = (WORD)dw;
 
     // {xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}
     //                ^^^^
     if (FAILED (GetHex(&dw, szGuid+15, 2))) return FALSE;
-    Guid->Data3 = (WORD)dw;
-
-    if (szGuid[19] != W('-')) return FALSE;
+    pGuid->Data3 = (WORD)dw;
 
     // Get the last two fields (which are byte arrays).
     // {xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}
@@ -669,25 +648,19 @@ LPWSTRToGuid(
     for (i=0; i < 2; ++i)
     {
         if (FAILED(GetHex(&dw, szGuid + 20 + (i * 2), 1))) return FALSE;
-        Guid->Data4[i] = (BYTE)dw;
+        pGuid->Data4[i] = (BYTE)dw;
     }
-
-    if (szGuid[24] != W('-')) return FALSE;
 
     // {xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}
     //                          ^^^^^^^^^^^^
     for (i=0; i < 6; ++i)
     {
         if (FAILED(GetHex(&dw, szGuid + 25 + (i * 2), 1))) return FALSE;
-        Guid->Data4[i+2] = (BYTE)dw;
+        pGuid->Data4[i+2] = (BYTE)dw;
     }
 
-    // {xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}
-    //                                      ^
-    if (szGuid[37] != W('}')) return FALSE;
-
     return TRUE;
-} // GuidToLPWSTR
+} // LPCWSTRToGuid
 
 /**************************************************************************/
 void ConfigDWORD::init(const CLRConfig::ConfigDWORDInfo & info)
@@ -757,45 +730,3 @@ void OutputDebugStringUtf8(LPCUTF8 utf8DebugMsg)
     OutputDebugStringW(wideDebugMsg);
 #endif // !TARGET_UNIX
 }
-
-BOOL ThreadWillCreateGuardPage(SIZE_T sizeReservedStack, SIZE_T sizeCommitedStack)
-{
-    // We need to make sure there will be a reserved but never committed page at the end
-    // of the stack. We do here the check NT does when it creates the user stack to decide
-    // if there is going to be a guard page. However, that is not enough, as if we only
-    // have a guard page, we have nothing to protect us from going pass it. Well, in
-    // fact, there is something that we will protect you, there are certain places
-    // (RTLUnwind) in NT that will check that the current frame is within stack limits.
-    // If we are not it will bomb out. We will also bomb out if we touch the hard guard
-    // page.
-    //
-    // For situation B, teb->StackLimit is at the beggining of the user stack (ie
-    // before updating StackLimit it checks if it was able to create a new guard page,
-    // in this case, it can't), which makes the check fail in RtlUnwind.
-    //
-    //    Situation A  [ Hard guard page | Guard page | user stack]
-    //
-    //    Situation B  [ Guard page | User stack ]
-    //
-    //    Situation C  [ User stack ( no room for guard page) ]
-    //
-    //    Situation D (W9x) : Guard page or not, w9x has a 64k reserved region below
-    //                        the stack, we don't need any checks at all
-    //
-    // We really want to be in situation A all the time, so we add one more page
-    // to our requirements (we require guard page + hard guard)
-
-    SYSTEM_INFO sysInfo;
-    ::GetSystemInfo(&sysInfo);
-
-    // OS rounds up sizes the following way to decide if it marks a guard page
-    sizeReservedStack = ALIGN(sizeReservedStack, ((size_t)sysInfo.dwAllocationGranularity));   // Allocation granularity
-    sizeCommitedStack = ALIGN(sizeCommitedStack, ((size_t)sysInfo.dwPageSize));  // Page Size
-
-    // OS wont create guard page, we can't execute managed code safely.
-    // We also have to make sure we have a 'hard' guard, thus we add another
-    // page to the memory we would need comitted.
-    // That is, the following code will check if sizeReservedStack is at least 2 pages
-    // more than sizeCommitedStack.
-    return (sizeReservedStack > sizeCommitedStack + ((size_t)sysInfo.dwPageSize));
-} // ThreadWillCreateGuardPage

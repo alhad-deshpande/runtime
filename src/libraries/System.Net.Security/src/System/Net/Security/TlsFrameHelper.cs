@@ -1,8 +1,8 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-using System.Diagnostics;
 using System.Buffers.Binary;
+using System.Diagnostics;
 using System.Globalization;
 using System.Security.Authentication;
 using System.Text;
@@ -103,6 +103,7 @@ namespace System.Net.Security
             ServerName = 0x1,
             ApplicationProtocol = 0x2,
             Versions = 0x4,
+            RawApplicationProtocol = 0x8,
         }
 
         [Flags]
@@ -122,6 +123,7 @@ namespace System.Net.Security
             public string TargetName;
             public ApplicationProtocolInfo ApplicationProtocols;
             public TlsAlertDescription AlertDescription;
+            public byte[]? RawApplicationProtocols;
 
             public override string ToString()
             {
@@ -149,11 +151,11 @@ namespace System.Net.Security
 
         public delegate bool HelloExtensionCallback(ref TlsFrameInfo info, ExtensionType type, ReadOnlySpan<byte> extensionsData);
 
-        private static byte[] s_protocolMismatch13 = new byte[] { (byte)TlsContentType.Alert, 3, 4, 0, 2, 2, 70 };
-        private static byte[] s_protocolMismatch12 = new byte[] { (byte)TlsContentType.Alert, 3, 3, 0, 2, 2, 70 };
-        private static byte[] s_protocolMismatch11 = new byte[] { (byte)TlsContentType.Alert, 3, 2, 0, 2, 2, 70 };
-        private static byte[] s_protocolMismatch10 = new byte[] { (byte)TlsContentType.Alert, 3, 1, 0, 2, 2, 70 };
-        private static byte[] s_protocolMismatch30 = new byte[] { (byte)TlsContentType.Alert, 3, 0, 0, 2, 2, 40 };
+        private static readonly byte[] s_protocolMismatch13 = new byte[] { (byte)TlsContentType.Alert, 3, 4, 0, 2, 2, 70 };
+        private static readonly byte[] s_protocolMismatch12 = new byte[] { (byte)TlsContentType.Alert, 3, 3, 0, 2, 2, 70 };
+        private static readonly byte[] s_protocolMismatch11 = new byte[] { (byte)TlsContentType.Alert, 3, 2, 0, 2, 2, 70 };
+        private static readonly byte[] s_protocolMismatch10 = new byte[] { (byte)TlsContentType.Alert, 3, 1, 0, 2, 2, 70 };
+        private static readonly byte[] s_protocolMismatch30 = new byte[] { (byte)TlsContentType.Alert, 3, 0, 0, 2, 2, 40 };
 
         private const int UInt24Size = 3;
         private const int RandomSize = 32;
@@ -170,7 +172,7 @@ namespace System.Net.Security
         {
             if (frame.Length < HeaderSize)
             {
-                header.Length= -1;
+                header.Length = -1;
                 return false;
             }
 
@@ -188,12 +190,12 @@ namespace System.Net.Security
                 int length;
                 if ((frame[0] & 0x80) != 0)
                 {
-                            // Two bytes
+                    // Two bytes
                     length = (((frame[0] & 0x7f) << 8) | frame[1]) + 2;
                 }
                 else
                 {
-                            // Three bytes
+                    // Three bytes
                     length = (((frame[0] & 0x3f) << 8) | frame[1]) + 3;
                 }
 
@@ -524,7 +526,7 @@ namespace System.Net.Security
                     info.SupportedVersions |= versions;
                 }
                 else if (extensionType == ExtensionType.ApplicationProtocols && (options == ProcessingOptions.All ||
-                          (options & ProcessingOptions.ApplicationProtocol) == ProcessingOptions.ApplicationProtocol))
+                          (options.HasFlag(ProcessingOptions.ApplicationProtocol) || options.HasFlag(ProcessingOptions.RawApplicationProtocol))))
                 {
                     if (!TryGetApplicationProtocolsFromExtension(extensionData, out ApplicationProtocolInfo alpn))
                     {
@@ -532,6 +534,13 @@ namespace System.Net.Security
                     }
 
                     info.ApplicationProtocols |= alpn;
+
+                    // Process RAW options only if explicitly set since that will allocate....
+                    if (options.HasFlag(ProcessingOptions.RawApplicationProtocol))
+                    {
+                        // Skip ALPN extension Length. We have that in span.
+                        info.RawApplicationProtocols = extensionData.Slice(sizeof(short)).ToArray();
+                    }
                 }
 
                 callback?.Invoke(ref info, extensionType, extensionData);

@@ -20,12 +20,13 @@
 #define memfd_create(...) syscall(__NR_memfd_create, __VA_ARGS__)
 #endif // TARGET_LINUX && !MFD_CLOEXEC
 #include "minipal.h"
+#include "minipal/cpufeatures.h"
 
-#if defined(TARGET_OSX) && defined(TARGET_AMD64)
+#ifdef TARGET_OSX
+
 #include <mach/mach.h>
-#endif // TARGET_OSX && TARGET_AMD64
 
-#ifndef TARGET_OSX
+#else // TARGET_OSX
 
 #ifdef TARGET_64BIT
 static const off_t MaxDoubleMappedSize = 2048ULL*1024*1024*1024;
@@ -37,19 +38,32 @@ static const off_t MaxDoubleMappedSize = UINT_MAX;
 
 bool VMToOSInterface::CreateDoubleMemoryMapper(void** pHandle, size_t *pMaxExecutableCodeSize)
 {
+    if (minipal_detect_rosetta())
+    {
+        // Rosetta doesn't support double mapping correctly
+        return false;
+    }
+
 #ifndef TARGET_OSX
 
 #ifdef TARGET_FREEBSD
     int fd = shm_open(SHM_ANON, O_RDWR | O_CREAT, S_IRWXU);
-#elif defined(TARGET_SUNOS) // has POSIX implementation
-    char name[24];
-    sprintf(name, "/shm-dotnet-%d", getpid());
-    name[sizeof(name) - 1] = '\0';
-    shm_unlink(name);
-    int fd = shm_open(name, O_RDWR | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
-#else // TARGET_FREEBSD
+#elif defined(TARGET_LINUX)
     int fd = memfd_create("doublemapper", MFD_CLOEXEC);
-#endif // TARGET_FREEBSD
+#else
+    int fd = -1;
+#endif
+
+    // POSIX fallback
+    if (fd == -1)
+    {
+        char name[24];
+        sprintf(name, "/shm-dotnet-%d", getpid());
+        name[sizeof(name) - 1] = '\0';
+        shm_unlink(name);
+        fd = shm_open(name, O_RDWR | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
+        shm_unlink(name);
+    }
 
     if (fd == -1)
     {
@@ -65,6 +79,7 @@ bool VMToOSInterface::CreateDoubleMemoryMapper(void** pHandle, size_t *pMaxExecu
     *pMaxExecutableCodeSize = MaxDoubleMappedSize;
     *pHandle = (void*)(size_t)fd;
 #else // !TARGET_OSX
+
     *pMaxExecutableCodeSize = SIZE_MAX;
     *pHandle = NULL;
 #endif // !TARGET_OSX
@@ -127,10 +142,14 @@ void* VMToOSInterface::ReserveDoubleMappedMemory(void *mapperHandle, size_t offs
 
     void* result = PAL_VirtualReserveFromExecutableMemoryAllocatorWithinRange(rangeStart, rangeEnd, size, 0 /* fStoreAllocationInfo */);
 #ifndef TARGET_OSX
+    int mmapFlags = MAP_SHARED;
+#ifdef TARGET_HAIKU
+    mmapFlags |= MAP_NORESERVE;
+#endif // TARGET_HAIKU
     if (result != NULL)
     {
         // Map the shared memory over the range reserved from the executable memory allocator.
-        result = mmap(result, size, PROT_NONE, MAP_SHARED | MAP_FIXED, fd, offset);
+        result = mmap(result, size, PROT_NONE, mmapFlags | MAP_FIXED, fd, offset);
         if (result == MAP_FAILED)
         {
             assert(false);
@@ -146,7 +165,7 @@ void* VMToOSInterface::ReserveDoubleMappedMemory(void *mapperHandle, size_t offs
     }
 
 #ifndef TARGET_OSX
-    result = mmap(NULL, size, PROT_NONE, MAP_SHARED, fd, offset);
+    result = mmap(NULL, size, PROT_NONE, mmapFlags, fd, offset);
 #else
     int mmapFlags = MAP_ANON | MAP_PRIVATE;
     if (IsMapJitFlagNeeded())
@@ -154,7 +173,7 @@ void* VMToOSInterface::ReserveDoubleMappedMemory(void *mapperHandle, size_t offs
         mmapFlags |= MAP_JIT;
     }
     result = mmap(NULL, size, PROT_NONE, mmapFlags, -1, 0);
-#endif    
+#endif
     if (result == MAP_FAILED)
     {
         assert(false);
@@ -177,7 +196,10 @@ bool VMToOSInterface::ReleaseDoubleMappedMemory(void *mapperHandle, void* pStart
 {
 #ifndef TARGET_OSX
     int fd = (int)(size_t)mapperHandle;
-    mmap(pStart, size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, fd, offset);
+    if (mmap(pStart, size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, fd, offset) == MAP_FAILED)
+    {
+        return false;
+    }
     memset(pStart, 0, size);
 #endif // TARGET_OSX
     return munmap(pStart, size) != -1;
@@ -187,7 +209,12 @@ void* VMToOSInterface::GetRWMapping(void *mapperHandle, void* pStart, size_t off
 {
 #ifndef TARGET_OSX
     int fd = (int)(size_t)mapperHandle;
-    return mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, offset);
+    void* result = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, offset);
+    if (result == MAP_FAILED)
+    {
+        result = NULL;
+    }
+    return result;
 #else // TARGET_OSX
 #ifdef TARGET_AMD64
     vm_address_t startRW;

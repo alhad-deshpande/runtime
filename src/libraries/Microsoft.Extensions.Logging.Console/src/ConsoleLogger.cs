@@ -2,6 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Runtime.Versioning;
@@ -9,8 +10,11 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Microsoft.Extensions.Logging.Console
 {
+    /// <summary>
+    /// A logger that writes messages in the console.
+    /// </summary>
     [UnsupportedOSPlatform("browser")]
-    internal sealed class ConsoleLogger : ILogger
+    internal sealed class ConsoleLogger : ILogger, IBufferedLogger
     {
         private readonly string _name;
         private readonly ConsoleLoggerProcessor _queueProcessor;
@@ -38,6 +42,7 @@ namespace Microsoft.Extensions.Logging.Console
         [ThreadStatic]
         private static StringWriter? t_stringWriter;
 
+        /// <inheritdoc />
         public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
         {
             if (!IsEnabled(logLevel))
@@ -65,11 +70,42 @@ namespace Microsoft.Extensions.Logging.Console
             _queueProcessor.EnqueueMessage(new LogMessageEntry(computedAnsiString, logAsError: logLevel >= Options.LogToStandardErrorThreshold));
         }
 
+        /// <inheritdoc />
+        public void LogRecords(IEnumerable<BufferedLogRecord> records)
+        {
+            ThrowHelper.ThrowIfNull(records);
+
+            StringWriter writer = t_stringWriter ??= new StringWriter();
+
+            var sb = writer.GetStringBuilder();
+            foreach (var rec in records)
+            {
+                var logEntry = new LogEntry<BufferedLogRecord>(rec.LogLevel, _name, rec.EventId, rec, null, static (s, _) => s.FormattedMessage ?? string.Empty);
+                Formatter.Write(in logEntry, null, writer);
+
+                if (sb.Length == 0)
+                {
+                    continue;
+                }
+
+                string computedAnsiString = sb.ToString();
+                sb.Clear();
+                _queueProcessor.EnqueueMessage(new LogMessageEntry(computedAnsiString, logAsError: rec.LogLevel >= Options.LogToStandardErrorThreshold));
+            }
+
+            if (sb.Capacity > 1024)
+            {
+                sb.Capacity = 1024;
+            }
+        }
+
+        /// <inheritdoc />
         public bool IsEnabled(LogLevel logLevel)
         {
             return logLevel != LogLevel.None;
         }
 
+        /// <inheritdoc />
         public IDisposable BeginScope<TState>(TState state) where TState : notnull => ScopeProvider?.Push(state) ?? NullScope.Instance;
     }
 }

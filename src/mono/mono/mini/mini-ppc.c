@@ -131,6 +131,16 @@ mono_arch_fregname (int reg) {
 static guint8*
 emit_memcpy (guint8 *code, int size, int dreg, int doffset, int sreg, int soffset)
 {
+	if (!ppc_is_imm16(soffset)) {
+		ppc_addis (code, ppc_r12, sreg, ppc_ha(soffset));
+		sreg = ppc_r12;
+	}
+
+	if (!ppc_is_imm16(doffset)) {
+		ppc_addis (code, ppc_r11, dreg, ppc_ha(doffset));
+		dreg = ppc_r11;
+	}
+
 	/* unrolled, use the counter in big */
 	if (size > sizeof (target_mgreg_t) * 5) {
 		long shifted = size / TARGET_SIZEOF_VOID_P;
@@ -297,7 +307,7 @@ gboolean
 mono_ppc_is_direct_call_sequence (guint32 *code)
 {
 #ifdef TARGET_POWERPC64
-	g_assert(*code == 0x4e800021 || *code == 0x4e800020 || *code == 0x4e800420);
+	g_assert(*code == 0x4e800021 || *code == 0x4e800020 || *code == 0x4e800421 || *code == 0x4e800420);
 
 	/* the thunk-less direct call sequence: lis/ori/sldi/oris/ori/mtlr/blrl */
 	if (ppc_opcode (code [-1]) == 31) { /* mtlr */
@@ -311,7 +321,12 @@ mono_ppc_is_direct_call_sequence (guint32 *code)
 		if (ppc_opcode (code [-2]) == 24 && ppc_opcode (code [-3]) == 31) /* mr/nop */
 			return is_load_sequence (&code [-8]);
 		else
+#if !defined(PPC_USES_FUNCTION_DESCRIPTOR)
+			/* the memory patch thunk sequence for ppc64le is: lis/ori/sldi/oris/ori/ld/mtlr/blrl */
+			return is_load_sequence (&code [-7]);
+#else
 			return is_load_sequence (&code [-6]);
+#endif
 	}
 	return FALSE;
 #else
@@ -465,10 +480,54 @@ mono_arch_get_delegate_invoke_impl (MonoMethodSignature *sig, gboolean has_targe
 	return start;
 }
 
+/**
+ *
+ * @brief Architecture-specific delegation virtual trampoline processing
+ *
+ * @param[in] @sig - Method signature
+ * @param[in] @method - Method
+ * @param[in] @offset - Offset into vtable
+ * @param[in] @load_imt_reg - Whether to load the LMT register
+ * @returns Trampoline
+ *
+ * Return a pointer to a delegation virtual trampoline
+ */
+
 gpointer
 mono_arch_get_delegate_virtual_invoke_impl (MonoMethodSignature *sig, MonoMethod *method, int offset, gboolean load_imt_reg)
 {
-	return NULL;
+	guint8 *code, *start;
+	int size = 32;
+
+	start = code = (guint8 *) mono_global_codeman_reserve (size);
+
+	/*
+	 * Replace the "this" argument with the target
+	 */
+	ppc_mr  (code, ppc_r12, ppc_r3);
+	ppc_ldptr (code, ppc_r3, MONO_STRUCT_OFFSET(MonoDelegate, target), ppc_r12);
+
+	/*
+	 * Load the IMT register, if needed
+	 */
+	if (load_imt_reg) {
+		ppc_ldptr  (code, MONO_ARCH_IMT_REG, MONO_STRUCT_OFFSET(MonoDelegate, method), ppc_r12);
+	}
+
+	/*
+	 * Load the vTable
+	 */
+	ppc_ldptr  (code, ppc_r12, MONO_STRUCT_OFFSET(MonoObject, vtable), ppc_r3);
+	if (!ppc_is_imm16(offset))
+		ppc_addis (code, ppc_r12, ppc_r12, ppc_ha(offset));
+	ppc_ldptr  (code, ppc_r12, offset, ppc_r12);
+	ppc_mtctr (code, ppc_r12);
+	ppc_bcctr (code, PPC_BR_ALWAYS, 0);
+
+	mono_arch_flush_icache (start, code - start);
+	MONO_PROFILER_RAISE (jit_code_buffer, (start, code - start, MONO_PROFILER_CODE_BUFFER_DELEGATE_INVOKE, NULL));
+
+	return(start);
 }
 
 gpointer
@@ -757,7 +816,7 @@ mono_arch_flush_icache (guint8 *code, gint size)
 	}
 #else
 	/* For POWER5/6 with ICACHE_SNOOPing only one icbi in the range is required.
-	 * The sync is required to insure that the store queue is completely empty.
+	 * The sync is required to ensure that the store queue is completely empty.
 	 * While the icbi performs no cache operations, icbi/isync is required to
 	 * kill local prefetch.
 	 */
@@ -1886,7 +1945,7 @@ typedef struct {
 if (0 && ins->inst_true_bb->native_offset) { \
 	ppc_bc (code, (b0), (b1), (code - cfg->native_code + ins->inst_true_bb->native_offset) & 0xffff); \
 } else { \
-	int br_disp = ins->inst_true_bb->max_offset - offset;	\
+	int br_disp = ins->inst_true_bb->max_offset - cpos;	\
 	if (!ppc_is_imm16 (br_disp + 8 * 1024) || !ppc_is_imm16 (br_disp - 8 * 1024)) {	\
 		MonoOvfJump *ovfj = mono_mempool_alloc (cfg->mempool, sizeof (MonoOvfJump));	\
 		ovfj->data.bb = ins->inst_true_bb;	\
@@ -1910,7 +1969,7 @@ if (0 && ins->inst_true_bb->native_offset) { \
  */
 #define EMIT_COND_SYSTEM_EXCEPTION_FLAGS(b0,b1,exc_name)            \
         do {                                                        \
-		int br_disp = cfg->bb_exit->max_offset - offset;	\
+		int br_disp = cfg->bb_exit->max_offset - cpos;	\
 		if (!ppc_is_imm16 (br_disp + 1024) || ! ppc_is_imm16 (ppc_is_imm16 (br_disp - 1024))) {	\
 			MonoOvfJump *ovfj = mono_mempool_alloc (cfg->mempool, sizeof (MonoOvfJump));	\
 			ovfj->data.exception = (exc_name);	\
@@ -2371,7 +2430,7 @@ map_to_reg_reg_op (int op)
 		return OP_STOREI8_MEMBASE_REG;
 	}
 	if (mono_op_imm_to_op (op) == -1)
-		g_error ("mono_op_imm_to_op failed for %s\n", mono_inst_name (op));
+		g_error ("mono_op_imm_to_op failed for " M_PRI_INST "\n", mono_inst_name (op));
 	return mono_op_imm_to_op (op);
 }
 
@@ -2692,6 +2751,10 @@ emit_float_to_int (MonoCompile *cfg, guchar *code, int dreg, int sreg, int size,
 static void
 emit_thunk (guint8 *code, gconstpointer target)
 {
+#if defined(TARGET_POWERPC64) && !defined(PPC_USES_FUNCTION_DESCRIPTOR)
+	*(guint64*)code = (guint64)target;
+	code += sizeof (guint64);
+#else
 	guint8 *p = code;
 
 	/* 2 bytes on 32bit, 5 bytes on 64bit */
@@ -2701,6 +2764,7 @@ emit_thunk (guint8 *code, gconstpointer target)
 	ppc_bcctr (code, PPC_BR_ALWAYS, 0);
 
 	mono_arch_flush_icache (p, code - p);
+#endif
 }
 
 static void
@@ -2722,6 +2786,9 @@ handle_thunk (MonoCompile *cfg, guchar *code, const guchar *target)
 		if (!cfg->arch.thunks) {
 			cfg->arch.thunks = cfg->thunks;
 			cfg->arch.thunks_size = cfg->thunk_area;
+#ifdef THUNK_ADDR_ALIGNMENT
+			cfg->arch.thunks = (guint8 *)ALIGN_TO(cfg->arch.thunks, THUNK_ADDR_ALIGNMENT);
+#endif
 		}
 		thunks = cfg->arch.thunks;
 		thunks_size = cfg->arch.thunks_size;
@@ -2731,9 +2798,14 @@ handle_thunk (MonoCompile *cfg, guchar *code, const guchar *target)
 		}
 
 		g_assert (*(guint32*)thunks == 0);
-		emit_thunk (thunks, target);
-		ppc_patch (code, thunks);
 
+
+		emit_thunk (thunks, target);
+#if defined(TARGET_POWERPC64) && !defined(PPC_USES_FUNCTION_DESCRIPTOR)
+		ppc_load_ptr_sequence (code, PPC_CALL_REG, thunks);
+#else
+		ppc_patch (code, thunks);
+#endif
 		cfg->arch.thunks += THUNK_SIZE;
 		cfg->arch.thunks_size -= THUNK_SIZE;
 	} else {
@@ -2753,7 +2825,9 @@ handle_thunk (MonoCompile *cfg, guchar *code, const guchar *target)
 		if (orig_target >= thunks && orig_target < thunks + thunks_size) {
 			/* The call already points to a thunk, because of trampolines etc. */
 			target_thunk = orig_target;
-		} else {
+		}
+#if (defined(TARGET_POWERPC64) && defined(PPC_USES_FUNCTION_DESCRIPTOR)) || !defined(TARGET_POWERPC64)
+		else {
 			for (p = thunks; p < thunks + thunks_size; p += THUNK_SIZE) {
 				if (((guint32 *) p) [0] == 0) {
 					/* Free entry */
@@ -2777,7 +2851,7 @@ handle_thunk (MonoCompile *cfg, guchar *code, const guchar *target)
 				}
 			}
 		}
-
+#endif
 		// g_print ("THUNK: %p %p %p\n", code, target, target_thunk);
 
 		if (!target_thunk) {
@@ -2787,7 +2861,9 @@ handle_thunk (MonoCompile *cfg, guchar *code, const guchar *target)
 		}
 
 		emit_thunk (target_thunk, target);
+#if (defined(TARGET_POWERPC64) && defined(PPC_USES_FUNCTION_DESCRIPTOR)) || !defined(TARGET_POWERPC64)
 		ppc_patch (code, target_thunk);
+#endif
 
 		mono_mini_arch_unlock ();
 	}
@@ -2873,13 +2949,16 @@ ppc_patch_full (MonoCompile *cfg, guchar *code, const guchar *target, gboolean i
 		return;
 	}
 
-	if (prim == 15 || ins == 0x4e800021 || ins == 0x4e800020 || ins == 0x4e800420) {
+	if (prim == 15 || ins == 0x4e800021 || ins == 0x4e800020 || ins == 0x4e800421 || ins == 0x4e800420) {
 #ifdef TARGET_POWERPC64
+#if !defined(PPC_USES_FUNCTION_DESCRIPTOR)
+		handle_thunk (cfg, code, target);
+#else
 		guint32 *seq = (guint32*)code;
 		guint32 *branch_ins;
 
 		/* the trampoline code will try to patch the blrl, blr, bcctr */
-		if (ins == 0x4e800021 || ins == 0x4e800020 || ins == 0x4e800420) {
+		if (ins == 0x4e800021 || ins == 0x4e800020 || ins == 0x4e800421 || ins == 0x4e800420) {
 			branch_ins = seq;
 			if (ppc_is_load_op (seq [-3]) || ppc_opcode (seq [-3]) == 31) /* ld || lwz || mr */
 				code -= 32;
@@ -2923,10 +3002,11 @@ ppc_patch_full (MonoCompile *cfg, guchar *code, const guchar *target, gboolean i
 		ppc_load_ptr_sequence (code, PPC_CALL_REG, target);
 #endif
 		mono_arch_flush_icache ((guint8*)seq, 28);
+#endif
 #else
 		guint32 *seq;
 		/* the trampoline code will try to patch the blrl, blr, bcctr */
-		if (ins == 0x4e800021 || ins == 0x4e800020 || ins == 0x4e800420) {
+		if (ins == 0x4e800021 || ins == 0x4e800020 || ins == 0x4e800421 || ins == 0x4e800420) {
 			code -= 12;
 		}
 		/* this is the lis/ori/mtlr/blrl sequence */
@@ -2934,7 +3014,7 @@ ppc_patch_full (MonoCompile *cfg, guchar *code, const guchar *target, gboolean i
 		g_assert ((seq [0] >> 26) == 15);
 		g_assert ((seq [1] >> 26) == 24);
 		g_assert ((seq [2] >> 26) == 31);
-		g_assert (seq [3] == 0x4e800021 || seq [3] == 0x4e800020 || seq [3] == 0x4e800420);
+		g_assert (seq [3] == 0x4e800021 || seq [3] == 0x4e800020 || seq [3] == 0x4e800421 || seq [3] == 0x4e800420);
 		/* FIXME: make this thread safe */
 		ppc_lis (code, PPC_CALL_REG, (guint32)(target) >> 16);
 		ppc_ori (code, PPC_CALL_REG, PPC_CALL_REG, (guint32)(target) & 0xffff);
@@ -2963,8 +3043,11 @@ emit_move_return_value (MonoCompile *cfg, MonoInst *ins, guint8 *code)
 {
 	switch (ins->opcode) {
 	case OP_FCALL:
+	case OP_RCALL:
 	case OP_FCALL_REG:
+	case OP_RCALL_REG:
 	case OP_FCALL_MEMBASE:
+	case OP_RCALL_MEMBASE:
 		if (ins->dreg != ppc_f1)
 			ppc_fmr (code, ins->dreg, ppc_f1);
 		break;
@@ -3349,8 +3432,12 @@ mono_arch_output_basic_block (MonoCompile *cfg, MonoBasicBlock *bb)
 			mono_add_patch_info (cfg, code - cfg->native_code, MONO_PATCH_INFO_JIT_ICALL_ID, GUINT_TO_POINTER (MONO_JIT_ICALL_mono_break));
 			if ((FORCE_INDIR_CALL || cfg->method->dynamic) && !cfg->compile_aot) {
 				ppc_load_func (code, PPC_CALL_REG, 0);
-				ppc_mtlr (code, PPC_CALL_REG);
-				ppc_blrl (code);
+#if defined(TARGET_POWERPC64) && !defined(PPC_USES_FUNCTION_DESCRIPTOR)
+				ppc_ldr (code, PPC_CALL_REG, 0, PPC_CALL_REG);
+				cfg->thunk_area += THUNK_SIZE;
+#endif
+				ppc_mtctr (code, PPC_CALL_REG);
+				ppc_bcctrl (code, PPC_BR_ALWAYS, 0);
 			} else {
 				ppc_bl (code, 0);
 			}
@@ -3689,6 +3776,7 @@ mono_arch_output_basic_block (MonoCompile *cfg, MonoBasicBlock *bb)
 				ppc_mr (code, ppc_r4, saved);
 			break;
 		}
+		case OP_RMOVE:
 		case OP_FMOVE:
 			if (ins->dreg != ins->sreg1)
 				ppc_fmr (code, ins->dreg, ins->sreg1);
@@ -3752,23 +3840,11 @@ mono_arch_output_basic_block (MonoCompile *cfg, MonoBasicBlock *bb)
 				ppc_addis (code, ppc_r12, cfg->frame_reg, ppc_ha(cfg->stack_usage));
 				ppc_addi (code, ppc_r12, ppc_r12, cfg->stack_usage);
 			}
-			if (!cfg->method->save_lmf) {
-				pos = 0;
-				for (i = 31; i >= 13; --i) {
-					if (cfg->used_int_regs & (1 << i)) {
-						pos += sizeof (target_mgreg_t);
-						ppc_ldptr (code, i, -pos, ppc_r12);
-					}
-				}
-			} else {
-				/* FIXME restore from MonoLMF: though this can't happen yet */
-			}
 
 			/* Copy arguments on the stack to our argument area */
 			if (call->stack_usage) {
 				code = emit_memcpy (code, call->stack_usage, ppc_r12, PPC_STACK_PARAM_OFFSET, ppc_sp, PPC_STACK_PARAM_OFFSET);
 				/* r12 was clobbered */
-				g_assert (cfg->frame_reg == ppc_sp);
 				if (ppc_is_imm16 (cfg->stack_usage)) {
 					ppc_addi (code, ppc_r12, cfg->frame_reg, cfg->stack_usage);
 				} else {
@@ -3778,6 +3854,18 @@ mono_arch_output_basic_block (MonoCompile *cfg, MonoBasicBlock *bb)
 					ppc_addi (code, ppc_r12, ppc_r12, cfg->stack_usage);
 				}
 			}
+
+			if (!cfg->method->save_lmf) {
+                                pos = 0;
+                                for (i = 31; i >= 13; --i) {
+                                        if (cfg->used_int_regs & (1 << i)) {
+                                                pos += sizeof (target_mgreg_t);
+                                                ppc_ldptr (code, i, -pos, ppc_r12);
+                                        }
+                                }
+                        } else {
+                                /* FIXME restore from MonoLMF: though this can't happen yet */
+                        }
 
 			ppc_mr (code, ppc_sp, ppc_r12);
 			mono_add_patch_info (cfg, (guint8*) code - cfg->native_code, MONO_PATCH_INFO_METHOD_JUMP, call->method);
@@ -3794,13 +3882,20 @@ mono_arch_output_basic_block (MonoCompile *cfg, MonoBasicBlock *bb)
 				ppc_mtctr (code, ppc_r0);
 				ppc_bcctr (code, PPC_BR_ALWAYS, 0);
 			} else {
+#if defined(TARGET_POWERPC64) && !defined(PPC_USES_FUNCTION_DESCRIPTOR)
+				ppc_load_func (code, PPC_CALL_REG, 0);
+				ppc_ldr (code, PPC_CALL_REG, 0, PPC_CALL_REG);
+				ppc_mtctr (code, PPC_CALL_REG);
+				ppc_bcctr (code, PPC_BR_ALWAYS, 0);
+#else
 				ppc_b (code, 0);
+#endif
 			}
 			break;
 		}
 		case OP_CHECK_THIS:
 			/* ensure ins->sreg1 is not NULL */
-			ppc_ldptr (code, ppc_r0, 0, ins->sreg1);
+			ppc_lbz (code, ppc_r0, 0, ins->sreg1);
 			break;
 		case OP_ARGLIST: {
 			long cookie_offset = cfg->sig_cookie + cfg->stack_usage;
@@ -3813,6 +3908,7 @@ mono_arch_output_basic_block (MonoCompile *cfg, MonoBasicBlock *bb)
 			ppc_stptr (code, ppc_r0, 0, ins->sreg1);
 			break;
 		}
+		case OP_RCALL:
 		case OP_FCALL:
 		case OP_LCALL:
 		case OP_VCALL:
@@ -3823,14 +3919,19 @@ mono_arch_output_basic_block (MonoCompile *cfg, MonoBasicBlock *bb)
 			mono_call_add_patch_info (cfg, call, offset);
 			if ((FORCE_INDIR_CALL || cfg->method->dynamic) && !cfg->compile_aot) {
 				ppc_load_func (code, PPC_CALL_REG, 0);
-				ppc_mtlr (code, PPC_CALL_REG);
-				ppc_blrl (code);
+#if defined(TARGET_POWERPC64) && !defined(PPC_USES_FUNCTION_DESCRIPTOR)
+				ppc_ldr (code, PPC_CALL_REG, 0, PPC_CALL_REG);
+				cfg->thunk_area += THUNK_SIZE;
+#endif
+				ppc_mtctr (code, PPC_CALL_REG);
+				ppc_bcctrl (code, PPC_BR_ALWAYS, 0);
 			} else {
 				ppc_bl (code, 0);
 			}
 			/* FIXME: this should be handled somewhere else in the new jit */
 			code = emit_move_return_value (cfg, ins, code);
 			break;
+		case OP_RCALL_REG:
 		case OP_FCALL_REG:
 		case OP_LCALL_REG:
 		case OP_VCALL_REG:
@@ -3854,12 +3955,13 @@ mono_arch_output_basic_block (MonoCompile *cfg, MonoBasicBlock *bb)
 				 }
 			}
 #endif
-			ppc_mtlr (code, ins->sreg1);
+			ppc_mtctr (code, ins->sreg1);
 #endif
-			ppc_blrl (code);
+			ppc_bcctrl (code, PPC_BR_ALWAYS, 0);
 			/* FIXME: this should be handled somewhere else in the new jit */
 			code = emit_move_return_value (cfg, ins, code);
 			break;
+		case OP_RCALL_MEMBASE:
 		case OP_FCALL_MEMBASE:
 		case OP_LCALL_MEMBASE:
 		case OP_VCALL_MEMBASE:
@@ -3869,12 +3971,12 @@ mono_arch_output_basic_block (MonoCompile *cfg, MonoBasicBlock *bb)
 			if (cfg->compile_aot && ins->sreg1 == ppc_r12) {
 				/* The trampolines clobber this */
 				ppc_mr (code, ppc_r29, ins->sreg1);
-				ppc_ldptr (code, ppc_r0, ins->inst_offset, ppc_r29);
+				ppc_ldptr (code, ppc_r12, ins->inst_offset, ppc_r29);
 			} else {
-				ppc_ldptr (code, ppc_r0, ins->inst_offset, ins->sreg1);
+				ppc_ldptr (code, ppc_r12, ins->inst_offset, ins->sreg1);
 			}
-			ppc_mtlr (code, ppc_r0);
-			ppc_blrl (code);
+			ppc_mtctr (code, ppc_r12);
+			ppc_bcctrl (code, PPC_BR_ALWAYS, 0);
 			/* FIXME: this should be handled somewhere else in the new jit */
 			code = emit_move_return_value (cfg, ins, code);
 			break;
@@ -3926,8 +4028,12 @@ mono_arch_output_basic_block (MonoCompile *cfg, MonoBasicBlock *bb)
 			mono_add_patch_info (cfg, code - cfg->native_code, MONO_PATCH_INFO_JIT_ICALL_ID, GUINT_TO_POINTER (MONO_JIT_ICALL_mono_arch_throw_exception));
 			if ((FORCE_INDIR_CALL || cfg->method->dynamic) && !cfg->compile_aot) {
 				ppc_load_func (code, PPC_CALL_REG, 0);
-				ppc_mtlr (code, PPC_CALL_REG);
-				ppc_blrl (code);
+#if defined(TARGET_POWERPC64) && !defined(PPC_USES_FUNCTION_DESCRIPTOR)
+				ppc_ldr (code, PPC_CALL_REG, 0, PPC_CALL_REG);
+				cfg->thunk_area += THUNK_SIZE;
+#endif
+				ppc_mtctr (code, PPC_CALL_REG);
+				ppc_bcctrl (code, PPC_BR_ALWAYS, 0);
 			} else {
 				ppc_bl (code, 0);
 			}
@@ -3940,8 +4046,12 @@ mono_arch_output_basic_block (MonoCompile *cfg, MonoBasicBlock *bb)
 					     GUINT_TO_POINTER (MONO_JIT_ICALL_mono_arch_rethrow_exception));
 			if ((FORCE_INDIR_CALL || cfg->method->dynamic) && !cfg->compile_aot) {
 				ppc_load_func (code, PPC_CALL_REG, 0);
-				ppc_mtlr (code, PPC_CALL_REG);
-				ppc_blrl (code);
+#if defined(TARGET_POWERPC64) && !defined(PPC_USES_FUNCTION_DESCRIPTOR)
+				ppc_ldr (code, PPC_CALL_REG, 0, PPC_CALL_REG);
+				cfg->thunk_area += THUNK_SIZE;
+#endif
+				ppc_mtctr (code, PPC_CALL_REG);
+				ppc_bcctrl (code, PPC_BR_ALWAYS, 0);
 			} else {
 				ppc_bl (code, 0);
 			}
@@ -4121,11 +4231,11 @@ mono_arch_output_basic_block (MonoCompile *cfg, MonoBasicBlock *bb)
 				ppc_lfd (code, ins->dreg, ins->inst_offset, ins->inst_basereg);
 			} else {
 				if (ppc_is_imm32 (ins->inst_offset)) {
-					ppc_addis (code, ppc_r11, ins->inst_destbasereg, ppc_ha(ins->inst_offset));
+					ppc_addis (code, ppc_r11, ins->inst_basereg, ppc_ha(ins->inst_offset));
 					ppc_lfd (code, ins->dreg, ins->inst_offset, ppc_r11);
 				} else {
 					ppc_load (code, ppc_r0, ins->inst_offset);
-					ppc_lfdx (code, ins->dreg, ins->inst_destbasereg, ppc_r0);
+					ppc_lfdx (code, ins->dreg, ins->inst_basereg, ppc_r0);
 				}
 			}
 			break;
@@ -4148,11 +4258,11 @@ mono_arch_output_basic_block (MonoCompile *cfg, MonoBasicBlock *bb)
 				ppc_lfs (code, ins->dreg, ins->inst_offset, ins->inst_basereg);
 			} else {
 				if (ppc_is_imm32 (ins->inst_offset)) {
-					ppc_addis (code, ppc_r11, ins->inst_destbasereg, ppc_ha(ins->inst_offset));
+					ppc_addis (code, ppc_r11, ins->inst_basereg, ppc_ha(ins->inst_offset));
 					ppc_lfs (code, ins->dreg, ins->inst_offset, ppc_r11);
 				} else {
 					ppc_load (code, ppc_r0, ins->inst_offset);
-					ppc_lfsx (code, ins->dreg, ins->inst_destbasereg, ppc_r0);
+					ppc_lfsx (code, ins->dreg, ins->inst_basereg, ppc_r0);
 				}
 			}
 			break;
@@ -4173,21 +4283,27 @@ mono_arch_output_basic_block (MonoCompile *cfg, MonoBasicBlock *bb)
 		case CEE_CONV_R4: /* FIXME: change precision */
 		case CEE_CONV_R8:
 			g_assert_not_reached ();
+		case OP_RCONV_TO_I1:
 		case OP_FCONV_TO_I1:
 			code = emit_float_to_int (cfg, code, ins->dreg, ins->sreg1, 1, TRUE);
 			break;
+		case OP_RCONV_TO_U1:
 		case OP_FCONV_TO_U1:
 			code = emit_float_to_int (cfg, code, ins->dreg, ins->sreg1, 1, FALSE);
 			break;
+		case OP_RCONV_TO_I2:
 		case OP_FCONV_TO_I2:
 			code = emit_float_to_int (cfg, code, ins->dreg, ins->sreg1, 2, TRUE);
 			break;
+		case OP_RCONV_TO_U2:
 		case OP_FCONV_TO_U2:
 			code = emit_float_to_int (cfg, code, ins->dreg, ins->sreg1, 2, FALSE);
 			break;
+		case OP_RCONV_TO_I4:
 		case OP_FCONV_TO_I4:
 			code = emit_float_to_int (cfg, code, ins->dreg, ins->sreg1, 4, TRUE);
 			break;
+		case OP_RCONV_TO_U4:
 		case OP_FCONV_TO_U4:
 			code = emit_float_to_int (cfg, code, ins->dreg, ins->sreg1, 4, FALSE);
 			break;
@@ -4246,21 +4362,35 @@ mono_arch_output_basic_block (MonoCompile *cfg, MonoBasicBlock *bb)
 		case OP_SQRT:
 			ppc_fsqrtd (code, ins->dreg, ins->sreg1);
 			break;
+		case OP_RADD:
+			ppc_fadds (code, ins->dreg, ins->sreg1, ins->sreg2);
+			break;
 		case OP_FADD:
 			ppc_fadd (code, ins->dreg, ins->sreg1, ins->sreg2);
+			break;
+		case OP_RSUB:
+			ppc_fsubs (code, ins->dreg, ins->sreg1, ins->sreg2);
 			break;
 		case OP_FSUB:
 			ppc_fsub (code, ins->dreg, ins->sreg1, ins->sreg2);
 			break;
+		case OP_RMUL:
+			ppc_fmuls (code, ins->dreg, ins->sreg1, ins->sreg2);
+			break;
 		case OP_FMUL:
 			ppc_fmul (code, ins->dreg, ins->sreg1, ins->sreg2);
+			break;
+		case OP_RDIV:
+			ppc_fdivs (code, ins->dreg, ins->sreg1, ins->sreg2);
 			break;
 		case OP_FDIV:
 			ppc_fdiv (code, ins->dreg, ins->sreg1, ins->sreg2);
 			break;
+		case OP_RNEG:
 		case OP_FNEG:
 			ppc_fneg (code, ins->dreg, ins->sreg1);
 			break;
+		case OP_RREM:
 		case OP_FREM:
 			/* emulated */
 			g_assert_not_reached ();
@@ -4298,23 +4428,29 @@ mono_arch_output_basic_block (MonoCompile *cfg, MonoBasicBlock *bb)
 			ppc_cmpl (code, 0, 1, ins->sreg1, ins->sreg2);
 			ppc_iselgt (code, ins->dreg, ins->sreg1, ins->sreg2);
 			break;
+		case OP_RCOMPARE:
 		case OP_FCOMPARE:
 			ppc_fcmpu (code, 0, ins->sreg1, ins->sreg2);
 			break;
+		case OP_RCEQ:
+		case OP_RCNEQ:
 		case OP_FCEQ:
 		case OP_FCNEQ:
 			ppc_fcmpo (code, 0, ins->sreg1, ins->sreg2);
 			ppc_li (code, ins->dreg, 1);
-			ppc_bc (code, ins->opcode == OP_FCEQ ? PPC_BR_TRUE : PPC_BR_FALSE, PPC_BR_EQ, 2);
+			ppc_bc (code, ins->opcode == OP_FCEQ || ins->opcode == OP_RCEQ ? PPC_BR_TRUE : PPC_BR_FALSE, PPC_BR_EQ, 2);
 			ppc_li (code, ins->dreg, 0);
 			break;
+		case OP_RCLT:
+		case OP_RCGE:
 		case OP_FCLT:
 		case OP_FCGE:
 			ppc_fcmpo (code, 0, ins->sreg1, ins->sreg2);
 			ppc_li (code, ins->dreg, 1);
-			ppc_bc (code, ins->opcode == OP_FCLT ? PPC_BR_TRUE : PPC_BR_FALSE, PPC_BR_LT, 2);
+			ppc_bc (code, ins->opcode == OP_FCLT || ins->opcode == OP_RCLT ? PPC_BR_TRUE : PPC_BR_FALSE, PPC_BR_LT, 2);
 			ppc_li (code, ins->dreg, 0);
 			break;
+		case OP_RCLT_UN:
 		case OP_FCLT_UN:
 			ppc_fcmpu (code, 0, ins->sreg1, ins->sreg2);
 			ppc_li (code, ins->dreg, 1);
@@ -4322,13 +4458,16 @@ mono_arch_output_basic_block (MonoCompile *cfg, MonoBasicBlock *bb)
 			ppc_bc (code, PPC_BR_TRUE, PPC_BR_LT, 2);
 			ppc_li (code, ins->dreg, 0);
 			break;
+		case OP_RCGT:
+		case OP_RCLE:
 		case OP_FCGT:
 		case OP_FCLE:
 			ppc_fcmpo (code, 0, ins->sreg1, ins->sreg2);
 			ppc_li (code, ins->dreg, 1);
-			ppc_bc (code, ins->opcode == OP_FCGT ? PPC_BR_TRUE : PPC_BR_FALSE, PPC_BR_GT, 2);
+			ppc_bc (code, ins->opcode == OP_FCGT || ins->opcode == OP_RCGT ? PPC_BR_TRUE : PPC_BR_FALSE, PPC_BR_GT, 2);
 			ppc_li (code, ins->dreg, 0);
 			break;
+		case OP_RCGT_UN:
 		case OP_FCGT_UN:
 			ppc_fcmpu (code, 0, ins->sreg1, ins->sreg2);
 			ppc_li (code, ins->dreg, 1);
@@ -4399,6 +4538,10 @@ mono_arch_output_basic_block (MonoCompile *cfg, MonoBasicBlock *bb)
 		case OP_ZEXT_I4:
 			ppc_clrldi (code, ins->dreg, ins->sreg1, 32);
 			break;
+		case OP_RCONV_TO_R4:
+		case OP_RCONV_TO_R8:
+			ppc_fmr (code, ins->dreg, ins->sreg1);
+			break;
 		case OP_ICONV_TO_R4:
 		case OP_ICONV_TO_R8:
 		case OP_LCONV_TO_R4:
@@ -4416,9 +4559,11 @@ mono_arch_output_basic_block (MonoCompile *cfg, MonoBasicBlock *bb)
 				ppc_str (code, tmp, -8, ppc_r1);
 				ppc_lfd (code, ins->dreg, -8, ppc_r1);
 			}
-			ppc_fcfid (code, ins->dreg, ins->dreg);
-			if (ins->opcode == OP_ICONV_TO_R4 || ins->opcode == OP_LCONV_TO_R4)
-				ppc_frsp (code, ins->dreg, ins->dreg);
+			if (ins->opcode == OP_ICONV_TO_R4 || ins->opcode == OP_LCONV_TO_R4) {
+				ppc_fcfids (code, ins->dreg, ins->dreg);
+			} else {
+				ppc_fcfid (code, ins->dreg, ins->dreg);
+			}
 			break;
 		}
 		case OP_LSHR:
@@ -4451,9 +4596,11 @@ mono_arch_output_basic_block (MonoCompile *cfg, MonoBasicBlock *bb)
 		case OP_LBLE_UN:
 			EMIT_COND_BRANCH (ins, ins->opcode - OP_LBEQ);
 			break;
+		case OP_RCONV_TO_I8:
 		case OP_FCONV_TO_I8:
 			code = emit_float_to_int (cfg, code, ins->dreg, ins->sreg1, 8, TRUE);
 			break;
+		case OP_RCONV_TO_U8:
 		case OP_FCONV_TO_U8:
 			code = emit_float_to_int (cfg, code, ins->dreg, ins->sreg1, 8, FALSE);
 			break;
@@ -4574,16 +4721,35 @@ mono_arch_output_basic_block (MonoCompile *cfg, MonoBasicBlock *bb)
 			MONO_VARINFO (cfg, ins->inst_c0)->live_range_end = code - cfg->native_code;
 			break;
 		}
-		case OP_GC_SAFE_POINT:
+		case OP_GC_SAFE_POINT: {
+			guint8 *br;
+			ppc_ldr (code, ppc_r0, 0, ins->sreg1);
+			ppc_cmpi (code, 0, 0, ppc_r0, 0);
+			br = code;
+			ppc_bc (code, PPC_BR_TRUE, PPC_BR_EQ, 0);
+			mono_add_patch_info (cfg, code - cfg->native_code, MONO_PATCH_INFO_JIT_ICALL_ID,
+			     GUINT_TO_POINTER (MONO_JIT_ICALL_mono_threads_state_poll));
+			if ((FORCE_INDIR_CALL || cfg->method->dynamic) && !cfg->compile_aot) {
+				ppc_load_func (code, PPC_CALL_REG, 0);
+#if defined(TARGET_POWERPC64) && !defined(PPC_USES_FUNCTION_DESCRIPTOR)
+				ppc_ldr (code, PPC_CALL_REG, 0, PPC_CALL_REG);
+				cfg->thunk_area += THUNK_SIZE;
+#endif
+				ppc_mtctr (code, PPC_CALL_REG);
+				ppc_bcctrl (code, PPC_BR_ALWAYS, 0);
+			} else {
+				ppc_bl (code, 0);
+			}
+			ppc_patch (br, code);
 			break;
-
+		}
 		default:
-			g_warning ("unknown opcode %s in %s()\n", mono_inst_name (ins->opcode), __FUNCTION__);
+			g_warning ("unknown opcode " M_PRI_INST " in %s()\n", mono_inst_name (ins->opcode), __FUNCTION__);
 			g_assert_not_reached ();
 		}
 
 		if ((cfg->opt & MONO_OPT_BRANCH) && ((code - cfg->native_code - offset) > max_len)) {
-			g_warning ("wrong maximal instruction length of instruction %s (expected %d, got %ld)",
+			g_warning ("wrong maximal instruction length of instruction " M_PRI_INST " (expected %d, got %ld)",
 				   mono_inst_name (ins->opcode), max_len, (glong)(code - cfg->native_code - offset));
 			g_assert_not_reached ();
 		}
@@ -4624,7 +4790,7 @@ mono_arch_register_lowlevel_calls (void)
 		__load [9] =  ((guint64)(gsize)(val))        & 0xffff;	\
 	} while (0)
 #else
-#error huh?  No endianess defined by compiler
+#error huh?  No endianness defined by compiler
 #endif
 #else
 #define patch_load_sequence(ip,val) do {\
@@ -5046,11 +5212,32 @@ mono_arch_emit_prolog (MonoCompile *cfg)
 					break;
 				}
 			} else if (ainfo->regtype == RegTypeFP) {
-				g_assert (ppc_is_imm16 (inst->inst_offset));
-				if (ainfo->size == 8)
-					ppc_stfd (code, ainfo->reg, inst->inst_offset, inst->inst_basereg);
-				else if (ainfo->size == 4)
-					ppc_stfs (code, ainfo->reg, inst->inst_offset, inst->inst_basereg);
+				if (ainfo->size == 8) {
+					if (ppc_is_imm16 (inst->inst_offset)) {
+                                                ppc_stfd (code, ainfo->reg, inst->inst_offset, inst->inst_basereg);
+                                        }
+                                        else if (ppc_is_imm32 (inst->inst_offset)) {
+                                                ppc_addis (code, ppc_r12, inst->inst_basereg, ppc_ha(inst->inst_offset));
+                                                ppc_stfd (code, ainfo->reg, inst->inst_offset, ppc_r12);
+                                        }
+                                        else {
+                                                ppc_load (code, ppc_r12, inst->inst_offset);
+                                                ppc_stfdx (code, ainfo->reg, inst->inst_basereg, ppc_r12);
+                                        }
+				 }
+				else if (ainfo->size == 4) {
+					if (ppc_is_imm16 (inst->inst_offset)) {
+                                                ppc_stfs (code, ainfo->reg, inst->inst_offset, inst->inst_basereg);
+                                        }
+                                        else if (ppc_is_imm32 (inst->inst_offset)) {
+                                                ppc_addis (code, ppc_r12, inst->inst_basereg, ppc_ha(inst->inst_offset));
+                                                ppc_stfs (code, ainfo->reg, inst->inst_offset, ppc_r12);
+                                        }
+                                        else {
+                                                ppc_load (code, ppc_r12, inst->inst_offset);
+                                                ppc_stfsx (code, ainfo->reg, inst->inst_basereg, ppc_r12);
+                                        }
+				}
 				else
 					g_assert_not_reached ();
 			 } else if (ainfo->regtype == RegTypeFPStructByVal) {
@@ -5058,17 +5245,39 @@ mono_arch_emit_prolog (MonoCompile *cfg)
 				int soffset = 0;
 				int cur_reg;
 				int size = 0;
-				g_assert (ppc_is_imm16 (inst->inst_offset));
-				g_assert (ppc_is_imm16 (inst->inst_offset + ainfo->vtregs * sizeof (target_mgreg_t)));
 				/* FIXME: what if there is no class? */
 				if (sig->pinvoke && !sig->marshalling_disabled && mono_class_from_mono_type_internal (inst->inst_vtype))
 					size = mono_class_native_size (mono_class_from_mono_type_internal (inst->inst_vtype), NULL);
 				for (cur_reg = 0; cur_reg < ainfo->vtregs; ++cur_reg) {
-					if (ainfo->size == 4) {
-						ppc_stfs (code, ainfo->reg + cur_reg, doffset, inst->inst_basereg);
-					} else {
-						ppc_stfd (code, ainfo->reg + cur_reg, doffset, inst->inst_basereg);
-					}
+					if (ainfo->size == 8){
+                                                if (ppc_is_imm16 (inst->inst_offset)) {
+                                                        ppc_stfd (code, ainfo->reg + cur_reg, doffset, inst->inst_basereg);
+                                                }
+                                                else if (ppc_is_imm32 (inst->inst_offset)) {
+                                                        ppc_addis (code, ppc_r12, inst->inst_basereg, ppc_ha(doffset));
+                                                        ppc_stfd (code, ainfo->reg + cur_reg, doffset, ppc_r12);
+                                                }
+                                                else {
+                                                        ppc_load (code, ppc_r12, doffset);
+                                                        ppc_stfdx (code, ainfo->reg + cur_reg, inst->inst_basereg, ppc_r12);
+                                                }
+                                        }
+                                        else if (ainfo->size == 4){
+                                                if (ppc_is_imm16 (inst->inst_offset)) {
+                                                        ppc_stfs (code, ainfo->reg + cur_reg, doffset, inst->inst_basereg);
+                                                }
+                                                else if (ppc_is_imm32 (inst->inst_offset)) {
+                                                        ppc_addis (code, ppc_r12, inst->inst_basereg, ppc_ha(doffset));
+                                                        ppc_stfs (code, ainfo->reg + cur_reg, doffset, ppc_r12);
+                                                }
+                                                else {
+                                                        ppc_load (code, ppc_r12, doffset);
+                                                        ppc_stfsx (code, ainfo->reg + cur_reg, inst->inst_basereg, ppc_r12);
+                                                }
+                                        }
+                                        else
+                                                g_assert_not_reached ();
+
 					soffset += ainfo->size;
 					doffset += ainfo->size;
 				}
@@ -5077,8 +5286,8 @@ mono_arch_emit_prolog (MonoCompile *cfg)
 				int soffset = 0;
 				int cur_reg;
 				int size = 0;
-				g_assert (ppc_is_imm16 (inst->inst_offset));
-				g_assert (ppc_is_imm16 (inst->inst_offset + ainfo->vtregs * sizeof (target_mgreg_t)));
+				g_assert (ppc_is_imm32 (inst->inst_offset));
+				g_assert (ppc_is_imm32 (inst->inst_offset + ainfo->vtregs * sizeof (target_mgreg_t)));
 				/* FIXME: what if there is no class? */
 				if (sig->pinvoke && !sig->marshalling_disabled && mono_class_from_mono_type_internal (inst->inst_vtype))
 					size = mono_class_native_size (mono_class_from_mono_type_internal (inst->inst_vtype), NULL);
@@ -5106,21 +5315,39 @@ mono_arch_emit_prolog (MonoCompile *cfg)
 						                         (sizeof (target_mgreg_t) - ainfo->bytes) * 8);
 							ppc_stptr (code, ppc_r0, doffset, inst->inst_basereg);
 #else
-							if (mono_class_native_size (inst->klass, NULL) == 1) {
-							  ppc_stb (code, ainfo->reg + cur_reg, doffset, inst->inst_basereg);
-							} else if (mono_class_native_size (inst->klass, NULL) == 2) {
-								ppc_sth (code, ainfo->reg + cur_reg, doffset, inst->inst_basereg);
-							} else if (mono_class_native_size (inst->klass, NULL) == 4) {  // WDS -- maybe <=4?
-								ppc_stw (code, ainfo->reg + cur_reg, doffset, inst->inst_basereg);
-							} else {
-								ppc_stptr (code, ainfo->reg + cur_reg, doffset, inst->inst_basereg);  // WDS -- Better way?
+							if (ppc_is_imm16 (inst->inst_offset)) {
+								if (mono_class_native_size (inst->klass, NULL) == 1) {
+								ppc_stb (code, ainfo->reg + cur_reg, doffset, inst->inst_basereg);
+								} else if (mono_class_native_size (inst->klass, NULL) == 2) {
+									ppc_sth (code, ainfo->reg + cur_reg, doffset, inst->inst_basereg);
+								} else if (mono_class_native_size (inst->klass, NULL) == 4) {  // WDS -- maybe <=4?
+									ppc_stw (code, ainfo->reg + cur_reg, doffset, inst->inst_basereg);
+								} else {
+									ppc_stptr (code, ainfo->reg + cur_reg, doffset, inst->inst_basereg);  // WDS -- Better way?
+								}
+							}
+							else if (ppc_is_imm32 (inst->inst_offset)) {
+								ppc_addis (code, ppc_r12, inst->inst_basereg, ppc_ha(doffset));
+								ppc_stptr (code, ainfo->reg + cur_reg, doffset, ppc_r12);
+							}
+							else {
+								g_assert_not_reached();
 							}
 #endif
 						} else
 #endif
 						{
-							ppc_stptr (code, ainfo->reg + cur_reg, doffset,
-									inst->inst_basereg);
+							if (ppc_is_imm16 (inst->inst_offset)) {
+								ppc_stptr (code, ainfo->reg + cur_reg, doffset,
+										inst->inst_basereg);
+							}
+							else if (ppc_is_imm32 (inst->inst_offset)) {
+								ppc_addis (code, ppc_r12, inst->inst_basereg, ppc_ha(doffset));
+								ppc_stptr (code, ainfo->reg + cur_reg, doffset, ppc_r12);
+							}
+							else {
+								g_assert_not_reached();
+							}
 						}
 					}
 					soffset += sizeof (target_mgreg_t);
@@ -5170,8 +5397,12 @@ mono_arch_emit_prolog (MonoCompile *cfg)
 			     GUINT_TO_POINTER (MONO_JIT_ICALL_mono_tls_get_lmf_addr_extern));
 		if ((FORCE_INDIR_CALL || cfg->method->dynamic) && !cfg->compile_aot) {
 			ppc_load_func (code, PPC_CALL_REG, 0);
-			ppc_mtlr (code, PPC_CALL_REG);
-			ppc_blrl (code);
+#if defined(TARGET_POWERPC64) && !defined(PPC_USES_FUNCTION_DESCRIPTOR)
+			ppc_ldr (code, PPC_CALL_REG, 0, PPC_CALL_REG);
+			cfg->thunk_area += THUNK_SIZE;
+#endif
+			ppc_mtctr (code, PPC_CALL_REG);
+			ppc_bcctrl (code, PPC_BR_ALWAYS, 0);
 		} else {
 			ppc_bl (code, 0);
 		}
@@ -5451,6 +5682,10 @@ mono_arch_emit_exceptions (MonoCompile *cfg)
 			patch_info->ip.i = code - cfg->native_code;
 			if (FORCE_INDIR_CALL || cfg->method->dynamic) {
 				ppc_load_func (code, PPC_CALL_REG, 0);
+#if defined(TARGET_POWERPC64) && !defined(PPC_USES_FUNCTION_DESCRIPTOR)
+				ppc_ldr (code, PPC_CALL_REG, 0, PPC_CALL_REG);
+				cfg->thunk_area += THUNK_SIZE;
+#endif
 				ppc_mtctr (code, PPC_CALL_REG);
 				ppc_bcctr (code, PPC_BR_ALWAYS, 0);
 			} else {
@@ -5465,6 +5700,14 @@ mono_arch_emit_exceptions (MonoCompile *cfg)
 	}
 
 	set_code_cursor (cfg, code);
+
+#ifdef THUNK_ADDR_ALIGNMENT
+	/* We need to align thunks_offset to 8 byte boundary, hence allocating first 8 bytes 
+	for padding purpose */
+	if (cfg->thunk_area != 0) {
+		cfg->thunk_area += THUNK_ADDR_ALIGNMENT;
+	}
+#endif
 }
 #endif
 
@@ -5784,7 +6027,7 @@ host_mgreg_t*
 mono_arch_context_get_int_reg_address (MonoContext *ctx, int reg)
 {
 	if (reg == ppc_r1)
-		return (host_mgreg_t)(gsize)MONO_CONTEXT_GET_SP (ctx);
+		return (host_mgreg_t *)(gsize)&ctx->sc_sp;
 
 	return &ctx->regs [reg];
 }

@@ -243,10 +243,11 @@ inline BOOL BaseAssemblySpec::CompareEx(BaseAssemblySpec *pSpec, DWORD dwCompare
             || strcmp(m_pAssemblyName, pSpec->m_pAssemblyName)))
         return FALSE;
 
-    if (m_cbPublicKeyOrToken != pSpec->m_cbPublicKeyOrToken
-        || memcmp(m_pbPublicKeyOrToken, pSpec->m_pbPublicKeyOrToken, m_cbPublicKeyOrToken))
+    if (m_cbPublicKeyOrToken != pSpec->m_cbPublicKeyOrToken)
         return FALSE;
 
+    if (m_cbPublicKeyOrToken != 0 && memcmp(m_pbPublicKeyOrToken, pSpec->m_pbPublicKeyOrToken, m_cbPublicKeyOrToken) != 0)
+        return FALSE;
 
     if (m_dwFlags != pSpec->m_dwFlags)
         return FALSE;
@@ -355,7 +356,7 @@ inline HRESULT BaseAssemblySpec::Init(mdToken tkAssemblyRef,
                                             NULL,        // [OUT] Count of bytes in the public key or token.
                                             NULL,        // [OUT] Hash Algorithm
                                             NULL,        // [OUT] Buffer to fill with name.
-                                            NULL,        // [IN] Size of buffer in wide chars.
+                                            0,           // [IN] Size of buffer in wide chars.
                                             &cchName,    // [OUT] Actual # of wide chars in name.
                                             &sContext,   // [OUT] Assembly MetaData.
                                             NULL));       // [OUT] Flags.
@@ -379,7 +380,7 @@ inline HRESULT BaseAssemblySpec::Init(mdToken tkAssemblyRef,
                                             NULL,        // [OUT] Pointer to the public key or token.
                                             NULL,        // [OUT] Count of bytes in the public key or token.
                                             NULL,        // [OUT] Buffer to fill with name.
-                                            NULL,        // [IN] Size of buffer in wide chars.
+                                            0,           // [IN] Size of buffer in wide chars.
                                             &cchName,    // [OUT] Actual # of wide chars in name.
                                             &sContext,   // [OUT] Assembly MetaData.
                                             NULL,        // [OUT] Hash blob.

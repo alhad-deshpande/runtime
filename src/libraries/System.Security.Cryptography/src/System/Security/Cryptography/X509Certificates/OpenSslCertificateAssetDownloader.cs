@@ -7,6 +7,7 @@ using System.IO;
 using System.Reflection;
 using System.Threading;
 using Microsoft.Win32.SafeHandles;
+using OpenSslX509ChainEventSource = System.Security.Cryptography.X509Certificates.OpenSslX509ChainEventSource;
 
 namespace System.Security.Cryptography.X509Certificates
 {
@@ -23,7 +24,23 @@ namespace System.Security.Cryptography.X509Certificates
 
             try
             {
-                X509Certificate2 certificate = new X509Certificate2(data);
+                X509ContentType contentType = X509Certificate2.GetCertContentType(data);
+                X509Certificate2 certificate;
+
+                switch (contentType)
+                {
+                    case X509ContentType.Cert:
+                        certificate = X509CertificateLoader.LoadCertificate(data);
+                        break;
+                    case X509ContentType.Pkcs7:
+#pragma warning disable SYSLIB0057 // Content is known to be PKCS7.
+                        certificate = new X509Certificate2(data);
+#pragma warning restore SYSLIB0057
+                        break;
+                    default:
+                        return null;
+                }
+
                 certificate.ThrowIfInvalid();
                 return certificate;
             }
@@ -55,6 +72,8 @@ namespace System.Security.Cryptography.X509Certificates
                 return handle;
             }
 
+            handle.Dispose();
+
             using (SafeBioHandle bio = Interop.Crypto.CreateMemoryBio())
             {
                 Interop.Crypto.CheckValidOpenSslHandle(bio);
@@ -71,6 +90,8 @@ namespace System.Security.Cryptography.X509Certificates
                 {
                     return handle;
                 }
+
+                handle.Dispose();
             }
 
             if (OpenSslX509ChainEventSource.Log.IsEnabled())
@@ -118,8 +139,6 @@ namespace System.Security.Cryptography.X509Certificates
 
 namespace System.Net.Http
 {
-    using OpenSslX509ChainEventSource = System.Security.Cryptography.X509Certificates.OpenSslX509ChainEventSource;
-
     internal partial class X509ResourceClient
     {
         static partial void ReportNoClient()

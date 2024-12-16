@@ -2,12 +2,12 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System;
-using System.IO;
-using System.Text;
 using System.Collections;
 using System.Globalization;
+using System.IO;
 using System.Net.Mail;
 using System.Runtime.ExceptionServices;
+using System.Text;
 
 namespace System.Net.Mime
 {
@@ -153,17 +153,11 @@ namespace System.Net.Mime
 
             try
             {
-                if (context._outputStream != null)
-                {
-                    context._outputStream.Close();
-                }
+                context._outputStream?.Close();
             }
             catch (Exception ex)
             {
-                if (e == null)
-                {
-                    e = ex;
-                }
+                e ??= ex;
             }
             context._completed = true;
             context._result.InvokeCallback(e);

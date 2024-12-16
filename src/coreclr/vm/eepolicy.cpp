@@ -1,12 +1,9 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
-//
 
-//
 // ---------------------------------------------------------------------------
 // EEPolicy.cpp
 // ---------------------------------------------------------------------------
-
 
 #include "common.h"
 #include "eepolicy.h"
@@ -41,8 +38,6 @@ void SafeExitProcess(UINT exitCode, ShutdownCompleteAction sca = SCA_ExitProcess
     // other DLLs call Release() on us in their detach [dangerous!], etc.
     GCX_PREEMP_NO_DTOR();
 
-    InterlockedExchange((LONG*)&g_fForbidEnterEE, TRUE);
-
     // Note that for free and retail builds StressLog must also be enabled
     if (g_pConfig && g_pConfig->StressLog())
     {
@@ -58,13 +53,6 @@ void SafeExitProcess(UINT exitCode, ShutdownCompleteAction sca = SCA_ExitProcess
             }
         }
     }
-
-    // Turn off exception processing, because if some other random DLL has a
-    //  fault in DLL_PROCESS_DETACH, we could get called for exception handling.
-    //  Since we've turned off part of the runtime, we can't, for instance,
-    //  properly execute the GC that handling an exception might trigger.
-    g_fNoExceptions = true;
-    LOG((LF_EH, LL_INFO10, "SafeExitProcess: turning off exceptions\n"));
 
     if (sca == SCA_TerminateProcessWhenShutdownComplete)
     {
@@ -170,6 +158,7 @@ void EEPolicy::HandleExitProcess(ShutdownCompleteAction sca)
 //---------------------------------------------------------------------------------------
 class CallStackLogger
 {
+    PEXCEPTION_POINTERS m_pExceptionInfo;
     // MethodDescs of the stack frames, the TOS is at index 0
     CDynArray<MethodDesc*> m_frames;
 
@@ -183,6 +172,16 @@ class CallStackLogger
     StackWalkAction LogCallstackForLogCallbackWorker(CrawlFrame *pCF)
     {
         WRAPPER_NO_CONTRACT;
+
+        if (m_pExceptionInfo != NULL)
+        {
+            // Skip managed frames that are not part of the stack that caused the exception
+            // (they are part of the stack that is unwinding the exception)
+            if (GetRegdisplaySP(pCF->GetRegisterSet()) < GetSP(m_pExceptionInfo->ContextRecord))
+            {
+                return SWA_CONTINUE;
+            }
+        }
 
         MethodDesc *pMD = pCF->GetFunction();
 
@@ -240,6 +239,13 @@ class CallStackLogger
 
 public:
 
+    CallStackLogger(PEXCEPTION_POINTERS pExceptionInfo)
+    {
+        WRAPPER_NO_CONTRACT;
+
+        m_pExceptionInfo = pExceptionInfo;
+    }
+
     // Callback called by the stack walker for each frame on the stack
     static StackWalkAction LogCallstackForLogCallback(CrawlFrame *pCF, VOID* pData)
     {
@@ -256,7 +262,7 @@ public:
         if (m_largestCommonStartLength != 0)
         {
             SmallStackSString repeatStr;
-            repeatStr.AppendPrintf("Repeat %d times:\n", m_largestCommonStartRepeat);
+            repeatStr.AppendPrintf("Repeated %d times:\n", m_largestCommonStartRepeat);
 
             PrintToStdErrW(repeatStr.GetUnicode());
             PrintToStdErrA("--------------------------------\n");
@@ -284,7 +290,7 @@ public:
 // Return Value:
 //    None
 //
-inline void LogCallstackForLogWorker(Thread* pThread)
+inline void LogCallstackForLogWorker(Thread* pThread, PEXCEPTION_POINTERS pExceptionInfo)
 {
     WRAPPER_NO_CONTRACT;
 
@@ -298,9 +304,9 @@ inline void LogCallstackForLogWorker(Thread* pThread)
     {
         WordAt.Insert(WordAt.Begin(), W("   "));
     }
-    WordAt += W(" ");
+    WordAt.Append(W(" "));
 
-    CallStackLogger logger;
+    CallStackLogger logger(pExceptionInfo);
 
     pThread->StackWalkFrames(&CallStackLogger::LogCallstackForLogCallback, &logger, QUICKUNWIND | FUNCTIONSONLY | ALLOW_ASYNC_STACK_WALK);
 
@@ -321,28 +327,35 @@ inline void LogCallstackForLogWorker(Thread* pThread)
 // Return Value:
 //    None
 //
-void LogInfoForFatalError(UINT exitCode, LPCWSTR pszMessage, LPCWSTR errorSource, LPCWSTR argExceptionString)
+void LogInfoForFatalError(UINT exitCode, LPCWSTR pszMessage, PEXCEPTION_POINTERS pExceptionInfo, LPCWSTR errorSource, LPCWSTR argExceptionString)
 {
     WRAPPER_NO_CONTRACT;
 
-    static Thread *const FatalErrorNotSeenYet = nullptr;
-    static Thread *const FatalErrorLoggingFinished = reinterpret_cast<Thread *>(1);
+    static size_t s_pCrashingThreadID;
 
-    static Thread *volatile s_pCrashingThread = FatalErrorNotSeenYet;
+    size_t currentThreadID;
+#ifndef TARGET_UNIX
+    currentThreadID = GetCurrentThreadId();
+#else
+    currentThreadID = PAL_GetCurrentOSThreadId();
+#endif
 
-    Thread *pThread = GetThreadNULLOk();
-    Thread *pPreviousThread = InterlockedCompareExchangeT<Thread *>(&s_pCrashingThread, pThread, FatalErrorNotSeenYet);
+    size_t previousThreadID = InterlockedCompareExchangeT<size_t>(&s_pCrashingThreadID, currentThreadID, 0);
 
-    if (pPreviousThread == pThread)
+    // Let the first crashing thread take care of the reporting.
+    if (previousThreadID != 0)
     {
-        PrintToStdErrA("Fatal error while logging another fatal error.\n");
-        return;
-    }
-    else if (pPreviousThread != nullptr)
-    {
-        while (s_pCrashingThread != FatalErrorLoggingFinished)
+        if (previousThreadID == currentThreadID)
         {
-            ClrSleepEx(50, /*bAlertable*/ FALSE);
+            PrintToStdErrA("Fatal error while logging another fatal error.\n");
+        }
+        else
+        {
+            // Switch to preemptive mode to avoid blocking the crashing thread. It may try to suspend the runtime
+            // for GC during the stacktrace reporting.
+            GCX_PREEMP();
+
+            ClrSleepEx(INFINITE, /*bAlertable*/ FALSE);
         }
         return;
     }
@@ -378,9 +391,10 @@ void LogInfoForFatalError(UINT exitCode, LPCWSTR pszMessage, LPCWSTR errorSource
 
         PrintToStdErrA("\n");
 
+        Thread* pThread = GetThreadNULLOk();
         if (pThread && errorSource == NULL)
         {
-            LogCallstackForLogWorker(GetThread());
+            LogCallstackForLogWorker(pThread, pExceptionInfo);
 
             if (argExceptionString != NULL) {
                 PrintToStdErrW(argExceptionString);
@@ -391,8 +405,6 @@ void LogInfoForFatalError(UINT exitCode, LPCWSTR pszMessage, LPCWSTR errorSource
     {
     }
     EX_END_CATCH(SwallowAllExceptions)
-
-    InterlockedCompareExchangeT<Thread *>(&s_pCrashingThread, FatalErrorLoggingFinished, pThread);
 }
 
 //This starts FALSE and then converts to true if HandleFatalError has ever been called by a GC thread
@@ -410,14 +422,14 @@ void EEPolicy::LogFatalError(UINT exitCode, UINT_PTR address, LPCWSTR pszMessage
     _ASSERTE(pExceptionInfo != NULL);
 
     // Log exception to StdErr
-    LogInfoForFatalError(exitCode, pszMessage, errorSource, argExceptionString);
+    LogInfoForFatalError(exitCode, pszMessage, pExceptionInfo, errorSource, argExceptionString);
 
     if(ETW_EVENT_ENABLED(MICROSOFT_WINDOWS_DOTNETRUNTIME_PRIVATE_PROVIDER_DOTNET_Context, FailFast))
     {
         // Fire an ETW FailFast event
         FireEtwFailFast(pszMessage,
                         (const PVOID)address,
-                        ((pExceptionInfo && pExceptionInfo->ExceptionRecord) ? pExceptionInfo->ExceptionRecord->ExceptionCode : 0),
+                        pExceptionInfo->ExceptionRecord ? pExceptionInfo->ExceptionRecord->ExceptionCode : 0,
                         exitCode,
                         GetClrInstanceId());
     }
@@ -439,10 +451,12 @@ void EEPolicy::LogFatalError(UINT exitCode, UINT_PTR address, LPCWSTR pszMessage
                 failureType = EventReporter::ERT_ManagedFailFast;
             else if (exitCode == (UINT)COR_E_CODECONTRACTFAILED)
                 failureType = EventReporter::ERT_CodeContractFailed;
+            else if (exitCode == EXCEPTION_ACCESS_VIOLATION)
+                failureType = EventReporter::ERT_UnhandledException;
             EventReporter reporter(failureType);
             StackSString s(argExceptionString);
 
-            if ((exitCode == (UINT)COR_E_FAILFAST) || (exitCode == (UINT)COR_E_CODECONTRACTFAILED) || (exitCode == (UINT)CLR_E_GC_OOM))
+            if ((exitCode == (UINT)COR_E_FAILFAST) || (exitCode == (UINT)COR_E_CODECONTRACTFAILED) || (exitCode == (UINT)CLR_E_GC_OOM) || (exitCode == EXCEPTION_ACCESS_VIOLATION))
             {
                 if (pszMessage)
                 {
@@ -459,13 +473,8 @@ void EEPolicy::LogFatalError(UINT exitCode, UINT_PTR address, LPCWSTR pszMessage
             }
             else
             {
-                // Fetch the localized Fatal Execution Engine Error text or fall back on a hardcoded variant if things get dire.
-                InlineSString<80> ssMessage;
-                InlineSString<80> ssErrorFormat;
-                if(!ssErrorFormat.LoadResource(CCompRC::Optional, IDS_ER_UNMANAGEDFAILFASTMSG ))
-                    ssErrorFormat.Set(W("at IP 0x%x (0x%x) with exit code 0x%x."));
-                SmallStackSString addressString;
-                addressString.Printf(W("%p"), pExceptionInfo? (PVOID)pExceptionInfo->ExceptionRecord->ExceptionAddress : (PVOID)address);
+                WCHAR addressString[MaxIntegerDecHexString + 1];
+                FormatInteger(addressString, ARRAY_SIZE(addressString), "%p", (SIZE_T)pExceptionInfo->ExceptionRecord->ExceptionAddress);
 
                 // We should always have the reference to the runtime's instance
                 _ASSERTE(GetClrModuleBase() != NULL);
@@ -473,15 +482,18 @@ void EEPolicy::LogFatalError(UINT exitCode, UINT_PTR address, LPCWSTR pszMessage
                 // Setup the string to contain the runtime's base address. Thus, when customers report FEEE with just
                 // the event log entry containing this string, we can use the absolute and base addresses to determine
                 // where the fault happened inside the runtime.
-                SmallStackSString runtimeBaseAddressString;
-                runtimeBaseAddressString.Printf(W("%p"), GetClrModuleBase());
+                WCHAR runtimeBaseAddressString[MaxIntegerDecHexString + 1];
+                FormatInteger(runtimeBaseAddressString, ARRAY_SIZE(runtimeBaseAddressString), "%p", (SIZE_T)GetClrModuleBase());
 
-                SmallStackSString exitCodeString;
-                exitCodeString.Printf(W("%x"), exitCode);
+                WCHAR exitCodeString[MaxIntegerDecHexString + 1];
+                FormatInteger(exitCodeString, ARRAY_SIZE(exitCodeString), "%x", exitCode);
 
                 // Format the string
-                ssMessage.FormatMessage(FORMAT_MESSAGE_FROM_STRING, (LPCWSTR)ssErrorFormat, 0, 0, addressString, runtimeBaseAddressString,
-                    exitCodeString);
+                InlineSString<80> ssMessage;
+                ssMessage.FormatMessage(FORMAT_MESSAGE_FROM_STRING, W("at IP 0x%1 (0x%2) with exit code 0x%3."), 0, 0,
+                    SString{ SString::Literal, addressString },
+                    SString{ SString::Literal, runtimeBaseAddressString },
+                    SString{ SString::Literal, exitCodeString });
                 reporter.AddDescription(ssMessage);
             }
 
@@ -504,7 +516,7 @@ void EEPolicy::LogFatalError(UINT exitCode, UINT_PTR address, LPCWSTR pszMessage
     // termination.
     //
     // This behavior can still be overridden if the right config value is set.
-    if (IsDebuggerPresent())
+    if (minipal_is_native_debugger_present())
     {
         bool fBreak = (CLRConfig::GetConfigValue(CLRConfig::INTERNAL_DbgOOBinFEEE) != 0);
 
@@ -582,7 +594,7 @@ void DisplayStackOverflowException()
 
 DWORD LogStackOverflowStackTraceThread(void* arg)
 {
-    LogCallstackForLogWorker((Thread*)arg);
+    LogCallstackForLogWorker((Thread*)arg, NULL);
 
     return 0;
 }
@@ -595,6 +607,8 @@ void DECLSPEC_NORETURN EEPolicy::HandleFatalStackOverflow(EXCEPTION_POINTERS *pE
 
     WRAPPER_NO_CONTRACT;
 
+    _ASSERTE(pExceptionInfo != NULL);
+
     // Disable GC stress triggering GC at this point, we don't want the GC to start running
     // on this thread when we have only a very limited space left on the stack
     GCStressPolicy::InhibitHolder iholder;
@@ -605,17 +619,42 @@ void DECLSPEC_NORETURN EEPolicy::HandleFatalStackOverflow(EXCEPTION_POINTERS *pE
 #if defined(FEATURE_EH_FUNCLETS)
     *((&fef)->GetGSCookiePtr()) = GetProcessGSCookie();
 #endif // FEATURE_EH_FUNCLETS
-    if (pExceptionInfo && pExceptionInfo->ContextRecord)
+    if (pExceptionInfo->ContextRecord)
     {
         GCX_COOP();
+        CONTEXT *pExceptionContext = pExceptionInfo->ContextRecord;
+
 #if defined(TARGET_X86) && defined(TARGET_WINDOWS)
         // For Windows x86, we don't have a reliable method to unwind to the first managed call frame,
         // so we handle at least the cases when the stack overflow happens in JIT helpers
         AdjustContextForJITHelpers(pExceptionInfo->ExceptionRecord, pExceptionInfo->ContextRecord);
 #else
-        Thread::VirtualUnwindToFirstManagedCallFrame(pExceptionInfo->ContextRecord);
+        // There are three possible kinds of locations where the stack overflow can happen:
+        // 1. In managed code
+        // 2. In native code with no explicit frame above the topmost managed frame
+        // 3. In native code with a explicit frame(s) above the topmost managed frame
+        // The FaultingExceptionFrame's context needs to point to the topmost managed code frame except for the case 3.
+        // In that case, it needs to point to the actual frame where the stack overflow happened, otherwise the stack
+        // walker would skip the explicit frame(s) and misbehave.
+        Thread *pThread = GetThreadNULLOk();
+        if (pThread)
+        {
+            // Use the context in the FaultingExceptionFrame as a temporary store for unwinding to the first managed frame
+            CopyOSContext((&fef)->GetExceptionContext(), pExceptionInfo->ContextRecord);
+            Thread::VirtualUnwindToFirstManagedCallFrame((&fef)->GetExceptionContext());
+            if (GetSP((&fef)->GetExceptionContext()) > (TADDR)pThread->GetFrame())
+            {
+                // If the unwind has crossed any explicit frame, use the original exception context.
+                pExceptionContext = pExceptionInfo->ContextRecord;
+            }
+            else
+            {
+                // Otherwise use the first managed frame context.
+                pExceptionContext = (&fef)->GetExceptionContext();
+            }
+        }
 #endif
-        fef.InitAndLink(pExceptionInfo->ContextRecord);
+        fef.InitAndLink(pExceptionContext);
     }
 
     static volatile LONG g_stackOverflowCallStackLogged = 0;
@@ -649,8 +688,8 @@ void DECLSPEC_NORETURN EEPolicy::HandleFatalStackOverflow(EXCEPTION_POINTERS *pE
     {
         // Fire an ETW FailFast event
         FireEtwFailFast(W("StackOverflowException"),
-                       (const PVOID)((pExceptionInfo && pExceptionInfo->ContextRecord) ? GetIP(pExceptionInfo->ContextRecord) : 0),
-                       ((pExceptionInfo && pExceptionInfo->ExceptionRecord) ? pExceptionInfo->ExceptionRecord->ExceptionCode : 0),
+                       (const PVOID)(pExceptionInfo->ContextRecord ? GetIP(pExceptionInfo->ContextRecord) : 0),
+                       pExceptionInfo->ExceptionRecord ? pExceptionInfo->ExceptionRecord->ExceptionCode : 0,
                        COR_E_STACKOVERFLOW,
                        GetClrInstanceId());
     }
@@ -688,8 +727,6 @@ void DECLSPEC_NORETURN EEPolicy::HandleFatalStackOverflow(EXCEPTION_POINTERS *pE
 #ifndef TARGET_UNIX
         if (IsWatsonEnabled() && (g_pDebugInterface != NULL))
         {
-            _ASSERTE(pExceptionInfo != NULL);
-
             ResetWatsonBucketsParams param;
             param.m_pThread = pThread;
             param.pExceptionRecord = pExceptionInfo->ExceptionRecord;
@@ -766,7 +803,7 @@ int NOINLINE EEPolicy::HandleFatalError(UINT exitCode, UINT_PTR address, LPCWSTR
 
 
         // Setting g_fFatalErrorOccurredOnGCThread allows code to avoid attempting to make GC mode transitions which could
-        // block indefinately if the fatal error occurred during the GC.
+        // block indefinitely if the fatal error occurred during the GC.
         if (IsGCSpecialThread() && GCHeapUtilities::IsGCInProgress())
         {
             g_fFatalErrorOccurredOnGCThread = TRUE;

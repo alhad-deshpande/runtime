@@ -9,6 +9,7 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography.X509Certificates;
 using System.Threading.Tasks;
 using Microsoft.DotNet.RemoteExecutor;
+using Microsoft.DotNet.XUnitExtensions;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -68,22 +69,23 @@ namespace System.Net.Http.Functional.Tests
 
         private HttpClient CreateHttpClientWithCert(X509Certificate2 cert)
         {
-            HttpClientHandler handler = CreateHttpClientHandler();
-            handler.ServerCertificateCustomValidationCallback = TestHelper.AllowAllCertificates;
+            HttpClientHandler handler = CreateHttpClientHandler(allowAllCertificates: true);
             Assert.NotNull(cert);
             handler.ClientCertificates.Add(cert);
             Assert.True(handler.ClientCertificates.Contains(cert));
 
             return CreateHttpClient(handler);
         }
-            
-        [Theory]
+
+        [ConditionalTheory]
         [InlineData(1, true)]
         [InlineData(2, true)]
         [InlineData(3, false)]
-        [ActiveIssue("https://github.com/dotnet/runtime/issues/69870", TestPlatforms.Android)]
         public async Task Manual_CertificateOnlySentWhenValid_Success(int certIndex, bool serverExpectsClientCertificate)
         {
+            // [ActiveIssue("https://github.com/dotnet/runtime/issues/69238")]
+            if (IsWinHttpHandler) throw new SkipTestException("https://github.com/dotnet/runtime/issues/69238");
+
             var options = new LoopbackServer.Options { UseSsl = true };
 
             X509Certificate2 GetClientCertificate(int certIndex) => certIndex switch
@@ -113,7 +115,7 @@ namespace System.Net.Http.Functional.Tests
                         {
                             _output.WriteLine(
                                 "Client cert: {0}",
-                                new X509Certificate2(sslStream.RemoteCertificate.Export(X509ContentType.Cert)).GetNameInfo(X509NameType.SimpleName, false));
+                                X509CertificateLoader.LoadCertificate(sslStream.RemoteCertificate.Export(X509ContentType.Cert)).GetNameInfo(X509NameType.SimpleName, false));
                             Assert.Equal(cert, sslStream.RemoteCertificate);
                         }
                         else
@@ -130,7 +132,6 @@ namespace System.Net.Http.Functional.Tests
         [Theory]
         [InlineData(6, false)]
         [InlineData(3, true)]
-        [ActiveIssue("https://github.com/dotnet/runtime/issues/69870", TestPlatforms.Android)]
         public async Task Manual_CertificateSentMatchesCertificateReceived_Success(
             int numberOfRequests,
             bool reuseClient) // validate behavior with and without connection pooling, which impacts client cert usage
@@ -184,16 +185,14 @@ namespace System.Net.Http.Functional.Tests
             }, options);
         }
 
-        [ActiveIssue("https://github.com/dotnet/runtime/issues/29419")]
         [Theory]
         [InlineData(ClientCertificateOption.Manual)]
         [InlineData(ClientCertificateOption.Automatic)]
         public async Task AutomaticOrManual_DoesntFailRegardlessOfWhetherClientCertsAreAvailable(ClientCertificateOption mode)
         {
-            using (HttpClientHandler handler = CreateHttpClientHandler())
+            using (HttpClientHandler handler = CreateHttpClientHandler(allowAllCertificates: true))
             using (HttpClient client = CreateHttpClient(handler))
             {
-                handler.ServerCertificateCustomValidationCallback = TestHelper.AllowAllCertificates;
                 handler.ClientCertificateOptions = mode;
 
                 await LoopbackServer.CreateServerAsync(async server =>
@@ -209,5 +208,45 @@ namespace System.Net.Http.Functional.Tests
                 }, new LoopbackServer.Options { UseSsl = true });
             }
         }
+
+#if TARGETS_ANDROID
+        [Fact]
+        public async Task Android_GetCertificateFromKeyStoreViaAlias()
+        {
+            var options = new LoopbackServer.Options { UseSsl = true };
+
+            (X509Store store, string alias) = AndroidKeyStoreHelper.AddCertificate(Configuration.Certificates.GetClientCertificate());
+            try
+            {
+                X509Certificate2 clientCertificate = AndroidKeyStoreHelper.GetCertificateViaAlias(store, alias);
+                Assert.True(clientCertificate.HasPrivateKey);
+
+                await LoopbackServer.CreateServerAsync(async (server, url) =>
+                {
+                    using HttpClient client = CreateHttpClientWithCert(clientCertificate);
+
+                    await TestHelper.WhenAllCompletedOrAnyFailed(
+                        client.GetStringAsync(url),
+                        server.AcceptConnectionAsync(async connection =>
+                        {
+                            SslStream sslStream = Assert.IsType<SslStream>(connection.Stream);
+
+                            _output.WriteLine(
+                                "Client cert: {0}",
+                                X509CertificateLoader.LoadCertificate(sslStream.RemoteCertificate.Export(X509ContentType.Cert)).GetNameInfo(X509NameType.SimpleName, false));
+
+                            Assert.Equal(clientCertificate.GetCertHashString(), sslStream.RemoteCertificate.GetCertHashString());
+
+                            await connection.ReadRequestHeaderAndSendResponseAsync(additionalHeaders: "Connection: close\r\n");
+                        }));
+                }, options);
+            }
+            finally
+            {
+                Assert.True(AndroidKeyStoreHelper.DeleteAlias(store, alias));
+                store.Dispose();
+            }
+        }
+#endif
     }
 }

@@ -44,8 +44,8 @@ void DumpIL_RemoveFullPath(SString &strTokenFormatting)
     {
         SString::Iterator lastSlash = strTokenFormatting.End() - 1;
 
-        // Find the last '\\' in the string.
-        while ((lastSlash != leftBracket) && (*lastSlash != '\\'))
+        // Find the last directory separator character ('\\' on Windows, '/' on Unix) in the string.
+        while ((lastSlash != leftBracket) && (*lastSlash != DIRECTORY_SEPARATOR_CHAR_A))
         {
             --lastSlash;
         }
@@ -106,10 +106,7 @@ void ILStubLinker::DumpIL_FormatToken(mdToken token, SString &strTokenFormatting
             SString typeName;
             TypeString::AppendType(typeName, TypeHandle(pFD->GetApproxEnclosingMethodTable()));
 
-            SString typeNameUtf8;
-            typeName.ConvertToUTF8(typeNameUtf8);
-            SString strFieldName(SString::Utf8, pFD->GetName());
-            strTokenFormatting.Printf("%s::%s", typeNameUtf8.GetUTF8NoConvert(), strFieldName.GetUTF8NoConvert());
+            strTokenFormatting.Printf("%s::%s", typeName.GetUTF8(), pFD->GetName());
         }
         else if (TypeFromToken(token) == mdtModule)
         {
@@ -550,13 +547,13 @@ ILStubLinker::LogILInstruction(
     //
     if (pDumpILStubCode)
     {
-        pDumpILStubCode->AppendPrintf("%s /*(%2d)*/ %s %s %s\n", strLabel.GetUTF8NoConvert(), iCurStack, strOpcode.GetUTF8NoConvert(),
-            strArgument.GetUTF8NoConvert(), strTokenName.GetUTF8NoConvert());
+        pDumpILStubCode->AppendPrintf("%s /*(%2d)*/ %s %s %s\n", strLabel.GetUTF8(), iCurStack, strOpcode.GetUTF8(),
+            strArgument.GetUTF8(), strTokenName.GetUTF8());
     }
     else
     {
-        LOG((LF_STUBS, LL_INFO1000, "%s (%2d) %s %s %s\n", strLabel.GetUTF8NoConvert(), iCurStack, \
-            strOpcode.GetUTF8NoConvert(), strArgument.GetUTF8NoConvert(), strTokenName.GetUTF8NoConvert()));
+        LOG((LF_STUBS, LL_INFO1000, "%s (%2d) %s %s %s\n", strLabel.GetUTF8(), iCurStack, \
+            strOpcode.GetUTF8(), strArgument.GetUTF8(), strTokenName.GetUTF8()));
     }
 } // ILStubLinker::LogILInstruction
 
@@ -1180,6 +1177,11 @@ void ILCodeStream::EmitBNE_UN(ILCodeLabel* pCodeLabel)
     WRAPPER_NO_CONTRACT;
     Emit(CEE_BNE_UN, -2, (UINT_PTR)pCodeLabel);
 }
+void ILCodeStream::EmitBOX(int token)
+{
+    WRAPPER_NO_CONTRACT;
+    Emit(CEE_BOX, 0, token);
+}
 void ILCodeStream::EmitBR(ILCodeLabel* pCodeLabel)
 {
     WRAPPER_NO_CONTRACT;
@@ -1239,6 +1241,11 @@ void ILCodeStream::EmitCLT_UN()
 {
     WRAPPER_NO_CONTRACT;
     Emit(CEE_CLT_UN, -1, 0);
+}
+void ILCodeStream::EmitCONSTRAINED(int token)
+{
+    WRAPPER_NO_CONTRACT;
+    Emit(CEE_CONSTRAINED, 0, token);
 }
 void ILCodeStream::EmitCONV_I()
 {
@@ -1810,6 +1817,11 @@ void ILCodeStream::EmitUNALIGNED(BYTE alignment)
     Emit(CEE_UNALIGNED, 0, alignment);
 }
 
+void ILCodeStream::EmitUNBOX_ANY(int token)
+{
+    WRAPPER_NO_CONTRACT;
+    Emit(CEE_UNBOX_ANY, 0, token);
+}
 
 void ILCodeStream::EmitNEWOBJ(BinderMethodID id, int numInArgs)
 {
@@ -1936,7 +1948,13 @@ DWORD StubSigBuilder::Append(LocalDesc* pLoc)
     }
     CONTRACTL_END;
 
-    EnsureEnoughQuickBytes(pLoc->cbType + sizeof(TypeHandle));
+    // Ensure we have enough bytes for the provided signature,
+    // the handle for ELEMENT_TYPE_INTERNAL,
+    // and the byte and handle for ELEMENT_TYPE_CMOD_INTERNAL
+    const size_t InternalPayloadSize = sizeof(TypeHandle);
+    const size_t CModInternalPayloadSize = sizeof(BYTE) + sizeof(TypeHandle);
+    EnsureEnoughQuickBytes(pLoc->cbType + InternalPayloadSize + CModInternalPayloadSize);
+    BYTE* pbSigStart = m_pbSigCursor;
 
     memcpyNoGCRefs(m_pbSigCursor, pLoc->ElementType, pLoc->cbType);
     m_pbSigCursor   += pLoc->cbType;
@@ -1956,6 +1974,23 @@ DWORD StubSigBuilder::Append(LocalDesc* pLoc)
                 m_pbSigCursor   += sizeof(TypeHandle);
                 m_cbSig         += sizeof(TypeHandle);
                 break;
+            
+            case ELEMENT_TYPE_CMOD_INTERNAL:
+            {
+                // Nove later elements in the signature to make room for the CMOD_INTERNAL payload
+                memmove(pbSigStart + i + 1 + CModInternalPayloadSize, pbSigStart + i + 1, pLoc->cbType - i - 1);
+                _ASSERTE(pbSigStart[i] == ELEMENT_TYPE_CMOD_INTERNAL);
+                BYTE* pbSigInternalPayload = pbSigStart + i + 1;
+
+                // Write the "required" byte
+                *pbSigInternalPayload++ = pLoc->InternalModifierRequired ? 1 : 0;
+
+                // Write the modifier
+                SET_UNALIGNED_PTR(pbSigInternalPayload, (UINT_PTR)pLoc->InternalModifierToken.AsPtr());
+                m_pbSigCursor   += CModInternalPayloadSize;
+                m_cbSig         += CModInternalPayloadSize;
+                break;
+            }
 
             case ELEMENT_TYPE_FNPTR:
                 {
@@ -2042,7 +2077,7 @@ LocalSigBuilder::GetSig(
     }
     else
     {
-        return NULL;
+        return 0;
     }
 }
 
@@ -2081,8 +2116,26 @@ void FunctionSigBuilder::SetReturnType(LocalDesc* pLoc)
         {
             case ELEMENT_TYPE_INTERNAL:
                 m_qbReturnSig.ReSizeThrows(m_qbReturnSig.Size() + sizeof(TypeHandle));
-                SET_UNALIGNED_PTR((BYTE *)m_qbReturnSig.Ptr() + m_qbReturnSig.Size() - + sizeof(TypeHandle), (UINT_PTR)pLoc->InternalToken.AsPtr());
+                SET_UNALIGNED_PTR((BYTE *)m_qbReturnSig.Ptr() + m_qbReturnSig.Size() - sizeof(TypeHandle), (UINT_PTR)pLoc->InternalToken.AsPtr());
                 break;
+
+            case ELEMENT_TYPE_CMOD_INTERNAL:
+                {
+                    // Nove later elements in the signature to make room for the CMOD_INTERNAL payload
+                    const size_t CModInternalPayloadSize = sizeof(BYTE) + sizeof(TypeHandle);
+                    m_qbReturnSig.ReSizeThrows(m_qbReturnSig.Size() + CModInternalPayloadSize);
+                    BYTE* pbSigStart = (BYTE*)m_qbReturnSig.Ptr();
+                    memmove(pbSigStart + i + 1 + CModInternalPayloadSize, pbSigStart + i + 1, pLoc->cbType - i);
+                    _ASSERTE(pbSigStart[i] == ELEMENT_TYPE_CMOD_INTERNAL);
+                    BYTE* pbSigInternalPayload = pbSigStart + i + 1;
+
+                    // Write the "required" byte
+                    *pbSigInternalPayload++ = pLoc->InternalModifierRequired ? 1 : 0;
+
+                    // Write the modifier
+                    SET_UNALIGNED_PTR(pbSigInternalPayload, (UINT_PTR)pLoc->InternalModifierToken.AsPtr());
+                    break;
+                }
 
             case ELEMENT_TYPE_FNPTR:
                 {
@@ -2237,7 +2290,7 @@ FunctionSigBuilder::GetSig(
     }
     else
     {
-        return NULL;
+        return 0;
     }
 }
 
@@ -2590,7 +2643,7 @@ void ILStubLinker::GetStubReturnType(LocalDesc* pLoc, Module* pModule)
 
     IfFailThrow(ptr.GetData(&nArgs));
 
-    GetManagedTypeHelper(pLoc, pModule, ptr.GetPtr(), m_pTypeContext, m_pMD);
+    GetManagedTypeHelper(pLoc, pModule, ptr.GetPtr(), m_pTypeContext);
 }
 
 CorCallingConvention ILStubLinker::GetStubTargetCallingConv()
@@ -2606,75 +2659,90 @@ void ILStubLinker::TransformArgForJIT(LocalDesc *pLoc)
     // byrefs which are OK only when they ref stack data or are pinned. This condition
     // cannot be verified by code:NDirect.MarshalingRequired so we explicitly get rid
     // of them here.
-    switch (pLoc->ElementType[0])
+    bool again;
+    BYTE* elementType = pLoc->ElementType;
+    do
     {
-        // primitives
-        case ELEMENT_TYPE_VOID:
-        case ELEMENT_TYPE_BOOLEAN:
-        case ELEMENT_TYPE_CHAR:
-        case ELEMENT_TYPE_I1:
-        case ELEMENT_TYPE_U1:
-        case ELEMENT_TYPE_I2:
-        case ELEMENT_TYPE_U2:
-        case ELEMENT_TYPE_I4:
-        case ELEMENT_TYPE_U4:
-        case ELEMENT_TYPE_I8:
-        case ELEMENT_TYPE_U8:
-        case ELEMENT_TYPE_R4:
-        case ELEMENT_TYPE_R8:
-        case ELEMENT_TYPE_I:
-        case ELEMENT_TYPE_U:
+        again = false;
+        switch (*elementType)
         {
-            // no transformation needed
-            break;
-        }
-
-        case ELEMENT_TYPE_VALUETYPE:
-        {
-            _ASSERTE(!"Should have been replaced by a native value type!");
-            break;
-        }
-
-        case ELEMENT_TYPE_PTR:
-        {
-#ifdef TARGET_X86
-            if (pLoc->bIsCopyConstructed)
+            // primitives
+            case ELEMENT_TYPE_VOID:
+            case ELEMENT_TYPE_BOOLEAN:
+            case ELEMENT_TYPE_CHAR:
+            case ELEMENT_TYPE_I1:
+            case ELEMENT_TYPE_U1:
+            case ELEMENT_TYPE_I2:
+            case ELEMENT_TYPE_U2:
+            case ELEMENT_TYPE_I4:
+            case ELEMENT_TYPE_U4:
+            case ELEMENT_TYPE_I8:
+            case ELEMENT_TYPE_U8:
+            case ELEMENT_TYPE_R4:
+            case ELEMENT_TYPE_R8:
+            case ELEMENT_TYPE_I:
+            case ELEMENT_TYPE_U:
             {
-                // The only pointers that we don't transform to ELEMENT_TYPE_I are those that are
-                // ET_TYPE_CMOD_REQD<IsCopyConstructed>/ET_TYPE_CMOD_REQD<NeedsCopyConstructorModifier>
-                // in the original signature. This convention is understood by the UM thunk compiler
-                // (code:UMThunkMarshInfo.CompileNExportThunk) which will generate different thunk code.
-                // Such parameters come from unmanaged by value but must enter the IL stub by reference
-                // because we are not supposed to make a copy.
+                // no transformation needed
+                break;
             }
-            else
-#endif // TARGET_X86
+
+            case ELEMENT_TYPE_VALUETYPE:
+            {
+                _ASSERTE(!"Should have been replaced by a native value type!");
+                break;
+            }
+
+            case ELEMENT_TYPE_PTR:
+            {
+                // Don't transform pointer types to ELEMENT_TYPE_I. The JIT can handle the correct type information,
+                // and it's required for some cases (such as SwiftError*).
+                break;
+            }
+
+            case ELEMENT_TYPE_BYREF:
+            {
+                // Transform ELEMENT_TYPE_BYREF to ELEMENT_TYPE_PTR to retain the pointed-to type information
+                // while making the type blittable.
+                *elementType = ELEMENT_TYPE_PTR;
+                break;
+            }
+
+            case ELEMENT_TYPE_INTERNAL:
+            {
+                // JIT will handle structures
+                if (pLoc->InternalToken.IsValueType())
+                {
+                    _ASSERTE(pLoc->InternalToken.IsNativeValueType() || !pLoc->InternalToken.GetMethodTable()->ContainsGCPointers());
+                    break;
+                }
+                FALLTHROUGH;
+            }
+
+            case ELEMENT_TYPE_CMOD_REQD:
+            case ELEMENT_TYPE_CMOD_OPT:
+            {
+                _ASSERTE("Custom modifiers should be represented in a LocalDesc as ELEMENT_TYPE_CMOD_INTERNAL. Use AddModifier to add custom modifiers.");
+                FALLTHROUGH;
+            }
+            case ELEMENT_TYPE_CMOD_INTERNAL:
+            {
+                again = true;
+                break;
+            }
+
+            // ref types -> ELEMENT_TYPE_I
+            default:
             {
                 pLoc->ElementType[0] = ELEMENT_TYPE_I;
                 pLoc->cbType = 1;
+                return;
             }
-            break;
         }
-
-        case ELEMENT_TYPE_INTERNAL:
-        {
-            // JIT will handle structures
-            if (pLoc->InternalToken.IsValueType())
-            {
-                _ASSERTE(pLoc->InternalToken.IsNativeValueType() || !pLoc->InternalToken.GetMethodTable()->ContainsPointers());
-                break;
-            }
-            FALLTHROUGH;
-        }
-
-        // pointers, byrefs, strings, arrays, other ref types -> ELEMENT_TYPE_I
-        default:
-        {
-            pLoc->ElementType[0] = ELEMENT_TYPE_I;
-            pLoc->cbType = 1;
-            break;
-        }
+        elementType++;
+        _ASSERTE(elementType - pLoc->ElementType <= (ptrdiff_t)pLoc->cbType);
     }
+    while(again);
 }
 
 Module *ILStubLinker::GetStubSigModule()
@@ -2817,6 +2885,9 @@ void ILStubLinker::SetStubTargetCallingConv(CorInfoCallConvExtension callConv)
                 m_nativeFnSigBuilder.AddCallConvModOpt(GetToken(CoreLibBinder::GetClass(CLASS__CALLCONV_FASTCALL)));
                 m_nativeFnSigBuilder.AddCallConvModOpt(GetToken(CoreLibBinder::GetClass(CLASS__CALLCONV_MEMBERFUNCTION)));
                 break;
+            case CorInfoCallConvExtension::Swift:
+                m_nativeFnSigBuilder.AddCallConvModOpt(GetToken(CoreLibBinder::GetClass(CLASS__CALLCONV_SWIFT)));
+                break;
             default:
                 _ASSERTE("Unknown calling convention. Unable to encode it in the native function pointer signature.");
                 break;
@@ -2900,7 +2971,7 @@ static size_t GetManagedTypeForMDArray(LocalDesc* pLoc, Module* pModule, PCCOR_S
 
 
 // static
-void ILStubLinker::GetManagedTypeHelper(LocalDesc* pLoc, Module* pModule, PCCOR_SIGNATURE psigManagedArg, SigTypeContext *pTypeContext, MethodDesc *pMD)
+void ILStubLinker::GetManagedTypeHelper(LocalDesc* pLoc, Module* pModule, PCCOR_SIGNATURE psigManagedArg, SigTypeContext *pTypeContext)
 {
     CONTRACTL
     {
@@ -3049,7 +3120,7 @@ void ILStubLinker::GetStubTargetReturnType(LocalDesc* pLoc, Module* pModule)
     }
     CONTRACTL_END;
 
-    GetManagedTypeHelper(pLoc, pModule, m_nativeFnSigBuilder.GetReturnSig(), m_pTypeContext, NULL);
+    GetManagedTypeHelper(pLoc, pModule, m_nativeFnSigBuilder.GetReturnSig(), m_pTypeContext);
 }
 
 void ILStubLinker::GetStubArgType(LocalDesc* pLoc)
@@ -3076,7 +3147,7 @@ void ILStubLinker::GetStubArgType(LocalDesc* pLoc, Module* pModule)
     }
     CONTRACTL_END;
 
-    GetManagedTypeHelper(pLoc, pModule, m_managedSigPtr.GetPtr(), m_pTypeContext, m_pMD);
+    GetManagedTypeHelper(pLoc, pModule, m_managedSigPtr.GetPtr(), m_pTypeContext);
 }
 
 //---------------------------------------------------------------------------------------
@@ -3128,6 +3199,18 @@ int ILStubLinker::GetToken(MethodDesc* pMD)
     return m_tokenMap.GetToken(pMD);
 }
 
+int ILStubLinker::GetToken(MethodDesc* pMD, mdToken typeSignature)
+{
+    STANDARD_VM_CONTRACT;
+    return m_tokenMap.GetToken(pMD, typeSignature);
+}
+
+int ILStubLinker::GetToken(MethodDesc* pMD, mdToken typeSignature, mdToken methodSignature)
+{
+    STANDARD_VM_CONTRACT;
+    return m_tokenMap.GetToken(pMD, typeSignature, methodSignature);
+}
+
 int ILStubLinker::GetToken(MethodTable* pMT)
 {
     STANDARD_VM_CONTRACT;
@@ -3144,6 +3227,12 @@ int ILStubLinker::GetToken(FieldDesc* pFD)
 {
     STANDARD_VM_CONTRACT;
     return m_tokenMap.GetToken(pFD);
+}
+
+int ILStubLinker::GetToken(FieldDesc* pFD, mdToken typeSignature)
+{
+    STANDARD_VM_CONTRACT;
+    return m_tokenMap.GetToken(pFD, typeSignature);
 }
 
 int ILStubLinker::GetSigToken(PCCOR_SIGNATURE pSig, DWORD cbSig)
@@ -3222,6 +3311,16 @@ int ILCodeStream::GetToken(MethodDesc* pMD)
     STANDARD_VM_CONTRACT;
     return m_pOwner->GetToken(pMD);
 }
+int ILCodeStream::GetToken(MethodDesc* pMD, mdToken typeSignature)
+{
+    STANDARD_VM_CONTRACT;
+    return m_pOwner->GetToken(pMD, typeSignature);
+}
+int ILCodeStream::GetToken(MethodDesc* pMD, mdToken typeSignature, mdToken methodSignature)
+{
+    STANDARD_VM_CONTRACT;
+    return m_pOwner->GetToken(pMD, typeSignature, methodSignature);
+}
 int ILCodeStream::GetToken(MethodTable* pMT)
 {
     STANDARD_VM_CONTRACT;
@@ -3236,6 +3335,11 @@ int ILCodeStream::GetToken(FieldDesc* pFD)
 {
     STANDARD_VM_CONTRACT;
     return m_pOwner->GetToken(pFD);
+}
+int ILCodeStream::GetToken(FieldDesc* pFD, mdToken typeSignature)
+{
+    STANDARD_VM_CONTRACT;
+    return m_pOwner->GetToken(pFD, typeSignature);
 }
 int ILCodeStream::GetSigToken(PCCOR_SIGNATURE pSig, DWORD cbSig)
 {

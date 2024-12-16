@@ -2,10 +2,8 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System.Runtime.Versioning;
-using Microsoft.Win32.SafeHandles;
-
 using Internal.Cryptography;
-
+using Microsoft.Win32.SafeHandles;
 using ErrorCode = Interop.NCrypt.ErrorCode;
 
 namespace System.Security.Cryptography
@@ -41,7 +39,11 @@ namespace System.Security.Cryptography
             SafeNCryptKeyHandle keyHandle;
             ErrorCode errorCode = Interop.NCrypt.NCryptOpenKey(providerHandle, out keyHandle, keyName, 0, openOptions);
             if (errorCode != ErrorCode.ERROR_SUCCESS)
+            {
+                keyHandle.Dispose();
+                providerHandle.Dispose();
                 throw errorCode.ToCryptographicException();
+            }
 
             return new CngKey(providerHandle, keyHandle);
         }

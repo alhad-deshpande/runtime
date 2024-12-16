@@ -1,20 +1,21 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+using System;
+using System.Collections;
+using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
+using System.IO;
+using System.Reflection;
+using System.Text;
+using System.Text.RegularExpressions;
+using System.Xml;
+using System.Xml.Serialization;
+using System.Xml.XPath;
+
 namespace System.Xml.Schema
 {
-    using System;
-    using System.IO;
-    using System.Collections;
-    using System.Diagnostics;
-    using System.Globalization;
-    using System.Text;
-    using System.Text.RegularExpressions;
-    using System.Xml;
-    using System.Xml.XPath;
-    using System.Xml.Serialization;
-    using System.Reflection;
-
     public enum XmlSchemaDatatypeVariety
     {
         Atomic,
@@ -113,19 +114,19 @@ namespace System.Xml.Schema
 
         private const int anySimpleTypeIndex = 11;
 
-        internal static XmlQualifiedName QnAnySimpleType = new XmlQualifiedName("anySimpleType", XmlReservedNs.NsXs);
-        internal static XmlQualifiedName QnAnyType = new XmlQualifiedName("anyType", XmlReservedNs.NsXs);
+        internal static readonly XmlQualifiedName QnAnySimpleType = new XmlQualifiedName("anySimpleType", XmlReservedNs.NsXs);
+        internal static readonly XmlQualifiedName QnAnyType = new XmlQualifiedName("anyType", XmlReservedNs.NsXs);
 
         //Create facet checkers
-        internal static FacetsChecker stringFacetsChecker = new StringFacetsChecker();
-        internal static FacetsChecker miscFacetsChecker = new MiscFacetsChecker();
-        internal static FacetsChecker numeric2FacetsChecker = new Numeric2FacetsChecker();
-        internal static FacetsChecker binaryFacetsChecker = new BinaryFacetsChecker();
-        internal static FacetsChecker dateTimeFacetsChecker = new DateTimeFacetsChecker();
-        internal static FacetsChecker durationFacetsChecker = new DurationFacetsChecker();
-        internal static FacetsChecker listFacetsChecker = new ListFacetsChecker();
-        internal static FacetsChecker qnameFacetsChecker = new QNameFacetsChecker();
-        internal static FacetsChecker unionFacetsChecker = new UnionFacetsChecker();
+        internal static readonly FacetsChecker stringFacetsChecker = new StringFacetsChecker();
+        internal static readonly FacetsChecker miscFacetsChecker = new MiscFacetsChecker();
+        internal static readonly FacetsChecker numeric2FacetsChecker = new Numeric2FacetsChecker();
+        internal static readonly FacetsChecker binaryFacetsChecker = new BinaryFacetsChecker();
+        internal static readonly FacetsChecker dateTimeFacetsChecker = new DateTimeFacetsChecker();
+        internal static readonly FacetsChecker durationFacetsChecker = new DurationFacetsChecker();
+        internal static readonly FacetsChecker listFacetsChecker = new ListFacetsChecker();
+        internal static readonly FacetsChecker qnameFacetsChecker = new QNameFacetsChecker();
+        internal static readonly FacetsChecker unionFacetsChecker = new UnionFacetsChecker();
 
         static DatatypeImplementation()
         {
@@ -471,17 +472,8 @@ namespace System.Xml.Schema
 
         internal override FacetsChecker FacetsChecker { get { return miscFacetsChecker; } }
 
-        internal override XmlValueConverter ValueConverter
-        {
-            get
-            {
-                if (_valueConverter == null)
-                {
-                    _valueConverter = CreateValueConverter(_parentSchemaType!);
-                }
-                return _valueConverter;
-            }
-        }
+        internal override XmlValueConverter ValueConverter =>
+            _valueConverter ??= CreateValueConverter(_parentSchemaType!);
 
         public override XmlTokenizedType TokenizedType { get { return XmlTokenizedType.None; } }
 
@@ -529,8 +521,6 @@ namespace System.Xml.Schema
         }
 
         protected DatatypeImplementation? Base { get { return _baseType; } }
-
-        internal abstract Type ListValueType { get; }
 
         internal abstract RestrictionFlags ValidRestrictionFlags { get; }
 
@@ -882,22 +872,8 @@ namespace System.Xml.Schema
             new SchemaDatatypeMap("unsignedShort",      s_unsignedShort, 42),
         };
 
-        protected static int Compare(byte[] value1, byte[] value2)
-        {
-            int length = value1.Length;
-            if (length != value2.Length)
-            {
-                return -1;
-            }
-            for (int i = 0; i < length; i++)
-            {
-                if (value1[i] != value2[i])
-                {
-                    return -1;
-                }
-            }
-            return 0;
-        }
+        protected static int Compare(byte[] value1, byte[] value2) =>
+            value1.AsSpan().SequenceEqual(value2) ? 0 : -1;
 
 #if PRIYAL
         protected object GetValueToCheck(object value, IXmlNamespaceResolver nsmgr) {
@@ -958,10 +934,8 @@ namespace System.Xml.Schema
                 } while (simpleType != null && simpleType != DatatypeImplementation.AnySimpleType);
             }
 
-            if (listItemType == null)
-            { //Get built-in simple type for the typecode
-                listItemType = DatatypeImplementation.GetSimpleTypeFromTypeCode(schemaType!.Datatype!.TypeCode);
-            }
+            //Get built-in simple type for the typecode
+            listItemType ??= DatatypeImplementation.GetSimpleTypeFromTypeCode(schemaType!.Datatype!.TypeCode);
 
             return XmlListConverter.Create(listItemType.ValueConverter);
         }
@@ -1123,7 +1097,7 @@ namespace System.Xml.Schema
             if (exception != null) goto Error;
 
             ArrayList values = new ArrayList();
-            object array;
+            Type arrayType;
             if (_itemType.Variety == XmlSchemaDatatypeVariety.Union)
             {
                 object? unionTypedValue;
@@ -1139,7 +1113,7 @@ namespace System.Xml.Schema
                     XsdSimpleValue simpleValue = (XsdSimpleValue)unionTypedValue;
                     values.Add(new XmlAtomicValue(simpleValue.XmlType, simpleValue.TypedValue, nsmgr));
                 }
-                array = values.ToArray(typeof(XmlAtomicValue));
+                arrayType = typeof(XmlAtomicValue[]);
             }
             else
             { //Variety == List or Atomic
@@ -1151,13 +1125,17 @@ namespace System.Xml.Schema
 
                     values.Add(typedValue);
                 }
-                array = values.ToArray(_itemType.ValueType);
-                Debug.Assert(array.GetType() == ListValueType);
+                Debug.Assert(_itemType.ListValueType.GetElementType() == _itemType.ValueType);
+                arrayType = _itemType.ListValueType;
             }
+
             if (values.Count < _minListSize)
             {
                 return new XmlSchemaException(SR.Sch_EmptyAttributeValue, string.Empty);
             }
+
+            Array array = Array.CreateInstanceFromArrayType(arrayType, values.Count);
+            values.CopyTo(array);
 
             exception = listFacetsChecker.CheckValueFacets(array, this);
             if (exception != null) goto Error;
@@ -1174,8 +1152,6 @@ namespace System.Xml.Schema
     //Union datatype
     internal sealed class Datatype_union : Datatype_anySimpleType
     {
-        private static readonly Type s_atomicValueType = typeof(object);
-        private static readonly Type s_listValueType = typeof(object[]);
         private readonly XmlSchemaSimpleType[] _types;
 
         internal override XmlValueConverter CreateValueConverter(XmlSchemaType schemaType)
@@ -1210,13 +1186,13 @@ namespace System.Xml.Schema
             return -1;
         }
 
-        public override Type ValueType { get { return s_atomicValueType; } }
+        public override Type ValueType { get { return typeof(object); } }
 
         public override XmlTypeCode TypeCode { get { return XmlTypeCode.AnyAtomicType; } }
 
         internal override FacetsChecker FacetsChecker { get { return unionFacetsChecker; } }
 
-        internal override Type ListValueType { get { return s_listValueType; } }
+        internal override Type ListValueType { get { return typeof(object[]); } }
 
         internal override RestrictionFlags ValidRestrictionFlags
         {
@@ -1371,9 +1347,6 @@ namespace System.Xml.Schema
     // Primitive datatypes
     internal class Datatype_anySimpleType : DatatypeImplementation
     {
-        private static readonly Type s_atomicValueType = typeof(string);
-        private static readonly Type s_listValueType = typeof(string[]);
-
         internal override XmlValueConverter CreateValueConverter(XmlSchemaType schemaType)
         {
             return XmlUntypedConverter.Untyped;
@@ -1381,11 +1354,11 @@ namespace System.Xml.Schema
 
         internal override FacetsChecker FacetsChecker { get { return miscFacetsChecker; } }
 
-        public override Type ValueType { get { return s_atomicValueType; } }
+        public override Type ValueType { get { return typeof(string); } }
 
         public override XmlTypeCode TypeCode { get { return XmlTypeCode.AnyAtomicType; } }
 
-        internal override Type ListValueType { get { return s_listValueType; } }
+        internal override Type ListValueType { get { return typeof(string[]); } }
 
         public override XmlTokenizedType TokenizedType { get { return XmlTokenizedType.None; } }
 
@@ -1522,9 +1495,6 @@ namespace System.Xml.Schema
     */
     internal sealed class Datatype_boolean : Datatype_anySimpleType
     {
-        private static readonly Type s_atomicValueType = typeof(bool);
-        private static readonly Type s_listValueType = typeof(bool[]);
-
         internal override XmlValueConverter CreateValueConverter(XmlSchemaType schemaType)
         {
             return XmlBooleanConverter.Create(schemaType!);
@@ -1534,9 +1504,9 @@ namespace System.Xml.Schema
 
         public override XmlTypeCode TypeCode { get { return XmlTypeCode.Boolean; } }
 
-        public override Type ValueType { get { return s_atomicValueType; } }
+        public override Type ValueType { get { return typeof(bool); } }
 
-        internal override Type ListValueType { get { return s_listValueType; } }
+        internal override Type ListValueType { get { return typeof(bool[]); } }
 
         internal override XmlSchemaWhiteSpace BuiltInWhitespaceFacet { get { return XmlSchemaWhiteSpace.Collapse; } }
 
@@ -1602,9 +1572,6 @@ namespace System.Xml.Schema
     */
     internal class Datatype_float : Datatype_anySimpleType
     {
-        private static readonly Type s_atomicValueType = typeof(float);
-        private static readonly Type s_listValueType = typeof(float[]);
-
         internal override XmlValueConverter CreateValueConverter(XmlSchemaType schemaType)
         {
             return XmlNumeric2Converter.Create(schemaType);
@@ -1614,9 +1581,9 @@ namespace System.Xml.Schema
 
         public override XmlTypeCode TypeCode { get { return XmlTypeCode.Float; } }
 
-        public override Type ValueType { get { return s_atomicValueType; } }
+        public override Type ValueType { get { return typeof(float); } }
 
-        internal override Type ListValueType { get { return s_listValueType; } }
+        internal override Type ListValueType { get { return typeof(float[]); } }
 
         internal override XmlSchemaWhiteSpace BuiltInWhitespaceFacet { get { return XmlSchemaWhiteSpace.Collapse; } }
 
@@ -1691,9 +1658,6 @@ namespace System.Xml.Schema
     */
     internal class Datatype_double : Datatype_anySimpleType
     {
-        private static readonly Type s_atomicValueType = typeof(double);
-        private static readonly Type s_listValueType = typeof(double[]);
-
         internal override XmlValueConverter CreateValueConverter(XmlSchemaType schemaType)
         {
             return XmlNumeric2Converter.Create(schemaType);
@@ -1703,9 +1667,9 @@ namespace System.Xml.Schema
 
         public override XmlTypeCode TypeCode { get { return XmlTypeCode.Double; } }
 
-        public override Type ValueType { get { return s_atomicValueType; } }
+        public override Type ValueType { get { return typeof(double); } }
 
-        internal override Type ListValueType { get { return s_listValueType; } }
+        internal override Type ListValueType { get { return typeof(double[]); } }
 
         internal override XmlSchemaWhiteSpace BuiltInWhitespaceFacet { get { return XmlSchemaWhiteSpace.Collapse; } }
 
@@ -1782,9 +1746,7 @@ namespace System.Xml.Schema
     */
     internal class Datatype_decimal : Datatype_anySimpleType
     {
-        private static readonly Type s_atomicValueType = typeof(decimal);
-        private static readonly Type s_listValueType = typeof(decimal[]);
-        private static readonly FacetsChecker s_numeric10FacetsChecker = new Numeric10FacetsChecker(decimal.MinValue, decimal.MaxValue);
+        private static readonly Numeric10FacetsChecker s_numeric10FacetsChecker = new Numeric10FacetsChecker(decimal.MinValue, decimal.MaxValue);
 
         internal override XmlValueConverter CreateValueConverter(XmlSchemaType schemaType)
         {
@@ -1795,9 +1757,9 @@ namespace System.Xml.Schema
 
         public override XmlTypeCode TypeCode { get { return XmlTypeCode.Decimal; } }
 
-        public override Type ValueType { get { return s_atomicValueType; } }
+        public override Type ValueType { get { return typeof(decimal); } }
 
-        internal override Type ListValueType { get { return s_listValueType; } }
+        internal override Type ListValueType { get { return typeof(decimal[]); } }
 
         internal override XmlSchemaWhiteSpace BuiltInWhitespaceFacet { get { return XmlSchemaWhiteSpace.Collapse; } }
 
@@ -1875,9 +1837,6 @@ namespace System.Xml.Schema
     */
     internal class Datatype_duration : Datatype_anySimpleType
     {
-        private static readonly Type s_atomicValueType = typeof(TimeSpan);
-        private static readonly Type s_listValueType = typeof(TimeSpan[]);
-
         internal override XmlValueConverter CreateValueConverter(XmlSchemaType schemaType)
         {
             return XmlMiscConverter.Create(schemaType);
@@ -1887,9 +1846,9 @@ namespace System.Xml.Schema
 
         public override XmlTypeCode TypeCode { get { return XmlTypeCode.Duration; } }
 
-        public override Type ValueType { get { return s_atomicValueType; } }
+        public override Type ValueType { get { return typeof(TimeSpan); } }
 
-        internal override Type ListValueType { get { return s_listValueType; } }
+        internal override Type ListValueType { get { return typeof(TimeSpan[]); } }
 
         internal override XmlSchemaWhiteSpace BuiltInWhitespaceFacet { get { return XmlSchemaWhiteSpace.Collapse; } }
 
@@ -1918,7 +1877,7 @@ namespace System.Xml.Schema
             Exception? exception;
             typedValue = null;
 
-            if (s == null || s.Length == 0)
+            if (string.IsNullOrEmpty(s))
             {
                 return new XmlSchemaException(SR.Sch_EmptyAttributeValue, string.Empty);
             }
@@ -1949,7 +1908,7 @@ namespace System.Xml.Schema
             Exception? exception;
             typedValue = null;
 
-            if (s == null || s.Length == 0)
+            if (string.IsNullOrEmpty(s))
             {
                 return new XmlSchemaException(SR.Sch_EmptyAttributeValue, string.Empty);
             }
@@ -1988,7 +1947,7 @@ namespace System.Xml.Schema
 
             typedValue = null;
 
-            if (s == null || s.Length == 0)
+            if (string.IsNullOrEmpty(s))
             {
                 return new XmlSchemaException(SR.Sch_EmptyAttributeValue, string.Empty);
             }
@@ -2020,8 +1979,6 @@ namespace System.Xml.Schema
 
     internal class Datatype_dateTimeBase : Datatype_anySimpleType
     {
-        private static readonly Type s_atomicValueType = typeof(DateTime);
-        private static readonly Type s_listValueType = typeof(DateTime[]);
         private readonly XsdDateTimeFlags _dateTimeFlags;
 
         internal override XmlValueConverter CreateValueConverter(XmlSchemaType schemaType)
@@ -2038,9 +1995,9 @@ namespace System.Xml.Schema
             _dateTimeFlags = dateTimeFlags;
         }
 
-        public override Type ValueType { get { return s_atomicValueType; } }
+        public override Type ValueType { get { return typeof(DateTime); } }
 
-        internal override Type ListValueType { get { return s_listValueType; } }
+        internal override Type ListValueType { get { return typeof(DateTime[]); } }
 
         internal override XmlSchemaWhiteSpace BuiltInWhitespaceFacet { get { return XmlSchemaWhiteSpace.Collapse; } }
 
@@ -2419,9 +2376,6 @@ namespace System.Xml.Schema
     */
     internal sealed class Datatype_hexBinary : Datatype_anySimpleType
     {
-        private static readonly Type s_atomicValueType = typeof(byte[]);
-        private static readonly Type s_listValueType = typeof(byte[][]);
-
         internal override XmlValueConverter CreateValueConverter(XmlSchemaType schemaType)
         {
             return XmlMiscConverter.Create(schemaType);
@@ -2431,9 +2385,9 @@ namespace System.Xml.Schema
 
         public override XmlTypeCode TypeCode { get { return XmlTypeCode.HexBinary; } }
 
-        public override Type ValueType { get { return s_atomicValueType; } }
+        public override Type ValueType { get { return typeof(byte[]); } }
 
-        internal override Type ListValueType { get { return s_listValueType; } }
+        internal override Type ListValueType { get { return typeof(byte[][]); } }
 
         internal override XmlSchemaWhiteSpace BuiltInWhitespaceFacet { get { return XmlSchemaWhiteSpace.Collapse; } }
 
@@ -2520,9 +2474,6 @@ namespace System.Xml.Schema
     */
     internal sealed class Datatype_base64Binary : Datatype_anySimpleType
     {
-        private static readonly Type s_atomicValueType = typeof(byte[]);
-        private static readonly Type s_listValueType = typeof(byte[][]);
-
         internal override XmlValueConverter CreateValueConverter(XmlSchemaType schemaType)
         {
             return XmlMiscConverter.Create(schemaType);
@@ -2532,9 +2483,9 @@ namespace System.Xml.Schema
 
         public override XmlTypeCode TypeCode { get { return XmlTypeCode.Base64Binary; } }
 
-        public override Type ValueType { get { return s_atomicValueType; } }
+        public override Type ValueType { get { return typeof(byte[]); } }
 
-        internal override Type ListValueType { get { return s_listValueType; } }
+        internal override Type ListValueType { get { return typeof(byte[][]); } }
 
         internal override XmlSchemaWhiteSpace BuiltInWhitespaceFacet { get { return XmlSchemaWhiteSpace.Collapse; } }
 
@@ -2620,9 +2571,6 @@ namespace System.Xml.Schema
     */
     internal sealed class Datatype_anyURI : Datatype_anySimpleType
     {
-        private static readonly Type s_atomicValueType = typeof(Uri);
-        private static readonly Type s_listValueType = typeof(Uri[]);
-
         internal override XmlValueConverter CreateValueConverter(XmlSchemaType schemaType)
         {
             return XmlMiscConverter.Create(schemaType);
@@ -2632,7 +2580,7 @@ namespace System.Xml.Schema
 
         public override XmlTypeCode TypeCode { get { return XmlTypeCode.AnyUri; } }
 
-        public override Type ValueType { get { return s_atomicValueType; } }
+        public override Type ValueType { get { return typeof(Uri); } }
 
         internal override bool HasValueFacets
         {
@@ -2641,7 +2589,7 @@ namespace System.Xml.Schema
                 return true; //Built-in facet to check validity of Uri
             }
         }
-        internal override Type ListValueType { get { return s_listValueType; } }
+        internal override Type ListValueType { get { return typeof(Uri[]); } }
 
         internal override XmlSchemaWhiteSpace BuiltInWhitespaceFacet { get { return XmlSchemaWhiteSpace.Collapse; } }
 
@@ -2718,9 +2666,6 @@ namespace System.Xml.Schema
     */
     internal sealed class Datatype_QName : Datatype_anySimpleType
     {
-        private static readonly Type s_atomicValueType = typeof(XmlQualifiedName);
-        private static readonly Type s_listValueType = typeof(XmlQualifiedName[]);
-
         internal override XmlValueConverter CreateValueConverter(XmlSchemaType schemaType)
         {
             return XmlMiscConverter.Create(schemaType);
@@ -2745,9 +2690,9 @@ namespace System.Xml.Schema
             }
         }
 
-        public override Type ValueType { get { return s_atomicValueType; } }
+        public override Type ValueType { get { return typeof(XmlQualifiedName); } }
 
-        internal override Type ListValueType { get { return s_listValueType; } }
+        internal override Type ListValueType { get { return typeof(XmlQualifiedName[]); } }
 
         internal override XmlSchemaWhiteSpace BuiltInWhitespaceFacet { get { return XmlSchemaWhiteSpace.Collapse; } }
 
@@ -2757,7 +2702,7 @@ namespace System.Xml.Schema
 
             typedValue = null;
 
-            if (s == null || s.Length == 0)
+            if (string.IsNullOrEmpty(s))
             {
                 return new XmlSchemaException(SR.Sch_EmptyAttributeValue, string.Empty);
             }
@@ -3054,9 +2999,6 @@ namespace System.Xml.Schema
     */
     internal sealed class Datatype_NOTATION : Datatype_anySimpleType
     {
-        private static readonly Type s_atomicValueType = typeof(XmlQualifiedName);
-        private static readonly Type s_listValueType = typeof(XmlQualifiedName[]);
-
         internal override XmlValueConverter CreateValueConverter(XmlSchemaType schemaType)
         {
             return XmlMiscConverter.Create(schemaType);
@@ -3081,9 +3023,9 @@ namespace System.Xml.Schema
             }
         }
 
-        public override Type ValueType { get { return s_atomicValueType; } }
+        public override Type ValueType { get { return typeof(XmlQualifiedName); } }
 
-        internal override Type ListValueType { get { return s_listValueType; } }
+        internal override Type ListValueType { get { return typeof(XmlQualifiedName[]); } }
 
         internal override XmlSchemaWhiteSpace BuiltInWhitespaceFacet { get { return XmlSchemaWhiteSpace.Collapse; } }
 
@@ -3093,7 +3035,7 @@ namespace System.Xml.Schema
 
             typedValue = null;
 
-            if (s == null || s.Length == 0)
+            if (string.IsNullOrEmpty(s))
             {
                 return new XmlSchemaException(SR.Sch_EmptyAttributeValue, string.Empty);
             }
@@ -3193,7 +3135,7 @@ namespace System.Xml.Schema
     }
 
     /*
-      <xs:simpleType name="nonPositiveInteger" id="nonPostiveInteger">
+      <xs:simpleType name="nonPositiveInteger" id="nonPositiveInteger">
         <xs:annotation>
           <xs:documentation
             source="http://www.w3.org/TR/xmlschema-2/#negativeInteger"/>
@@ -3260,9 +3202,7 @@ namespace System.Xml.Schema
     */
     internal class Datatype_long : Datatype_integer
     {
-        private static readonly Type s_atomicValueType = typeof(long);
-        private static readonly Type s_listValueType = typeof(long[]);
-        private static readonly FacetsChecker s_numeric10FacetsChecker = new Numeric10FacetsChecker(long.MinValue, long.MaxValue);
+        private static readonly Numeric10FacetsChecker s_numeric10FacetsChecker = new Numeric10FacetsChecker(long.MinValue, long.MaxValue);
 
         internal override FacetsChecker FacetsChecker { get { return s_numeric10FacetsChecker; } }
 
@@ -3281,9 +3221,9 @@ namespace System.Xml.Schema
             return ((long)value1).CompareTo((long)value2);
         }
 
-        public override Type ValueType { get { return s_atomicValueType; } }
+        public override Type ValueType { get { return typeof(long); } }
 
-        internal override Type ListValueType { get { return s_listValueType; } }
+        internal override Type ListValueType { get { return typeof(long[]); } }
 
         internal override Exception? TryParseValue(string s, XmlNameTable? nameTable, IXmlNamespaceResolver? nsmgr, out object? typedValue)
         {
@@ -3324,9 +3264,7 @@ namespace System.Xml.Schema
     */
     internal class Datatype_int : Datatype_long
     {
-        private static readonly Type s_atomicValueType = typeof(int);
-        private static readonly Type s_listValueType = typeof(int[]);
-        private static readonly FacetsChecker s_numeric10FacetsChecker = new Numeric10FacetsChecker(int.MinValue, int.MaxValue);
+        private static readonly Numeric10FacetsChecker s_numeric10FacetsChecker = new Numeric10FacetsChecker(int.MinValue, int.MaxValue);
 
         internal override FacetsChecker FacetsChecker { get { return s_numeric10FacetsChecker; } }
 
@@ -3337,9 +3275,9 @@ namespace System.Xml.Schema
             return ((int)value1).CompareTo((int)value2);
         }
 
-        public override Type ValueType { get { return s_atomicValueType; } }
+        public override Type ValueType { get { return typeof(int); } }
 
-        internal override Type ListValueType { get { return s_listValueType; } }
+        internal override Type ListValueType { get { return typeof(int[]); } }
 
         internal override Exception? TryParseValue(string s, XmlNameTable? nameTable, IXmlNamespaceResolver? nsmgr, out object? typedValue)
         {
@@ -3381,9 +3319,7 @@ namespace System.Xml.Schema
     */
     internal class Datatype_short : Datatype_int
     {
-        private static readonly Type s_atomicValueType = typeof(short);
-        private static readonly Type s_listValueType = typeof(short[]);
-        private static readonly FacetsChecker s_numeric10FacetsChecker = new Numeric10FacetsChecker(short.MinValue, short.MaxValue);
+        private static readonly Numeric10FacetsChecker s_numeric10FacetsChecker = new Numeric10FacetsChecker(short.MinValue, short.MaxValue);
 
         internal override FacetsChecker FacetsChecker { get { return s_numeric10FacetsChecker; } }
 
@@ -3394,9 +3330,9 @@ namespace System.Xml.Schema
             return ((short)value1).CompareTo((short)value2);
         }
 
-        public override Type ValueType { get { return s_atomicValueType; } }
+        public override Type ValueType { get { return typeof(short); } }
 
-        internal override Type ListValueType { get { return s_listValueType; } }
+        internal override Type ListValueType { get { return typeof(short[]); } }
 
         internal override Exception? TryParseValue(string s, XmlNameTable? nameTable, IXmlNamespaceResolver? nsmgr, out object? typedValue)
         {
@@ -3437,9 +3373,7 @@ namespace System.Xml.Schema
     */
     internal sealed class Datatype_byte : Datatype_short
     {
-        private static readonly Type s_atomicValueType = typeof(sbyte);
-        private static readonly Type s_listValueType = typeof(sbyte[]);
-        private static readonly FacetsChecker s_numeric10FacetsChecker = new Numeric10FacetsChecker(sbyte.MinValue, sbyte.MaxValue);
+        private static readonly Numeric10FacetsChecker s_numeric10FacetsChecker = new Numeric10FacetsChecker(sbyte.MinValue, sbyte.MaxValue);
 
         internal override FacetsChecker FacetsChecker { get { return s_numeric10FacetsChecker; } }
 
@@ -3450,9 +3384,9 @@ namespace System.Xml.Schema
             return ((sbyte)value1).CompareTo((sbyte)value2);
         }
 
-        public override Type ValueType { get { return s_atomicValueType; } }
+        public override Type ValueType { get { return typeof(sbyte); } }
 
-        internal override Type ListValueType { get { return s_listValueType; } }
+        internal override Type ListValueType { get { return typeof(sbyte[]); } }
 
         internal override Exception? TryParseValue(string s, XmlNameTable? nameTable, IXmlNamespaceResolver? nsmgr, out object? typedValue)
         {
@@ -3525,9 +3459,7 @@ namespace System.Xml.Schema
     */
     internal class Datatype_unsignedLong : Datatype_nonNegativeInteger
     {
-        private static readonly Type s_atomicValueType = typeof(ulong);
-        private static readonly Type s_listValueType = typeof(ulong[]);
-        private static readonly FacetsChecker s_numeric10FacetsChecker = new Numeric10FacetsChecker(ulong.MinValue, ulong.MaxValue);
+        private static readonly Numeric10FacetsChecker s_numeric10FacetsChecker = new Numeric10FacetsChecker(ulong.MinValue, ulong.MaxValue);
 
         internal override FacetsChecker FacetsChecker { get { return s_numeric10FacetsChecker; } }
 
@@ -3538,9 +3470,9 @@ namespace System.Xml.Schema
             return ((ulong)value1).CompareTo((ulong)value2);
         }
 
-        public override Type ValueType { get { return s_atomicValueType; } }
+        public override Type ValueType { get { return typeof(ulong); } }
 
-        internal override Type ListValueType { get { return s_listValueType; } }
+        internal override Type ListValueType { get { return typeof(ulong[]); } }
 
         internal override Exception? TryParseValue(string s, XmlNameTable? nameTable, IXmlNamespaceResolver? nsmgr, out object? typedValue)
         {
@@ -3581,9 +3513,7 @@ namespace System.Xml.Schema
     */
     internal class Datatype_unsignedInt : Datatype_unsignedLong
     {
-        private static readonly Type s_atomicValueType = typeof(uint);
-        private static readonly Type s_listValueType = typeof(uint[]);
-        private static readonly FacetsChecker s_numeric10FacetsChecker = new Numeric10FacetsChecker(uint.MinValue, uint.MaxValue);
+        private static readonly Numeric10FacetsChecker s_numeric10FacetsChecker = new Numeric10FacetsChecker(uint.MinValue, uint.MaxValue);
 
         internal override FacetsChecker FacetsChecker { get { return s_numeric10FacetsChecker; } }
 
@@ -3594,9 +3524,9 @@ namespace System.Xml.Schema
             return ((uint)value1).CompareTo((uint)value2);
         }
 
-        public override Type ValueType { get { return s_atomicValueType; } }
+        public override Type ValueType { get { return typeof(uint); } }
 
-        internal override Type ListValueType { get { return s_listValueType; } }
+        internal override Type ListValueType { get { return typeof(uint[]); } }
 
         internal override Exception? TryParseValue(string s, XmlNameTable? nameTable, IXmlNamespaceResolver? nsmgr, out object? typedValue)
         {
@@ -3637,9 +3567,7 @@ namespace System.Xml.Schema
     */
     internal class Datatype_unsignedShort : Datatype_unsignedInt
     {
-        private static readonly Type s_atomicValueType = typeof(ushort);
-        private static readonly Type s_listValueType = typeof(ushort[]);
-        private static readonly FacetsChecker s_numeric10FacetsChecker = new Numeric10FacetsChecker(ushort.MinValue, ushort.MaxValue);
+        private static readonly Numeric10FacetsChecker s_numeric10FacetsChecker = new Numeric10FacetsChecker(ushort.MinValue, ushort.MaxValue);
 
         internal override FacetsChecker FacetsChecker { get { return s_numeric10FacetsChecker; } }
 
@@ -3650,9 +3578,9 @@ namespace System.Xml.Schema
             return ((ushort)value1).CompareTo((ushort)value2);
         }
 
-        public override Type ValueType { get { return s_atomicValueType; } }
+        public override Type ValueType { get { return typeof(ushort); } }
 
-        internal override Type ListValueType { get { return s_listValueType; } }
+        internal override Type ListValueType { get { return typeof(ushort[]); } }
 
         internal override Exception? TryParseValue(string s, XmlNameTable? nameTable, IXmlNamespaceResolver? nsmgr, out object? typedValue)
         {
@@ -3692,9 +3620,7 @@ namespace System.Xml.Schema
     */
     internal sealed class Datatype_unsignedByte : Datatype_unsignedShort
     {
-        private static readonly Type s_atomicValueType = typeof(byte);
-        private static readonly Type s_listValueType = typeof(byte[]);
-        private static readonly FacetsChecker s_numeric10FacetsChecker = new Numeric10FacetsChecker(byte.MinValue, byte.MaxValue);
+        private static readonly Numeric10FacetsChecker s_numeric10FacetsChecker = new Numeric10FacetsChecker(byte.MinValue, byte.MaxValue);
 
         internal override FacetsChecker FacetsChecker { get { return s_numeric10FacetsChecker; } }
 
@@ -3705,9 +3631,9 @@ namespace System.Xml.Schema
             return ((byte)value1).CompareTo((byte)value2);
         }
 
-        public override Type ValueType { get { return s_atomicValueType; } }
+        public override Type ValueType { get { return typeof(byte); } }
 
-        internal override Type ListValueType { get { return s_listValueType; } }
+        internal override Type ListValueType { get { return typeof(byte[]); } }
 
         internal override Exception? TryParseValue(string s, XmlNameTable? nameTable, IXmlNamespaceResolver? nsmgr, out object? typedValue)
         {
@@ -3803,14 +3729,11 @@ namespace System.Xml.Schema
 
     internal sealed class Datatype_QNameXdr : Datatype_anySimpleType
     {
-        private static readonly Type s_atomicValueType = typeof(XmlQualifiedName);
-        private static readonly Type s_listValueType = typeof(XmlQualifiedName[]);
-
         public override XmlTokenizedType TokenizedType { get { return XmlTokenizedType.QName; } }
 
         public override object ParseValue(string s, XmlNameTable? nameTable, IXmlNamespaceResolver? nsmgr)
         {
-            if (s == null || s.Length == 0)
+            if (string.IsNullOrEmpty(s))
             {
                 throw new XmlSchemaException(SR.Sch_EmptyAttributeValue, string.Empty);
             }
@@ -3831,9 +3754,9 @@ namespace System.Xml.Schema
             }
         }
 
-        public override Type ValueType { get { return s_atomicValueType; } }
+        public override Type ValueType { get { return typeof(XmlQualifiedName); } }
 
-        internal override Type ListValueType { get { return s_listValueType; } }
+        internal override Type ListValueType { get { return typeof(XmlQualifiedName[]); } }
     }
 
     internal sealed class Datatype_ENUMERATION : Datatype_NMTOKEN
@@ -3843,12 +3766,9 @@ namespace System.Xml.Schema
 
     internal sealed class Datatype_char : Datatype_anySimpleType
     {
-        private static readonly Type s_atomicValueType = typeof(char);
-        private static readonly Type s_listValueType = typeof(char[]);
+        public override Type ValueType { get { return typeof(char); } }
 
-        public override Type ValueType { get { return s_atomicValueType; } }
-
-        internal override Type ListValueType { get { return s_listValueType; } }
+        internal override Type ListValueType { get { return typeof(char[]); } }
 
         internal override RestrictionFlags ValidRestrictionFlags { get { return 0; } } //XDR only
 
@@ -3943,12 +3863,9 @@ namespace System.Xml.Schema
 
     internal sealed class Datatype_uuid : Datatype_anySimpleType
     {
-        private static readonly Type s_atomicValueType = typeof(Guid);
-        private static readonly Type s_listValueType = typeof(Guid[]);
+        public override Type ValueType { get { return typeof(Guid); } }
 
-        public override Type ValueType { get { return s_atomicValueType; } }
-
-        internal override Type ListValueType { get { return s_listValueType; } }
+        internal override Type ListValueType { get { return typeof(Guid[]); } }
 
         internal override RestrictionFlags ValidRestrictionFlags { get { return 0; } }
 

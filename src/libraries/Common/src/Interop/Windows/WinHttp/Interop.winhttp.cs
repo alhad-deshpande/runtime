@@ -3,7 +3,7 @@
 
 using System;
 using System.Runtime.InteropServices;
-#if NET7_0_OR_GREATER
+#if NET
 using System.Runtime.InteropServices.Marshalling;
 #endif
 using System.Text;
@@ -12,26 +12,26 @@ internal static partial class Interop
 {
     internal static partial class WinHttp
     {
-        [LibraryImport(Interop.Libraries.WinHttp,  SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+        [LibraryImport(Interop.Libraries.WinHttp, SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
         public static partial SafeWinHttpHandle WinHttpOpen(
             IntPtr userAgent,
             uint accessType,
             string? proxyName,
             string? proxyBypass, int flags);
 
-        [LibraryImport(Interop.Libraries.WinHttp,  SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+        [LibraryImport(Interop.Libraries.WinHttp, SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static partial bool WinHttpCloseHandle(
             IntPtr handle);
 
-        [LibraryImport(Interop.Libraries.WinHttp,  SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+        [LibraryImport(Interop.Libraries.WinHttp, SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
         public static partial SafeWinHttpHandle WinHttpConnect(
             SafeWinHttpHandle sessionHandle,
             string serverName,
             ushort serverPort,
             uint reserved);
 
-        [LibraryImport(Interop.Libraries.WinHttp,  SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+        [LibraryImport(Interop.Libraries.WinHttp, SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
         public static partial SafeWinHttpHandle WinHttpOpenRequest(
             SafeWinHttpHandle connectHandle,
             string verb,
@@ -41,11 +41,11 @@ internal static partial class Interop
             string acceptTypes,
             uint flags);
 
-        [LibraryImport(Interop.Libraries.WinHttp,  SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+        [LibraryImport(Interop.Libraries.WinHttp, SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static partial bool WinHttpAddRequestHeaders(
             SafeWinHttpHandle requestHandle,
-#if NET7_0_OR_GREATER
+#if NET
             [MarshalUsing(typeof(SimpleStringBufferMarshaller))] StringBuilder headers,
 #else
 #pragma warning disable CA1838 // Uses pooled StringBuilder
@@ -55,31 +55,25 @@ internal static partial class Interop
             uint headersLength,
             uint modifiers);
 
-#if NET7_0_OR_GREATER
-        [CustomTypeMarshaller(typeof(StringBuilder), Direction = CustomTypeMarshallerDirection.In, Features = CustomTypeMarshallerFeatures.UnmanagedResources | CustomTypeMarshallerFeatures.TwoStageMarshalling)]
-        private unsafe struct SimpleStringBufferMarshaller
+#if NET
+        [CustomMarshaller(typeof(StringBuilder), MarshalMode.ManagedToUnmanagedIn, typeof(SimpleStringBufferMarshaller))]
+        private static unsafe class SimpleStringBufferMarshaller
         {
-            public SimpleStringBufferMarshaller(StringBuilder builder)
+            public static void* ConvertToUnmanaged(StringBuilder builder)
             {
                 int length = builder.Length + 1;
-                Value = NativeMemory.Alloc(sizeof(char) * (nuint)length);
-                Span<char> buffer = new(Value, length);
+                void* value = NativeMemory.Alloc(sizeof(char) * (nuint)length);
+                Span<char> buffer = new(value, length);
                 buffer.Clear();
                 builder.CopyTo(0, buffer, length - 1);
+                return value;
             }
 
-            private void* Value { get; }
-
-            public void* ToNativeValue() => Value;
-
-            public void FreeNative()
-            {
-                NativeMemory.Free(Value);
-            }
+            public static void Free(void* value) => NativeMemory.Free(value);
         }
 #endif
 
-        [LibraryImport(Interop.Libraries.WinHttp,  SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+        [LibraryImport(Interop.Libraries.WinHttp, SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static partial bool WinHttpAddRequestHeaders(
             SafeWinHttpHandle requestHandle,
@@ -87,7 +81,7 @@ internal static partial class Interop
             uint headersLength,
             uint modifiers);
 
-        [LibraryImport(Interop.Libraries.WinHttp,  SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+        [LibraryImport(Interop.Libraries.WinHttp, SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static partial bool WinHttpSendRequest(
             SafeWinHttpHandle requestHandle,
@@ -98,19 +92,19 @@ internal static partial class Interop
             uint totalLength,
             IntPtr context);
 
-        [LibraryImport(Interop.Libraries.WinHttp,  SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+        [LibraryImport(Interop.Libraries.WinHttp, SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static partial bool WinHttpReceiveResponse(
             SafeWinHttpHandle requestHandle,
             IntPtr reserved);
 
-        [LibraryImport(Interop.Libraries.WinHttp,  SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+        [LibraryImport(Interop.Libraries.WinHttp, SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static partial bool WinHttpQueryDataAvailable(
             SafeWinHttpHandle requestHandle,
             IntPtr parameterIgnoredAndShouldBeNullForAsync);
 
-        [LibraryImport(Interop.Libraries.WinHttp,  SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+        [LibraryImport(Interop.Libraries.WinHttp, SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static partial bool WinHttpReadData(
             SafeWinHttpHandle requestHandle,
@@ -118,7 +112,7 @@ internal static partial class Interop
             uint bufferSize,
             IntPtr parameterIgnoredAndShouldBeNullForAsync);
 
-        [LibraryImport(Interop.Libraries.WinHttp,  SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+        [LibraryImport(Interop.Libraries.WinHttp, SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static partial bool WinHttpQueryHeaders(
             SafeWinHttpHandle requestHandle,
@@ -128,7 +122,7 @@ internal static partial class Interop
             ref uint bufferLength,
             ref uint index);
 
-        [LibraryImport(Interop.Libraries.WinHttp,  SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+        [LibraryImport(Interop.Libraries.WinHttp, SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static partial bool WinHttpQueryHeaders(
             SafeWinHttpHandle requestHandle,
@@ -138,7 +132,7 @@ internal static partial class Interop
             ref uint bufferLength,
             IntPtr index);
 
-        [LibraryImport(Interop.Libraries.WinHttp,  SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+        [LibraryImport(Interop.Libraries.WinHttp, SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static partial bool WinHttpQueryOption(
             SafeWinHttpHandle handle,
@@ -146,7 +140,7 @@ internal static partial class Interop
             ref IntPtr buffer,
             ref uint bufferSize);
 
-        [LibraryImport(Interop.Libraries.WinHttp,  SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+        [LibraryImport(Interop.Libraries.WinHttp, SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static partial bool WinHttpQueryOption(
             SafeWinHttpHandle handle,
@@ -154,7 +148,7 @@ internal static partial class Interop
             IntPtr buffer,
             ref uint bufferSize);
 
-        [LibraryImport(Interop.Libraries.WinHttp,  SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+        [LibraryImport(Interop.Libraries.WinHttp, SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static partial bool WinHttpQueryOption(
             SafeWinHttpHandle handle,
@@ -162,7 +156,7 @@ internal static partial class Interop
             ref uint buffer,
             ref uint bufferSize);
 
-        [LibraryImport(Interop.Libraries.WinHttp,  SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+        [LibraryImport(Interop.Libraries.WinHttp, SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static partial bool WinHttpWriteData(
             SafeWinHttpHandle requestHandle,
@@ -170,7 +164,7 @@ internal static partial class Interop
             uint bufferSize,
             IntPtr parameterIgnoredAndShouldBeNullForAsync);
 
-        [LibraryImport(Interop.Libraries.WinHttp,  SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+        [LibraryImport(Interop.Libraries.WinHttp, SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static partial bool WinHttpSetOption(
             SafeWinHttpHandle handle,
@@ -178,7 +172,7 @@ internal static partial class Interop
             ref uint optionData,
             uint optionLength = sizeof(uint));
 
-        [LibraryImport(Interop.Libraries.WinHttp,  SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+        [LibraryImport(Interop.Libraries.WinHttp, SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static partial bool WinHttpSetOption(
             SafeWinHttpHandle handle,
@@ -186,7 +180,7 @@ internal static partial class Interop
             IntPtr optionData,
             uint optionLength);
 
-        [LibraryImport(Interop.Libraries.WinHttp,  SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+        [LibraryImport(Interop.Libraries.WinHttp, SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static partial bool WinHttpSetCredentials(
             SafeWinHttpHandle requestHandle,
@@ -196,7 +190,7 @@ internal static partial class Interop
             string? password,
             IntPtr reserved);
 
-        [LibraryImport(Interop.Libraries.WinHttp,  SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+        [LibraryImport(Interop.Libraries.WinHttp, SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static partial bool WinHttpQueryAuthSchemes(
             SafeWinHttpHandle requestHandle,
@@ -204,7 +198,7 @@ internal static partial class Interop
             out uint firstScheme,
             out uint authTarget);
 
-        [LibraryImport(Interop.Libraries.WinHttp,  SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+        [LibraryImport(Interop.Libraries.WinHttp, SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static partial bool WinHttpSetTimeouts(
             SafeWinHttpHandle handle,
@@ -213,19 +207,20 @@ internal static partial class Interop
             int sendTimeout,
             int receiveTimeout);
 
-        [LibraryImport(Interop.Libraries.WinHttp,  SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+        [LibraryImport(Interop.Libraries.WinHttp, SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static partial bool WinHttpGetIEProxyConfigForCurrentUser(
             out WINHTTP_CURRENT_USER_IE_PROXY_CONFIG proxyConfig);
 
-        [LibraryImport(Interop.Libraries.WinHttp,  SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
-        [return: MarshalAs(UnmanagedType.Bool)]public static partial bool WinHttpGetProxyForUrl(
+        [LibraryImport(Interop.Libraries.WinHttp, SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static partial bool WinHttpGetProxyForUrl(
             SafeWinHttpHandle? sessionHandle,
             string url,
             ref WINHTTP_AUTOPROXY_OPTIONS autoProxyOptions,
             out WINHTTP_PROXY_INFO proxyInfo);
 
-        [LibraryImport(Interop.Libraries.WinHttp,  SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+        [LibraryImport(Interop.Libraries.WinHttp, SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
         public static partial IntPtr WinHttpSetStatusCallback(
             SafeWinHttpHandle handle,
             WINHTTP_STATUS_CALLBACK callback,

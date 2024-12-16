@@ -5,9 +5,8 @@ using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
-
-using SuppressMessageAttribute = System.Diagnostics.CodeAnalysis.SuppressMessageAttribute;
 using Encoding = System.Text.Encoding;
+using SuppressMessageAttribute = System.Diagnostics.CodeAnalysis.SuppressMessageAttribute;
 
 namespace System.Xml.Linq
 {
@@ -894,15 +893,6 @@ namespace System.Xml.Linq
             return null;
         }
 
-        internal static bool IsWhitespace(string s)
-        {
-            foreach (char ch in s)
-            {
-                if (ch != ' ' && ch != '\t' && ch != '\r' && ch != '\n') return false;
-            }
-            return true;
-        }
-
         internal override void ValidateNode(XNode node, XNode? previous)
         {
             switch (node.NodeType)
@@ -945,7 +935,10 @@ namespace System.Xml.Linq
 
         internal override void ValidateString(string s)
         {
-            if (!IsWhitespace(s)) throw new ArgumentException(SR.Argument_AddNonWhitespace);
+            if (s.AsSpan().ContainsAnyExcept(" \t\r\n"))
+            {
+                throw new ArgumentException(SR.Argument_AddNonWhitespace);
+            }
         }
     }
 }

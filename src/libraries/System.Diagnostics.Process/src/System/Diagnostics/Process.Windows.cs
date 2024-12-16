@@ -1,8 +1,8 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-using Microsoft.Win32.SafeHandles;
 using System.Collections.Generic;
+using System.Collections.Specialized;
 using System.ComponentModel;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -10,6 +10,7 @@ using System.Runtime.Versioning;
 using System.Security;
 using System.Text;
 using System.Threading;
+using Microsoft.Win32.SafeHandles;
 
 namespace System.Diagnostics
 {
@@ -228,9 +229,10 @@ namespace System.Diagnostics
         /// <summary>Gets the amount of time the process has spent running code inside the operating system core.</summary>
         [UnsupportedOSPlatform("ios")]
         [UnsupportedOSPlatform("tvos")]
+        [SupportedOSPlatform("maccatalyst")]
         public TimeSpan PrivilegedProcessorTime
         {
-            get { return GetProcessTimes().PrivilegedProcessorTime; }
+            get => IsCurrentProcess ? Environment.CpuUsage.PrivilegedTime : GetProcessTimes().PrivilegedProcessorTime;
         }
 
         /// <summary>Gets the time the associated process was started.</summary>
@@ -249,7 +251,7 @@ namespace System.Diagnostics
         [SupportedOSPlatform("maccatalyst")]
         public TimeSpan TotalProcessorTime
         {
-            get { return GetProcessTimes().TotalProcessorTime; }
+            get => IsCurrentProcess ? Environment.CpuUsage.TotalTime : GetProcessTimes().TotalProcessorTime;
         }
 
         /// <summary>
@@ -261,7 +263,7 @@ namespace System.Diagnostics
         [SupportedOSPlatform("maccatalyst")]
         public TimeSpan UserProcessorTime
         {
-            get { return GetProcessTimes().UserProcessorTime; }
+            get => IsCurrentProcess ? Environment.CpuUsage.UserTime : GetProcessTimes().UserProcessorTime;
         }
 
         /// <summary>
@@ -494,6 +496,12 @@ namespace System.Diagnostics
                         startupInfo.dwFlags = Interop.Advapi32.StartupInfoOptions.STARTF_USESTDHANDLES;
                     }
 
+                    if (startInfo.WindowStyle != ProcessWindowStyle.Normal)
+                    {
+                        startupInfo.wShowWindow = (short)GetShowWindowFromWindowStyle(startInfo.WindowStyle);
+                        startupInfo.dwFlags |= Interop.Advapi32.StartupInfoOptions.STARTF_USESHOWWINDOW;
+                    }
+
                     // set up the creation flags parameter
                     int creationFlags = 0;
                     if (startInfo.CreateNoWindow) creationFlags |= Interop.Advapi32.StartupInfoOptions.CREATE_NO_WINDOW;
@@ -523,9 +531,17 @@ namespace System.Diagnostics
                         }
 
                         Interop.Advapi32.LogonFlags logonFlags = (Interop.Advapi32.LogonFlags)0;
-                        if (startInfo.LoadUserProfile)
+                        if (startInfo.LoadUserProfile && startInfo.UseCredentialsForNetworkingOnly)
+                        {
+                            throw new ArgumentException(SR.CantEnableConflictingLogonFlags, nameof(startInfo));
+                        }
+                        else if (startInfo.LoadUserProfile)
                         {
                             logonFlags = Interop.Advapi32.LogonFlags.LOGON_WITH_PROFILE;
+                        }
+                        else if (startInfo.UseCredentialsForNetworkingOnly)
+                        {
+                            logonFlags = Interop.Advapi32.LogonFlags.LOGON_NETCREDENTIALS_ONLY;
                         }
 
                         fixed (char* passwordInClearTextPtr = startInfo.PasswordInClearText ?? string.Empty)
@@ -596,6 +612,14 @@ namespace System.Diagnostics
                         throw CreateExceptionForErrorStartingProcess(nativeErrorMessage, errorCode, startInfo.FileName, workingDirectory);
                     }
                 }
+                catch
+                {
+                    parentInputPipeHandle?.Dispose();
+                    parentOutputPipeHandle?.Dispose();
+                    parentErrorPipeHandle?.Dispose();
+                    procSH.Dispose();
+                    throw;
+                }
                 finally
                 {
                     childInputPipeHandle?.Dispose();
@@ -624,14 +648,17 @@ namespace System.Diagnostics
             commandLine.Dispose();
 
             if (procSH.IsInvalid)
+            {
+                procSH.Dispose();
                 return false;
+            }
 
             SetProcessHandle(procSH);
             SetProcessId((int)processInfo.dwProcessId);
             return true;
         }
 
-        private static Encoding GetEncoding(int codePage)
+        private static ConsoleEncoding GetEncoding(int codePage)
         {
             Encoding enc = EncodingHelper.GetSupportedConsoleEncoding(codePage);
             return new ConsoleEncoding(enc); // ensure encoding doesn't output a preamble
@@ -647,7 +674,7 @@ namespace System.Diagnostics
             // problems (it specifies exactly which part of the string
             // is the file to execute).
             ReadOnlySpan<char> fileName = startInfo.FileName.AsSpan().Trim();
-            bool fileNameIsQuoted = fileName.Length > 0 && fileName[0] == '\"' && fileName[fileName.Length - 1] == '\"';
+            bool fileNameIsQuoted = fileName.StartsWith('"') && fileName.EndsWith('"');
             if (!fileNameIsQuoted)
             {
                 commandLine.Append('"');
@@ -720,10 +747,7 @@ namespace System.Diagnostics
             }
             finally
             {
-                if (hToken != null)
-                {
-                    hToken.Dispose();
-                }
+                hToken?.Dispose();
             }
         }
 
@@ -834,9 +858,9 @@ namespace System.Diagnostics
             }
         }
 
-        private static string GetEnvironmentVariablesBlock(IDictionary<string, string> sd)
+        private static string GetEnvironmentVariablesBlock(DictionaryWrapper sd)
         {
-            // https://docs.microsoft.com/en-us/windows/win32/procthread/changing-environment-variables
+            // https://learn.microsoft.com/windows/win32/procthread/changing-environment-variables
             // "All strings in the environment block must be sorted alphabetically by name. The sort is
             //  case-insensitive, Unicode order, without regard to locale. Because the equal sign is a
             //  separator, it must not be used in the name of an environment variable."
@@ -849,7 +873,13 @@ namespace System.Diagnostics
             var result = new StringBuilder(8 * keys.Length);
             foreach (string key in keys)
             {
-                result.Append(key).Append('=').Append(sd[key]).Append('\0');
+                string? value = sd[key];
+
+                // Ignore null values for consistency with Environment.SetEnvironmentVariable
+                if (value != null)
+                {
+                    result.Append(key).Append('=').Append(value).Append('\0');
+                }
             }
 
             return result.ToString();
@@ -864,7 +894,6 @@ namespace System.Diagnostics
             {
                 if (_processName == null)
                 {
-                    EnsureState(State.HaveNonExitedId);
                     // If we already have the name via a populated ProcessInfo
                     // then use that one.
                     if (_processInfo?.ProcessName != null)
@@ -873,12 +902,16 @@ namespace System.Diagnostics
                     }
                     else
                     {
-                        // If we don't have a populated ProcessInfo, then get and cache the process name.
+                        // Ensure that the process is not yet exited
+                        EnsureState(State.HaveNonExitedId);
                         _processName = ProcessManager.GetProcessName(_processId, _machineName);
 
+                        // Fallback to slower ProcessInfo implementation if optimized way did not return a
+                        // process name (e.g. in case of missing permissions for Non-Admin users)
                         if (_processName == null)
                         {
-                            throw new InvalidOperationException(SR.NoProcessInfo);
+                            EnsureState(State.HaveProcessInfo);
+                            _processName = _processInfo!.ProcessName;
                         }
                     }
                 }

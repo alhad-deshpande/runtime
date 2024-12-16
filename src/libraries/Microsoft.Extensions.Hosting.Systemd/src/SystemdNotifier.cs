@@ -7,6 +7,9 @@ using System.Runtime.Versioning;
 
 namespace Microsoft.Extensions.Hosting.Systemd
 {
+    /// <summary>
+    /// Provides support to notify systemd about the service status.
+    /// </summary>
     [UnsupportedOSPlatform("browser")]
     public class SystemdNotifier : ISystemdNotifier
     {
@@ -14,6 +17,9 @@ namespace Microsoft.Extensions.Hosting.Systemd
 
         private readonly string? _socketPath;
 
+        /// <summary>
+        /// Instantiates a new <see cref="SystemdNotifier"/> and sets the notify socket path.
+        /// </summary>
         public SystemdNotifier() :
             this(GetNotifySocketPath())
         { }
@@ -34,6 +40,12 @@ namespace Microsoft.Extensions.Hosting.Systemd
             {
                 return;
             }
+
+#if !NETSTANDARD2_1 && !NETSTANDARD2_0 && !NETFRAMEWORK // TODO remove with https://github.com/dotnet/runtime/pull/107185
+            if (OperatingSystem.IsWasi()) throw new PlatformNotSupportedException();
+#else
+            #pragma warning disable CA1416
+#endif
 
             using (var socket = new Socket(AddressFamily.Unix, SocketType.Dgram, ProtocolType.Unspecified))
             {

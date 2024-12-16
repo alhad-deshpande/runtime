@@ -3,10 +3,12 @@
 
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Net.Security;
-using System.Runtime.InteropServices;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.Marshalling;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using Microsoft.Win32.SafeHandles;
@@ -112,7 +114,13 @@ internal static partial class Interop
         internal static partial int BioWrite(SafeBioHandle b, ref byte data, int len);
 
         [LibraryImport(Libraries.CryptoNative, EntryPoint = "CryptoNative_SslGetPeerCertificate")]
-        internal static partial SafeX509Handle SslGetPeerCertificate(SafeSslHandle ssl);
+        internal static partial IntPtr SslGetPeerCertificate(SafeSslHandle ssl);
+
+        [LibraryImport(Libraries.CryptoNative, EntryPoint = "CryptoNative_SslGetCertificate")]
+        internal static partial IntPtr SslGetCertificate(SafeSslHandle ssl);
+
+        [LibraryImport(Libraries.CryptoNative, EntryPoint = "CryptoNative_SslGetCertificate")]
+        internal static partial IntPtr SslGetCertificate(IntPtr ssl);
 
         [LibraryImport(Libraries.CryptoNative, EntryPoint = "CryptoNative_SslGetPeerCertChain")]
         internal static partial SafeSharedX509StackHandle SslGetPeerCertChain(SafeSslHandle ssl);
@@ -126,6 +134,9 @@ internal static partial class Interop
         [LibraryImport(Libraries.CryptoNative, EntryPoint = "CryptoNative_SslSessionReused")]
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static partial bool SslSessionReused(SafeSslHandle ssl);
+
+        [LibraryImport(Libraries.CryptoNative, EntryPoint = "CryptoNative_SslGetSession")]
+        internal static partial IntPtr SslGetSession(SafeSslHandle ssl);
 
         [LibraryImport(Libraries.CryptoNative, EntryPoint = "CryptoNative_SslGetClientCAList")]
         private static partial SafeSharedX509NameStackHandle SslGetClientCAList_private(SafeSslHandle ssl);
@@ -179,6 +190,12 @@ internal static partial class Interop
 
         [LibraryImport(Libraries.CryptoNative, EntryPoint = "CryptoNative_SslSessionSetHostname")]
         internal static partial int SessionSetHostname(IntPtr session, IntPtr name);
+
+        [LibraryImport(Libraries.CryptoNative, EntryPoint = "CryptoNative_SslSessionGetData")]
+        internal static partial IntPtr SslSessionGetData(IntPtr session);
+
+        [LibraryImport(Libraries.CryptoNative, EntryPoint = "CryptoNative_SslSessionSetData")]
+        internal static partial void SslSessionSetData(IntPtr session, IntPtr val);
 
         internal static class Capabilities
         {
@@ -261,10 +278,10 @@ internal static partial class Interop
             }
         }
 
-        internal static bool AddExtraChainCertificates(SafeSslHandle ssl, X509Certificate2[] chain)
+        internal static bool AddExtraChainCertificates(SafeSslHandle ssl, ReadOnlyCollection<X509Certificate2> chain)
         {
             // send pre-computed list of intermediates.
-            for (int i = 0; i < chain.Length; i++)
+            for (int i = 0; i < chain.Count; i++)
             {
                 SafeX509Handle dupCertHandle = Crypto.X509UpRef(chain[i].Handle);
                 Crypto.CheckValidOpenSslHandle(dupCertHandle);
@@ -282,7 +299,7 @@ internal static partial class Interop
 
         internal static string? GetOpenSslCipherSuiteName(SafeSslHandle ssl, TlsCipherSuite cipherSuite, out bool isTls12OrLower)
         {
-            string? ret = Marshal.PtrToStringAnsi(GetOpenSslCipherSuiteName(ssl, (int)cipherSuite, out int isTls12OrLowerInt));
+            string? ret = Marshal.PtrToStringUTF8(GetOpenSslCipherSuiteName(ssl, (int)cipherSuite, out int isTls12OrLowerInt));
             isTls12OrLower = isTls12OrLowerInt != 0;
             return ret;
         }
@@ -327,7 +344,7 @@ internal static partial class Interop
 
 namespace Microsoft.Win32.SafeHandles
 {
-    internal sealed class SafeSslHandle : SafeHandle
+    internal sealed class SafeSslHandle : SafeDeleteSslContext
     {
         private SafeBioHandle? _readBio;
         private SafeBioHandle? _writeBio;
@@ -335,6 +352,7 @@ namespace Microsoft.Win32.SafeHandles
         private bool _handshakeCompleted;
 
         public GCHandle AlpnHandle;
+        public SafeSslContextHandle? SslContextHandle;
 
         public bool IsServer
         {
@@ -417,11 +435,6 @@ namespace Microsoft.Win32.SafeHandles
                 _writeBio?.Dispose();
             }
 
-            if (AlpnHandle.IsAllocated)
-            {
-                AlpnHandle.Free();
-            }
-
             base.Dispose(disposing);
         }
 
@@ -430,6 +443,16 @@ namespace Microsoft.Win32.SafeHandles
             if (_handshakeCompleted)
             {
                 Disconnect();
+            }
+
+            // drop reference to any SSL_CTX handle, any handle present here is being
+            // rented from (client) SSL_CTX cache.
+            SslContextHandle?.Dispose();
+
+            if (AlpnHandle.IsAllocated)
+            {
+                Interop.Ssl.SslSetData(handle, IntPtr.Zero);
+                AlpnHandle.Free();
             }
 
             IntPtr h = handle;

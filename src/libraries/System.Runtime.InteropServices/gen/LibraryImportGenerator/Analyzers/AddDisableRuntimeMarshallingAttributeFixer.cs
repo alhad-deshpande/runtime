@@ -1,12 +1,10 @@
 ﻿// Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Composition;
 using System.Linq;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
@@ -53,12 +51,9 @@ namespace Microsoft.Interop.Analyzers
 
         private static async Task<Solution> AddDisableRuntimeMarshallingAttributeApplicationToProject(Project project, CancellationToken cancellationToken)
         {
-            Document? assemblyInfo = project.Documents.FirstOrDefault(IsPropertiesAssemblyInfo);
-
-            if (assemblyInfo is null)
-            {
-                assemblyInfo = project.AddDocument(AssemblyInfoFileName, "", folders: new[] { PropertiesFolderName });
-            }
+            Document? assemblyInfo =
+                project.Documents.FirstOrDefault(IsPropertiesAssemblyInfo) ??
+                project.AddDocument(AssemblyInfoFileName, "", folders: new[] { PropertiesFolderName });
 
             DocumentEditor editor = await DocumentEditor.CreateAsync(assemblyInfo, cancellationToken).ConfigureAwait(false);
 

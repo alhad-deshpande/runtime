@@ -17,7 +17,7 @@ namespace System.Collections
     public class CaseInsensitiveComparer : IComparer
     {
         private readonly CompareInfo _compareInfo;
-        private static volatile CaseInsensitiveComparer? s_InvariantCaseInsensitiveComparer;
+        private static CaseInsensitiveComparer? s_InvariantCaseInsensitiveComparer;
 
         public CaseInsensitiveComparer()
         {
@@ -39,17 +39,8 @@ namespace System.Collections
             }
         }
 
-        public static CaseInsensitiveComparer DefaultInvariant
-        {
-            get
-            {
-                if (s_InvariantCaseInsensitiveComparer == null)
-                {
-                    s_InvariantCaseInsensitiveComparer = new CaseInsensitiveComparer(CultureInfo.InvariantCulture);
-                }
-                return s_InvariantCaseInsensitiveComparer;
-            }
-        }
+        public static CaseInsensitiveComparer DefaultInvariant =>
+            s_InvariantCaseInsensitiveComparer ??= new CaseInsensitiveComparer(CultureInfo.InvariantCulture);
 
         // Behaves exactly like Comparer.Default.Compare except that the comparison is case insensitive
         // Compares two Objects by calling CompareTo.

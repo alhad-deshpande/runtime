@@ -1,9 +1,9 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Globalization;
 
 namespace System.Text.RegularExpressions
 {
@@ -66,7 +66,7 @@ namespace System.Text.RegularExpressions
             }
 
             // If there's a leading substring, just use IndexOf and inherit all of its optimizations.
-            string prefix = RegexPrefixAnalyzer.FindPrefix(root);
+            string? prefix = RegexPrefixAnalyzer.FindPrefix(root);
             if (prefix.Length > 1)
             {
                 LeadingPrefix = prefix;
@@ -95,7 +95,7 @@ namespace System.Text.RegularExpressions
                 if (RegexPrefixAnalyzer.FindFirstCharClass(root) is string charClass)
                 {
                     // See if the set is limited to holding only a few characters.
-                    Span<char> scratch = stackalloc char[5]; // max optimized by IndexOfAny today
+                    Span<char> scratch = stackalloc char[5]; // max efficiently optimized by IndexOfAny today without SearchValues, which isn't used for RTL
                     int scratchCount;
                     char[]? chars = null;
                     if (!RegexCharClass.IsNegated(charClass) &&
@@ -109,15 +109,17 @@ namespace System.Text.RegularExpressions
                     {
                         // The set contains one and only one character, meaning every match starts
                         // with the same literal value (potentially case-insensitive). Search for that.
+                        Debug.Assert(!RegexCharClass.IsNegated(charClass));
                         FixedDistanceLiteral = (chars[0], null, 0);
                         FindMode = FindNextStartingPositionMode.LeadingChar_RightToLeft;
                     }
                     else
                     {
                         // The set may match multiple characters.  Search for that.
-                        FixedDistanceSets = new List<(char[]? Chars, string Set, int Distance)>()
+                        Debug.Assert(!RegexCharClass.IsNegated(charClass) || chars is null);
+                        FixedDistanceSets = new List<FixedDistanceSet>()
                         {
-                            (chars, charClass, 0)
+                            new FixedDistanceSet(chars, charClass, 0)
                         };
                         FindMode = FindNextStartingPositionMode.LeadingSet_RightToLeft;
                         _asciiLookups = new uint[1][];
@@ -126,10 +128,47 @@ namespace System.Text.RegularExpressions
                 return;
             }
 
-            // We're now left-to-right only and looking for sets.
+            // We're now left-to-right only.
+
+            prefix = RegexPrefixAnalyzer.FindPrefixOrdinalCaseInsensitive(root);
+            if (prefix is { Length: > 1 })
+            {
+                LeadingPrefix = prefix;
+                FindMode = FindNextStartingPositionMode.LeadingString_OrdinalIgnoreCase_LeftToRight;
+                return;
+            }
+
+            // We're now left-to-right only and looking for multiple prefixes and/or sets.
+
+            // If there are multiple leading strings, we can search for any of them.
+            if (!interpreter) // this works in the interpreter, but we avoid it due to additional cost during construction
+            {
+                if (RegexPrefixAnalyzer.FindPrefixes(root, ignoreCase: true) is { Length: > 1 } caseInsensitivePrefixes)
+                {
+                    LeadingPrefixes = caseInsensitivePrefixes;
+                    FindMode = FindNextStartingPositionMode.LeadingStrings_OrdinalIgnoreCase_LeftToRight;
+#if SYSTEM_TEXT_REGULAREXPRESSIONS
+                    LeadingStrings = SearchValues.Create(LeadingPrefixes, StringComparison.OrdinalIgnoreCase);
+#endif
+                    return;
+                }
+
+                // TODO: While some benchmarks benefit from this significantly, others regressed a bit (in particular those with few
+                //       matches). Before enabling this, we need to investigate the performance impact on real-world scenarios,
+                //       and see if there are ways to reduce the impact.
+                //if (RegexPrefixAnalyzer.FindPrefixes(root, ignoreCase: false) is { Length: > 1 } caseSensitivePrefixes)
+                //{
+                //    LeadingPrefixes = caseSensitivePrefixes;
+                //    FindMode = FindNextStartingPositionMode.LeadingStrings_LeftToRight;
+#if SYSTEM_TEXT_REGULAREXPRESSIONS
+                //    LeadingStrings = SearchValues.Create(LeadingPrefixes, StringComparison.Ordinal);
+#endif
+                //    return;
+                //}
+            }
 
             // Build up a list of all of the sets that are a fixed distance from the start of the expression.
-            List<(char[]? Chars, string Set, int Distance)>? fixedDistanceSets = RegexPrefixAnalyzer.FindFixedDistanceSets(root, thorough: !interpreter);
+            List<FixedDistanceSet>? fixedDistanceSets = RegexPrefixAnalyzer.FindFixedDistanceSets(root, thorough: !interpreter);
             Debug.Assert(fixedDistanceSets is null || fixedDistanceSets.Count != 0);
 
             // See if we can make a string of at least two characters long out of those sets.  We should have already caught
@@ -144,22 +183,32 @@ namespace System.Text.RegularExpressions
 
             // As a backup, see if we can find a literal after a leading atomic loop.  That might be better than whatever sets we find, so
             // we want to know whether we have one in our pocket before deciding whether to use a leading set (we'll prefer a leading
-            // set if it's something for which we can vectorize a search).
-            (RegexNode LoopNode, (char Char, string? String, char[]? Chars) Literal)? literalAfterLoop = RegexPrefixAnalyzer.FindLiteralFollowingLeadingLoop(root);
+            // set if it's something for which we can search efficiently).
+            (RegexNode LoopNode, (char Char, string? String, StringComparison StringComparison, char[]? Chars) Literal)? literalAfterLoop = RegexPrefixAnalyzer.FindLiteralFollowingLeadingLoop(root);
 
-            // If we got such sets, we'll likely use them.  However, if the best of them is something that doesn't support a vectorized
-            // search and we did successfully find a literal after an atomic loop we could search instead, we prefer the vectorizable search.
+            // If we got such sets, we'll likely use them.  However, if the best of them is something that doesn't support an efficient
+            // search and we did successfully find a literal after an atomic loop we could search instead, we prefer the efficient search.
+            // For example, if we have a negated set, we will still prefer the literal-after-an-atomic-loop because negated sets typically
+            // contain _many_ characters (e.g. [^a] is everything but 'a') and are thus more likely to very quickly match, which means any
+            // vectorization employed is less likely to kick in and be worth the startup overhead.
             if (fixedDistanceSets is not null)
             {
+                // Sort the sets by "quality", such that whatever set is first is the one deemed most efficient to use.
+                // In some searches, we may use multiple sets, so we want the subsequent ones to also be the efficiency runners-up.
                 RegexPrefixAnalyzer.SortFixedDistanceSetsByQuality(fixedDistanceSets);
-                if (fixedDistanceSets[0].Chars is not null || literalAfterLoop is null)
+
+                // If there is no literal after the loop, use whatever set we got.
+                // If there is a literal after the loop, consider it to be better than a negated set and better than a set with many characters.
+                if (literalAfterLoop is null ||
+                    (fixedDistanceSets[0].Chars is not null && !fixedDistanceSets[0].Negated))
                 {
                     // Determine whether to do searching based on one or more sets or on a single literal. Compiled engines
                     // don't need to special-case literals as they already do codegen to create the optimal lookup based on
                     // the set's characteristics.
                     if (!compiled &&
                         fixedDistanceSets.Count == 1 &&
-                        fixedDistanceSets[0].Chars is { Length: 1 })
+                        fixedDistanceSets[0].Chars is { Length: 1 } &&
+                        !fixedDistanceSets[0].Negated)
                     {
                         FixedDistanceLiteral = (fixedDistanceSets[0].Chars![0], null, fixedDistanceSets[0].Distance);
                         FindMode = FindNextStartingPositionMode.FixedDistanceChar_LeftToRight;
@@ -176,8 +225,9 @@ namespace System.Text.RegularExpressions
 
                         // Store the sets, and compute which mode to use.
                         FixedDistanceSets = fixedDistanceSets;
-                        FindMode = (fixedDistanceSets.Count == 1 && fixedDistanceSets[0].Distance == 0) ? FindNextStartingPositionMode.LeadingSet_LeftToRight
-                            : FindNextStartingPositionMode.FixedDistanceSets_LeftToRight;
+                        FindMode = (fixedDistanceSets.Count == 1 && fixedDistanceSets[0].Distance == 0) ?
+                            FindNextStartingPositionMode.LeadingSet_LeftToRight :
+                            FindNextStartingPositionMode.FixedDistanceSets_LeftToRight;
                         _asciiLookups = new uint[fixedDistanceSets.Count][];
                     }
                     return;
@@ -194,12 +244,12 @@ namespace System.Text.RegularExpressions
             }
         }
 
-        /// <summary>true iff <see cref="TryFindNextStartingPosition"/> might advance the position.</summary>
+        /// <summary>true iff <see cref="TryFindNextStartingPositionLeftToRight"/> might advance the position.</summary>
         public bool IsUseful =>
             FindMode != FindNextStartingPositionMode.NoSearch || // there's a searching scheme available
             LeadingAnchor == RegexNodeKind.Bol; // there's a leading BOL anchor we can otherwise search for
 
-        /// <summary>Gets the selected mode for performing the next <see cref="TryFindNextStartingPosition"/> operation</summary>
+        /// <summary>Gets the selected mode for performing the next <see cref="TryFindNextStartingPositionLeftToRight"/> or <see cref="TryFindNextStartingPositionRightToLeft"/> operation</summary>
         public FindNextStartingPositionMode FindMode { get; } = FindNextStartingPositionMode.NoSearch;
 
         /// <summary>Gets the leading anchor (e.g. RegexNodeKind.Bol) if one exists and was computed.</summary>
@@ -222,18 +272,41 @@ namespace System.Text.RegularExpressions
         /// <summary>Gets the leading prefix.  May be an empty string.</summary>
         public string LeadingPrefix { get; } = string.Empty;
 
+        /// <summary>Gets the leading prefixes.  May be an empty array.</summary>
+        public string[] LeadingPrefixes { get; } = Array.Empty<string>();
+
         /// <summary>When in fixed distance literal mode, gets the literal and how far it is from the start of the pattern.</summary>
         public (char Char, string? String, int Distance) FixedDistanceLiteral { get; }
 
         /// <summary>When in fixed distance set mode, gets the set and how far it is from the start of the pattern.</summary>
         /// <remarks>The case-insensitivity of the 0th entry will always match the mode selected, but subsequent entries may not.</remarks>
-        public List<(char[]? Chars, string Set, int Distance)>? FixedDistanceSets { get; }
+        public List<FixedDistanceSet>? FixedDistanceSets { get; }
+
+#if SYSTEM_TEXT_REGULAREXPRESSIONS
+        /// <summary>When in leading strings mode, gets the search values to use for searching the input.</summary>
+        public SearchValues<string>? LeadingStrings { get; }
+#endif
+
+        /// <summary>Data about a character class at a fixed offset from the start of any match to a pattern.</summary>
+        public struct FixedDistanceSet(char[]? chars, string set, int distance)
+        {
+            /// <summary>The character class description.</summary>
+            public string Set = set;
+            /// <summary>Whether the <see cref="Set"/> is negated.</summary>
+            public bool Negated;
+            /// <summary>Small list of all of the characters that make up the set, if known; otherwise, null.</summary>
+            public char[]? Chars = chars;
+            /// <summary>The distance of the set from the beginning of the match.</summary>
+            public int Distance = distance;
+            /// <summary>As an alternative to <see cref="Chars"/>, a description of the single range the set represents, if it does.</summary>
+            public (char LowInclusive, char HighInclusive)? Range;
+        }
 
         /// <summary>When in literal after set loop node, gets the literal to search for and the RegexNode representing the leading loop.</summary>
-        public (RegexNode LoopNode, (char Char, string? String, char[]? Chars) Literal)? LiteralAfterLoop { get; }
+        public (RegexNode LoopNode, (char Char, string? String, StringComparison StringComparison, char[]? Chars) Literal)? LiteralAfterLoop { get; }
 
         /// <summary>Analyzes a list of fixed-distance sets to extract a case-sensitive string at a fixed distance.</summary>
-        private static (string String, int Distance)? FindFixedDistanceString(List<(char[]? Chars, string Set, int Distance)> fixedDistanceSets)
+        private static (string String, int Distance)? FindFixedDistanceString(List<FixedDistanceSet> fixedDistanceSets)
         {
             (string String, int Distance)? best = null;
 
@@ -251,7 +324,7 @@ namespace System.Text.RegularExpressions
                 for (int i = 0; i < fixedDistanceSets.Count + 1; i++)
                 {
                     char[]? chars = i < fixedDistanceSets.Count ? fixedDistanceSets[i].Chars : null;
-                    bool invalidChars = chars is not { Length: 1 };
+                    bool invalidChars = chars is not { Length: 1 } || fixedDistanceSets[i].Negated;
 
                     // If the current set ends a sequence (or we've walked off the end), see whether
                     // what we've gathered constitues a valid string, and if it's better than the
@@ -288,101 +361,27 @@ namespace System.Text.RegularExpressions
             return best;
         }
 
+#if SYSTEM_TEXT_REGULAREXPRESSIONS
         /// <summary>Try to advance to the next starting position that might be a location for a match.</summary>
         /// <param name="textSpan">The text to search.</param>
         /// <param name="pos">The position in <paramref name="textSpan"/>.  This is updated with the found position.</param>
         /// <param name="start">The index in <paramref name="textSpan"/> to consider the start for start anchor purposes.</param>
         /// <returns>true if a position to attempt a match was found; false if none was found.</returns>
-        public bool TryFindNextStartingPosition(ReadOnlySpan<char> textSpan, ref int pos, int start)
+        public bool TryFindNextStartingPositionRightToLeft(ReadOnlySpan<char> textSpan, ref int pos, int start)
         {
             // Return early if we know there's not enough input left to match.
-            if (!_rightToLeft)
+            if (pos < MinRequiredLength)
             {
-                if (pos > textSpan.Length - MinRequiredLength)
-                {
-                    pos = textSpan.Length;
-                    return false;
-                }
-            }
-            else
-            {
-                if (pos < MinRequiredLength)
-                {
-                    pos = 0;
-                    return false;
-                }
+                pos = 0;
+                return false;
             }
 
-            // Optimize the handling of a Beginning-Of-Line (BOL) anchor (only for left-to-right).  BOL is special, in that unlike
-            // other anchors like Beginning, there are potentially multiple places a BOL can match.  So unlike
-            // the other anchors, which all skip all subsequent processing if found, with BOL we just use it
-            // to boost our position to the next line, and then continue normally with any searches.
-            if (LeadingAnchor == RegexNodeKind.Bol)
-            {
-                // If we're not currently positioned at the beginning of a line (either
-                // the beginning of the string or just after a line feed), find the next
-                // newline and position just after it.
-                Debug.Assert(!_rightToLeft);
-                int posm1 = pos - 1;
-                if ((uint)posm1 < (uint)textSpan.Length && textSpan[posm1] != '\n')
-                {
-                    int newline = textSpan.Slice(pos).IndexOf('\n');
-                    if ((uint)newline > textSpan.Length - 1 - pos)
-                    {
-                        pos = textSpan.Length;
-                        return false;
-                    }
-
-                    // We've updated the position.  Make sure there's still enough room in the input for a possible match.
-                    pos = newline + 1 + pos;
-                    if (pos > textSpan.Length - MinRequiredLength)
-                    {
-                        pos = textSpan.Length;
-                        return false;
-                    }
-                }
-            }
+            Debug.Assert(LeadingAnchor != RegexNodeKind.Bol, "BOL isn't enabled for RTL");
 
             switch (FindMode)
             {
                 // There's an anchor.  For some, we can simply compare against the current position.
                 // For others, we can jump to the relevant location.
-
-                case FindNextStartingPositionMode.LeadingAnchor_LeftToRight_Beginning:
-                    if (pos != 0)
-                    {
-                        // If we're not currently at the beginning, we'll never be, so fail immediately.
-                        pos = textSpan.Length;
-                        return false;
-                    }
-                    return true;
-
-                case FindNextStartingPositionMode.LeadingAnchor_LeftToRight_Start:
-                    if (pos != start)
-                    {
-                        // If we're not currently at the start, we'll never be, so fail immediately.
-                        pos = textSpan.Length;
-                        return false;
-                    }
-                    return true;
-
-                case FindNextStartingPositionMode.LeadingAnchor_LeftToRight_EndZ:
-                    if (pos < textSpan.Length - 1)
-                    {
-                        // If we're not currently at the end (or a newline just before it), skip ahead
-                        // since nothing until then can possibly match.
-                        pos = textSpan.Length - 1;
-                    }
-                    return true;
-
-                case FindNextStartingPositionMode.LeadingAnchor_LeftToRight_End:
-                    if (pos < textSpan.Length)
-                    {
-                        // If we're not currently at the end (or a newline just before it), skip ahead
-                        // since nothing until then can possibly match.
-                        pos = textSpan.Length;
-                    }
-                    return true;
 
                 case FindNextStartingPositionMode.LeadingAnchor_RightToLeft_Beginning:
                     if (pos != 0)
@@ -426,34 +425,7 @@ namespace System.Text.RegularExpressions
                     }
                     return true;
 
-                case FindNextStartingPositionMode.TrailingAnchor_FixedLength_LeftToRight_EndZ:
-                    if (pos < textSpan.Length - MinRequiredLength - 1)
-                    {
-                        pos = textSpan.Length - MinRequiredLength - 1;
-                    }
-                    return true;
-
-                case FindNextStartingPositionMode.TrailingAnchor_FixedLength_LeftToRight_End:
-                    if (pos < textSpan.Length - MinRequiredLength)
-                    {
-                        pos = textSpan.Length - MinRequiredLength;
-                    }
-                    return true;
-
                 // There's a case-sensitive prefix.  Search for it with ordinal IndexOf.
-
-                case FindNextStartingPositionMode.LeadingString_LeftToRight:
-                    {
-                        int i = textSpan.Slice(pos).IndexOf(LeadingPrefix.AsSpan());
-                        if (i >= 0)
-                        {
-                            pos += i;
-                            return true;
-                        }
-
-                        pos = textSpan.Length;
-                        return false;
-                    }
 
                 case FindNextStartingPositionMode.LeadingString_RightToLeft:
                     {
@@ -485,37 +457,6 @@ namespace System.Text.RegularExpressions
 
                 // There's a set at the beginning of the pattern.  Search for it.
 
-                case FindNextStartingPositionMode.LeadingSet_LeftToRight:
-                    {
-                        (char[]? chars, string set, _) = FixedDistanceSets![0];
-
-                        ReadOnlySpan<char> span = textSpan.Slice(pos);
-                        if (chars is not null)
-                        {
-                            int i = span.IndexOfAny(chars);
-                            if (i >= 0)
-                            {
-                                pos += i;
-                                return true;
-                            }
-                        }
-                        else
-                        {
-                            ref uint[]? startingAsciiLookup = ref _asciiLookups![0];
-                            for (int i = 0; i < span.Length; i++)
-                            {
-                                if (RegexCharClass.CharInClass(span[i], set, ref startingAsciiLookup))
-                                {
-                                    pos += i;
-                                    return true;
-                                }
-                            }
-                        }
-
-                        pos = textSpan.Length;
-                        return false;
-                    }
-
                 case FindNextStartingPositionMode.LeadingSet_RightToLeft:
                     {
                         ref uint[]? startingAsciiLookup = ref _asciiLookups![0];
@@ -532,6 +473,186 @@ namespace System.Text.RegularExpressions
                         }
 
                         pos = 0;
+                        return false;
+                    }
+
+                // Nothing special to look for.  Just return true indicating this is a valid position to try to match.
+
+                default:
+                    Debug.Assert(FindMode == FindNextStartingPositionMode.NoSearch);
+                    return true;
+            }
+        }
+
+        /// <summary>Try to advance to the next starting position that might be a location for a match.</summary>
+        /// <param name="textSpan">The text to search.</param>
+        /// <param name="pos">The position in <paramref name="textSpan"/>.  This is updated with the found position.</param>
+        /// <param name="start">The index in <paramref name="textSpan"/> to consider the start for start anchor purposes.</param>
+        /// <returns>true if a position to attempt a match was found; false if none was found.</returns>
+        public bool TryFindNextStartingPositionLeftToRight(ReadOnlySpan<char> textSpan, ref int pos, int start)
+        {
+            // Return early if we know there's not enough input left to match.
+            if (pos > textSpan.Length - MinRequiredLength)
+            {
+                pos = textSpan.Length;
+                return false;
+            }
+
+            // Optimize the handling of a Beginning-Of-Line (BOL) anchor.  BOL is special, in that unlike
+            // other anchors like Beginning, there are potentially multiple places a BOL can match.  So unlike
+            // the other anchors, which all skip all subsequent processing if found, with BOL we just use it
+            // to boost our position to the next line, and then continue normally with any searches.
+            if (LeadingAnchor == RegexNodeKind.Bol)
+            {
+                // If we're not currently positioned at the beginning of a line (either
+                // the beginning of the string or just after a line feed), find the next
+                // newline and position just after it.
+                int posm1 = pos - 1;
+                if ((uint)posm1 < (uint)textSpan.Length && textSpan[posm1] != '\n')
+                {
+                    int newline = textSpan.Slice(pos).IndexOf('\n');
+                    if ((uint)newline > textSpan.Length - 1 - pos)
+                    {
+                        pos = textSpan.Length;
+                        return false;
+                    }
+
+                    // We've updated the position.  Make sure there's still enough room in the input for a possible match.
+                    pos = newline + 1 + pos;
+                    if (pos > textSpan.Length - MinRequiredLength)
+                    {
+                        pos = textSpan.Length;
+                        return false;
+                    }
+                }
+            }
+
+            switch (FindMode)
+            {
+                // There's an anchor.  For some, we can simply compare against the current position.
+                // For others, we can jump to the relevant location.
+
+                case FindNextStartingPositionMode.LeadingAnchor_LeftToRight_Beginning:
+                    // If we're not currently at the beginning, we'll never be, so fail immediately.
+                    if (pos == 0)
+                    {
+                        return true;
+                    }
+                    pos = textSpan.Length;
+                    return false;
+
+                case FindNextStartingPositionMode.LeadingAnchor_LeftToRight_Start:
+                    // If we're not currently at the start, we'll never be, so fail immediately.
+                    if (pos == start)
+                    {
+                        return true;
+                    }
+                    pos = textSpan.Length;
+                    return false;
+
+                case FindNextStartingPositionMode.LeadingAnchor_LeftToRight_EndZ:
+                    if (pos < textSpan.Length - 1)
+                    {
+                        // If we're not currently at the end (or a newline just before it), skip ahead
+                        // since nothing until then can possibly match.
+                        pos = textSpan.Length - 1;
+                    }
+                    return true;
+
+                case FindNextStartingPositionMode.LeadingAnchor_LeftToRight_End:
+                    if (pos < textSpan.Length)
+                    {
+                        // If we're not currently at the end (or a newline just before it), skip ahead
+                        // since nothing until then can possibly match.
+                        pos = textSpan.Length;
+                    }
+                    return true;
+
+                case FindNextStartingPositionMode.TrailingAnchor_FixedLength_LeftToRight_EndZ:
+                    if (pos < textSpan.Length - MinRequiredLength - 1)
+                    {
+                        pos = textSpan.Length - MinRequiredLength - 1;
+                    }
+                    return true;
+
+                case FindNextStartingPositionMode.TrailingAnchor_FixedLength_LeftToRight_End:
+                    if (pos < textSpan.Length - MinRequiredLength)
+                    {
+                        pos = textSpan.Length - MinRequiredLength;
+                    }
+                    return true;
+
+                // There's a case-sensitive prefix.  Search for it with ordinal IndexOf.
+
+                case FindNextStartingPositionMode.LeadingString_LeftToRight:
+                    {
+                        int i = textSpan.Slice(pos).IndexOf(LeadingPrefix.AsSpan());
+                        if (i >= 0)
+                        {
+                            pos += i;
+                            return true;
+                        }
+
+                        pos = textSpan.Length;
+                        return false;
+                    }
+
+                // There's a case-insensitive prefix.  Search for it with ordinal case-insensitive IndexOf.
+
+                case FindNextStartingPositionMode.LeadingString_OrdinalIgnoreCase_LeftToRight:
+                    {
+                        int i = textSpan.Slice(pos).IndexOf(LeadingPrefix.AsSpan(), StringComparison.OrdinalIgnoreCase);
+                        if (i >= 0)
+                        {
+                            pos += i;
+                            return true;
+                        }
+
+                        pos = textSpan.Length;
+                        return false;
+                    }
+
+                // There's a set at the beginning of the pattern.  Search for it.
+
+                case FindNextStartingPositionMode.LeadingSet_LeftToRight:
+                    {
+                        FixedDistanceSet primarySet = FixedDistanceSets![0];
+
+                        ReadOnlySpan<char> span = textSpan.Slice(pos);
+                        char[]? chars = primarySet.Chars;
+                        if (chars is { Length: <= 5 }) // 5 == currently the max length efficiently handled by IndexOfAny{Except} without SearchValues
+                        {
+                            int i = primarySet.Negated ? span.IndexOfAnyExcept(chars) : span.IndexOfAny(chars);
+                            if (i >= 0)
+                            {
+                                pos += i;
+                                return true;
+                            }
+                        }
+                        else if (primarySet.Range is not null)
+                        {
+                            (char low, char high) = primarySet.Range.GetValueOrDefault();
+                            int i = primarySet.Negated ? span.IndexOfAnyExceptInRange(low, high) : span.IndexOfAnyInRange(low, high);
+                            if (i >= 0)
+                            {
+                                pos += i;
+                                return true;
+                            }
+                        }
+                        else
+                        {
+                            ref uint[]? startingAsciiLookup = ref _asciiLookups![0];
+                            for (int i = 0; i < span.Length; i++)
+                            {
+                                if (RegexCharClass.CharInClass(span[i], primarySet.Set, ref startingAsciiLookup))
+                                {
+                                    pos += i;
+                                    return true;
+                                }
+                            }
+                        }
+
+                        pos = textSpan.Length;
                         return false;
                     }
 
@@ -567,20 +688,39 @@ namespace System.Text.RegularExpressions
                         return false;
                     }
 
+                // There are multiple possible strings at the beginning. Search for one.
+                case FindNextStartingPositionMode.LeadingStrings_LeftToRight:
+                case FindNextStartingPositionMode.LeadingStrings_OrdinalIgnoreCase_LeftToRight:
+                {
+                    Debug.Assert(LeadingStrings is not null);
+
+                    int i = textSpan.Slice(pos).IndexOfAny(LeadingStrings);
+                    if (i >= 0)
+                    {
+                        pos += i;
+                        return true;
+                    }
+
+                    pos = textSpan.Length;
+                    return false;
+                }
+
                 // There are one or more sets at fixed offsets from the start of the pattern.
 
                 case FindNextStartingPositionMode.FixedDistanceSets_LeftToRight:
                     {
-                        List<(char[]? Chars, string Set, int Distance)> sets = FixedDistanceSets!;
-                        (char[]? primaryChars, string primarySet, int primaryDistance) = sets[0];
+                        List<FixedDistanceSet> sets = FixedDistanceSets!;
+                        FixedDistanceSet primarySet = sets[0];
+
                         int endMinusRequiredLength = textSpan.Length - Math.Max(1, MinRequiredLength);
 
-                        if (primaryChars is not null)
+                        if (primarySet.Chars is { Length: <= 5 }) // 5 == currently the max length efficiently handled by IndexOfAny{Except}
                         {
                             for (int inputPosition = pos; inputPosition <= endMinusRequiredLength; inputPosition++)
                             {
-                                int offset = inputPosition + primaryDistance;
-                                int index = textSpan.Slice(offset).IndexOfAny(primaryChars);
+                                int offset = inputPosition + primarySet.Distance;
+                                ReadOnlySpan<char> textSpanAtOffset = textSpan.Slice(offset);
+                                int index = primarySet.Negated ? textSpanAtOffset.IndexOfAnyExcept(primarySet.Chars) : textSpanAtOffset.IndexOfAny(primarySet.Chars);
                                 if (index < 0)
                                 {
                                     break;
@@ -588,7 +728,7 @@ namespace System.Text.RegularExpressions
 
                                 index += offset; // The index here will be offset indexed due to the use of span, so we add offset to get
                                                  // real position on the string.
-                                inputPosition = index - primaryDistance;
+                                inputPosition = index - primarySet.Distance;
                                 if (inputPosition > endMinusRequiredLength)
                                 {
                                     break;
@@ -596,9 +736,9 @@ namespace System.Text.RegularExpressions
 
                                 for (int i = 1; i < sets.Count; i++)
                                 {
-                                    (_, string nextSet, int nextDistance) = sets[i];
-                                    char c = textSpan[inputPosition + nextDistance];
-                                    if (!RegexCharClass.CharInClass(c, nextSet, ref _asciiLookups![i]))
+                                    FixedDistanceSet nextSet = sets[i];
+                                    char c = textSpan[inputPosition + nextSet.Distance];
+                                    if (!RegexCharClass.CharInClass(c, nextSet.Set, ref _asciiLookups![i]))
                                     {
                                         goto Bumpalong;
                                     }
@@ -616,17 +756,17 @@ namespace System.Text.RegularExpressions
 
                             for (int inputPosition = pos; inputPosition <= endMinusRequiredLength; inputPosition++)
                             {
-                                char c = textSpan[inputPosition + primaryDistance];
-                                if (!RegexCharClass.CharInClass(c, primarySet, ref startingAsciiLookup))
+                                char c = textSpan[inputPosition + primarySet.Distance];
+                                if (!RegexCharClass.CharInClass(c, primarySet.Set, ref startingAsciiLookup))
                                 {
                                     goto Bumpalong;
                                 }
 
                                 for (int i = 1; i < sets.Count; i++)
                                 {
-                                    (_, string nextSet, int nextDistance) = sets[i];
-                                    c = textSpan[inputPosition + nextDistance];
-                                    if (!RegexCharClass.CharInClass(c, nextSet, ref _asciiLookups![i]))
+                                    FixedDistanceSet nextSet = sets[i];
+                                    c = textSpan[inputPosition + nextSet.Distance];
+                                    if (!RegexCharClass.CharInClass(c, nextSet.Set, ref _asciiLookups![i]))
                                     {
                                         goto Bumpalong;
                                     }
@@ -647,7 +787,7 @@ namespace System.Text.RegularExpressions
                 case FindNextStartingPositionMode.LiteralAfterLoop_LeftToRight:
                     {
                         Debug.Assert(LiteralAfterLoop is not null);
-                        (RegexNode loopNode, (char Char, string? String, char[]? Chars) literal) = LiteralAfterLoop.GetValueOrDefault();
+                        (RegexNode loopNode, (char Char, string? String, StringComparison StringComparison, char[]? Chars) literal) = LiteralAfterLoop.GetValueOrDefault();
 
                         Debug.Assert(loopNode.Kind is RegexNodeKind.Setloop or RegexNodeKind.Setlazy or RegexNodeKind.Setloopatomic);
                         Debug.Assert(loopNode.N == int.MaxValue);
@@ -658,7 +798,7 @@ namespace System.Text.RegularExpressions
                             ReadOnlySpan<char> slice = textSpan.Slice(startingPos);
 
                             // Find the literal.  If we can't find it, we're done searching.
-                            int i = literal.String is not null ? slice.IndexOf(literal.String.AsSpan()) :
+                            int i = literal.String is not null ? slice.IndexOf(literal.String.AsSpan(), literal.StringComparison) :
                                     literal.Chars is not null ? slice.IndexOfAny(literal.Chars.AsSpan()) :
                                     slice.IndexOf(literal.Char);
                             if (i < 0)
@@ -692,10 +832,11 @@ namespace System.Text.RegularExpressions
                 // Nothing special to look for.  Just return true indicating this is a valid position to try to match.
 
                 default:
-                    Debug.Assert(FindMode == FindNextStartingPositionMode.NoSearch);
+                    Debug.Assert(FindMode == FindNextStartingPositionMode.NoSearch, $"Unexpected FindMode {FindMode}");
                     return true;
             }
         }
+#endif
     }
 
     /// <summary>Mode to use for searching for the next location of a possible match.</summary>
@@ -728,6 +869,13 @@ namespace System.Text.RegularExpressions
         LeadingString_LeftToRight,
         /// <summary>A multi-character substring at the beginning of the right-to-left pattern.</summary>
         LeadingString_RightToLeft,
+        /// <summary>A multi-character ordinal case-insensitive substring at the beginning of the pattern.</summary>
+        LeadingString_OrdinalIgnoreCase_LeftToRight,
+
+        /// <summary>Multiple leading prefix strings</summary>
+        LeadingStrings_LeftToRight,
+        /// <summary>Multiple leading ordinal case-insensitive prefix strings</summary>
+        LeadingStrings_OrdinalIgnoreCase_LeftToRight,
 
         /// <summary>A set starting the pattern.</summary>
         LeadingSet_LeftToRight,

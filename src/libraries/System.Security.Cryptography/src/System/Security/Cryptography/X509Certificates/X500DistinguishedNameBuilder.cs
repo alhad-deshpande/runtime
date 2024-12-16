@@ -97,9 +97,7 @@ namespace System.Security.Cryptography.X509Certificates
         {
             ArgumentNullException.ThrowIfNull(oid);
             ArgumentNullException.ThrowIfNull(value);
-
-            if (string.IsNullOrEmpty(oid.Value))
-                throw new ArgumentException(SR.Format(SR.Arg_EmptyOrNullString_Named, "oid.Value"), nameof(oid));
+            ArgumentException.ThrowIfNullOrEmpty(oid.Value);
 
             UniversalTagNumber tag = GetAndValidateTagNumber(stringEncodingType);
             EncodeComponent(oid.Value, value, tag);
@@ -124,7 +122,7 @@ namespace System.Security.Cryptography.X509Certificates
             // emailAddress ATTRIBUTE ::= {
             //   WITH SYNTAX IA5String (SIZE(1..pkcs-9-ub-emailAddress))
             //   EQUALITY MATCHING RULE pkcs9CaseIgnoreMatch
-            //   ID pkcs-9-at-emailAdress
+            //   ID pkcs-9-at-emailAddress
             // }
             // pkcs-9-ub-pkcs9String  INTEGER ::= 255
             // pkcs-9-ub-emailAddress INTEGER ::= pkcs-9-ub-pkcs9String
@@ -352,18 +350,14 @@ namespace System.Security.Cryptography.X509Certificates
                 }
             }
 
-            byte[] rented = CryptoPool.Rent(_writer.GetEncodedLength());
-            int encoded = _writer.Encode(rented);
-            X500DistinguishedName name = new X500DistinguishedName(rented.AsSpan(0, encoded));
-            CryptoPool.Return(rented, clearSize: 0); // Distinguished Names do not contain sensitive information.
-            return name;
+            return _writer.Encode(static encoded => new X500DistinguishedName(encoded));
         }
 
         private void EncodeComponent(
             string oid,
             ReadOnlySpan<char> value,
             UniversalTagNumber stringEncodingType,
-            [CallerArgumentExpression("value")] string? paramName = null)
+            [CallerArgumentExpression(nameof(value))] string? paramName = null)
         {
             _writer.Reset();
 

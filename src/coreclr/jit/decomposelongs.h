@@ -18,7 +18,8 @@ XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 class DecomposeLongs
 {
 public:
-    DecomposeLongs(Compiler* compiler) : m_compiler(compiler)
+    DecomposeLongs(Compiler* compiler)
+        : m_compiler(compiler)
     {
     }
 
@@ -34,6 +35,7 @@ private:
     }
 
     void PromoteLongVars();
+    void TryPromoteLongVar(unsigned lclNum);
 
     // Driver functions
     void     DecomposeRangeHelper();
@@ -57,6 +59,7 @@ private:
     GenTree* DecomposeRotate(LIR::Use& use);
     GenTree* DecomposeMul(LIR::Use& use);
     GenTree* DecomposeUMod(LIR::Use& use);
+    GenTree* DecomposeSelect(LIR::Use& use);
 
 #ifdef FEATURE_HW_INTRINSICS
     GenTree* DecomposeHWIntrinsic(LIR::Use& use);
@@ -70,7 +73,7 @@ private:
     GenTree* RepresentOpAsLocalVar(GenTree* op, GenTree* user, GenTree** edge);
     GenTree* EnsureIntSized(GenTree* node, bool signExtend);
 
-    GenTree* StoreNodeToVar(LIR::Use& use);
+    GenTree*          StoreNodeToVar(LIR::Use& use);
     static genTreeOps GetHiOper(genTreeOps oper);
     static genTreeOps GetLoOper(genTreeOps oper);
 

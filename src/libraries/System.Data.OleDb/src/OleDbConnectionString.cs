@@ -6,8 +6,8 @@ using System.Data.Common;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
-using System.Text;
 using System.Runtime.Versioning;
+using System.Text;
 
 namespace System.Data.OleDb
 {
@@ -51,7 +51,7 @@ namespace System.Data.OleDb
             internal static int _PoolSize;
 
             internal static volatile Dictionary<string, string>? _Pool;
-            internal static object _PoolLock = new object();
+            internal static readonly object _PoolLock = new object();
         }
 
         private static class VALUES
@@ -189,14 +189,14 @@ namespace System.Data.OleDb
             return sqlSupport;
         }
 
-        internal bool GetSupportIRow(OleDbConnection connection, OleDbCommand command)
+        internal bool GetSupportIRow(OleDbCommand command)
         {
             bool supportIRow = _supportIRow;
             if (!_hasSupportIRow)
             {
                 object? value = command.GetPropertyValue(OleDbPropertySetGuid.Rowset, ODB.DBPROP_IRow);
 
-                // SQLOLEDB always returns VARIANT_FALSE for DBPROP_IROW, so base the answer on existance
+                // SQLOLEDB always returns VARIANT_FALSE for DBPROP_IROW, so base the answer on existence
                 supportIRow = !(value is OleDbPropertyStatus);
                 _supportIRow = supportIRow;
                 _hasSupportIRow = true;

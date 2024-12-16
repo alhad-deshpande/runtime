@@ -31,10 +31,10 @@ struct MachState
     MachState()
     {
         LIMITED_METHOD_DAC_CONTRACT;
-        INDEBUG(memset(this, 0xCC, sizeof(MachState));)
+        INDEBUG(memset((void*)this, 0xCC, sizeof(MachState));)
     }
 
-    bool   isValid()    { LIMITED_METHOD_DAC_CONTRACT; _ASSERTE(dac_cast<TADDR>(_pRetAddr) != INVALID_POINTER_CC); return(_pRetAddr != 0); }
+    bool   isValid()    { LIMITED_METHOD_DAC_CONTRACT; _ASSERTE(dac_cast<TADDR>(_pRetAddr) != INVALID_POINTER_CC); return(_pRetAddr != nullptr); }
     TADDR* pRetAddr()   { LIMITED_METHOD_DAC_CONTRACT; _ASSERTE(isValid()); return(_pRetAddr); }
     TADDR  GetRetAddr() { LIMITED_METHOD_DAC_CONTRACT; _ASSERTE(isValid()); return *_pRetAddr; }
 #ifndef DACCESS_COMPILE
@@ -101,8 +101,7 @@ struct LazyMachState : public MachState
     static void unwindLazyState(LazyMachState* baseState,
                                 MachState* lazyState,
                                 DWORD threadId,
-                                int funCallDepth = 1,
-                                HostCallPreference hostCallPreference = AllowHostCalls);
+                                int funCallDepth = 1);
 
     friend class HelperMethodFrame;
     friend class CheckAsmOffsets;

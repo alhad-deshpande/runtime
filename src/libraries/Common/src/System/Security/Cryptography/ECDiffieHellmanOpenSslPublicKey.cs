@@ -1,13 +1,14 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Win32.SafeHandles;
 
 namespace System.Security.Cryptography
 {
     internal sealed class ECDiffieHellmanOpenSslPublicKey : ECDiffieHellmanPublicKey
     {
-        private ECOpenSsl _key;
+        private ECOpenSsl? _key;
 
         internal ECDiffieHellmanOpenSslPublicKey(SafeEvpPKeyHandle pkeyHandle)
         {
@@ -21,8 +22,9 @@ namespace System.Security.Cryptography
 
             if (key.IsInvalid)
             {
+                Exception e = Interop.Crypto.CreateOpenSslCryptographicException();
                 key.Dispose();
-                throw Interop.Crypto.CreateOpenSslCryptographicException();
+                throw e;
             }
 
             _key = new ECOpenSsl(key);
@@ -69,7 +71,7 @@ namespace System.Security.Cryptography
             if (disposing)
             {
                 _key?.Dispose();
-                _key = null!;
+                _key = null;
             }
 
             base.Dispose(disposing);
@@ -78,33 +80,13 @@ namespace System.Security.Cryptography
         internal SafeEvpPKeyHandle DuplicateKeyHandle()
         {
             SafeEcKeyHandle currentKey = GetKey();
-            SafeEvpPKeyHandle pkeyHandle = Interop.Crypto.EvpPkeyCreate();
-
-            try
-            {
-                // Wrapping our key in an EVP_PKEY will up_ref our key.
-                // When the EVP_PKEY is Disposed it will down_ref the key.
-                // So everything should be copacetic.
-                if (!Interop.Crypto.EvpPkeySetEcKey(pkeyHandle, currentKey))
-                {
-                    throw Interop.Crypto.CreateOpenSslCryptographicException();
-                }
-
-                return pkeyHandle;
-            }
-            catch
-            {
-                pkeyHandle.Dispose();
-                throw;
-            }
+            return Interop.Crypto.CreateEvpPkeyFromEcKey(currentKey);
         }
 
+        [MemberNotNull(nameof(_key))]
         private void ThrowIfDisposed()
         {
-            if (_key == null)
-            {
-                throw new ObjectDisposedException(nameof(ECDiffieHellmanOpenSslPublicKey));
-            }
+            ObjectDisposedException.ThrowIf(_key is null, this);
         }
 
         private SafeEcKeyHandle GetKey()

@@ -55,7 +55,7 @@ namespace System.Diagnostics
 
         private const string EventLogKey = "SYSTEM\\CurrentControlSet\\Services\\EventLog";
         private const string eventLogMutexName = "netfxeventlog.1.0";
-        private const int SecondsPerDay = 60 * 60 * 24;
+        private const int SecondsPerDay = 60 * 60 * 24; // can't pull in the new TimeSpan constant because this builds in older CLR versions
 
         private const int Flag_notifying = 0x1;           // keeps track of whether we're notifying our listeners - to prevent double notifications
         private const int Flag_forwards = 0x2;     // whether the cache contains entries in forwards order (true) or backwards (false)
@@ -522,7 +522,7 @@ namespace System.Diagnostics
             boolFlags[Flag_sourceVerified] = false;
         }
 
-        private void CompletionCallback(object context)
+        private void CompletionCallback()
         {
             if (boolFlags[Flag_disposed])
             {
@@ -1066,6 +1066,7 @@ namespace System.Diagnostics
                 {
                     e = new Win32Exception();
                 }
+                handle.Dispose();
                 throw new InvalidOperationException(SR.Format(SR.CantOpenLog, logname, currentMachineName, e?.Message ?? ""));
             }
 
@@ -1089,6 +1090,7 @@ namespace System.Diagnostics
                 {
                     e = new Win32Exception();
                 }
+                handle.Dispose();
                 throw new InvalidOperationException(SR.Format(SR.CantOpenLogAccess, sourceName), e);
             }
             writeHandle = handle;
@@ -1180,10 +1182,7 @@ namespace System.Diagnostics
             {
                 try
                 {
-                    if (interestedComponents[i] != null)
-                    {
-                        interestedComponents[i].CompletionCallback(null);
-                    }
+                    interestedComponents[i]?.CompletionCallback();
                 }
                 catch (ObjectDisposedException)
                 {
@@ -1293,7 +1292,7 @@ namespace System.Diagnostics
             if (Source.Length == 0)
                 throw new ArgumentException(SR.NeedSourceToWrite);
 
-            if (!Enum.IsDefined(typeof(EventLogEntryType), type))
+            if (!Enum.IsDefined(type))
                 throw new InvalidEnumArgumentException(nameof(type), (int)type, typeof(EventLogEntryType));
 
             string currentMachineName = machineName;
@@ -1402,7 +1401,7 @@ namespace System.Diagnostics
         {
             public EventLogInternal handleOwner;
             public RegisteredWaitHandle registeredWaitHandle;
-            public WaitHandle waitHandle;
+            public AutoResetEvent waitHandle;
             public List<EventLogInternal> listeningComponents = new();
         }
     }

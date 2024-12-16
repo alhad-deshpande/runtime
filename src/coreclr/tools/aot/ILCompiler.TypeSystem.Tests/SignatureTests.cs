@@ -4,10 +4,8 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text;
-
 using System.Reflection.Metadata;
-using System.Reflection.Metadata.Ecma335;
+using System.Text;
 
 using Internal.IL;
 using Internal.TypeSystem;
@@ -148,7 +146,7 @@ namespace TypeSystemTests
             MethodDesc methodWithInterestingShapes = modOptTester.GetMethods().Single(m => string.Equals(m.Name, "Method4"));
 
             // Create assembly with reference to interesting method
-            TypeSystemMetadataEmitter metadataEmitter = new TypeSystemMetadataEmitter(new System.Reflection.AssemblyName("Lookup"), _context);
+            TypeSystemMetadataEmitter metadataEmitter = new TypeSystemMetadataEmitter(new AssemblyNameInfo("Lookup"), _context);
             var token = metadataEmitter.GetMethodRef(methodWithInterestingShapes);
             Stream peStream = new MemoryStream();
             metadataEmitter.SerializeToStream(peStream);
@@ -176,7 +174,7 @@ namespace TypeSystemTests
             var typeInInitialContext = _context.GetWellKnownType(WellKnownType.Int32).MakeArrayType(3);
 
             // Create assembly with reference to interesting type
-            TypeSystemMetadataEmitter metadataEmitter = new TypeSystemMetadataEmitter(new System.Reflection.AssemblyName("Lookup"), _context);
+            TypeSystemMetadataEmitter metadataEmitter = new TypeSystemMetadataEmitter(new AssemblyNameInfo("Lookup"), _context);
             var token = metadataEmitter.GetTypeRef(typeInInitialContext);
             Stream peStream = new MemoryStream();
             metadataEmitter.SerializeToStream(peStream);
@@ -205,7 +203,7 @@ namespace TypeSystemTests
             FieldDesc fieldWithModOpt = modOptTester.GetFields().Single(m => string.Equals(m.Name, "fieldWithModOpt"));
 
             // Create assembly with reference to interesting method
-            TypeSystemMetadataEmitter metadataEmitter = new TypeSystemMetadataEmitter(new System.Reflection.AssemblyName("Lookup"), _context);
+            TypeSystemMetadataEmitter metadataEmitter = new TypeSystemMetadataEmitter(new AssemblyNameInfo("Lookup"), _context);
             var token = metadataEmitter.GetFieldRef(fieldWithModOpt);
             MemoryStream peStream = new MemoryStream();
             metadataEmitter.SerializeToStream(peStream);
@@ -253,7 +251,7 @@ namespace TypeSystemTests
                         {
                             successes++;
                         }
-                        _output.WriteLine($"call {tokenReferenceResult.ToString()}");
+                        _output.WriteLine($"call {tokenReferenceResult}");
                         break;
                 }
             }

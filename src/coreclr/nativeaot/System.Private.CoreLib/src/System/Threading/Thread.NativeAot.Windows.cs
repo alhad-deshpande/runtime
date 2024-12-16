@@ -1,21 +1,19 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-using Microsoft.Win32.SafeHandles;
 using System.Diagnostics;
 using System.Runtime;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
+using Microsoft.Win32.SafeHandles;
+
+using OSThreadPriority = Interop.Kernel32.ThreadPriority;
+
 namespace System.Threading
 {
-    using OSThreadPriority = Interop.Kernel32.ThreadPriority;
-
     public sealed partial class Thread
     {
-        [ThreadStatic]
-        private static int t_reentrantWaitSuppressionCount;
-
         [ThreadStatic]
         private static ApartmentType t_apartmentType;
 
@@ -166,7 +164,7 @@ namespace System.Threading
                 }
                 else
                 {
-                    result = WaitHandle.WaitOneCore(waitHandle.DangerousGetHandle(), millisecondsTimeout);
+                    result = WaitHandle.WaitOneCore(waitHandle.DangerousGetHandle(), millisecondsTimeout, useTrivialWaits: false);
                 }
 
                 return result == (int)Interop.Kernel32.WAIT_OBJECT_0;
@@ -247,33 +245,42 @@ namespace System.Threading
 
         private bool SetApartmentStateUnchecked(ApartmentState state, bool throwOnError)
         {
+            ApartmentState retState;
+
             if (this != CurrentThread)
             {
-                using (LockHolder.Hold(_lock))
+                using (_lock.EnterScope())
                 {
                     if (HasStarted())
                         throw new ThreadStateException();
-                    _initialApartmentState = state;
-                    return true;
+
+                    // Compat: Disallow resetting the initial apartment state
+                    if (_initialApartmentState == ApartmentState.Unknown)
+                        _initialApartmentState = state;
+
+                    retState = _initialApartmentState;
                 }
             }
-
-            if ((t_comState & ComState.Locked) == 0)
+            else
             {
-                if (state != ApartmentState.Unknown)
+
+                if ((t_comState & ComState.Locked) == 0)
                 {
-                    InitializeCom(state);
+                    if (state != ApartmentState.Unknown)
+                    {
+                        InitializeCom(state);
+                    }
+                    else
+                    {
+                        UninitializeCom();
+                    }
                 }
-                else
-                {
-                    UninitializeCom();
-                }
+
+                // Clear the cache and check whether new state matches the desired state
+                t_apartmentType = ApartmentType.Unknown;
+
+                retState = GetApartmentState();
             }
-
-            // Clear the cache and check whether new state matches the desired state
-            t_apartmentType = ApartmentType.Unknown;
-
-            ApartmentState retState = GetApartmentState();
 
             if (retState != state)
             {
@@ -307,7 +314,7 @@ namespace System.Threading
         private static void InitializeComForThreadPoolThread()
         {
             // Initialized COM - take advantage of implicit MTA initialized by the finalizer thread
-            SpinWait sw = new SpinWait();
+            SpinWait sw = default(SpinWait);
             while (!s_comInitializedOnFinalizerThread)
             {
                 RuntimeImports.RhInitializeFinalizerThread();
@@ -368,7 +375,7 @@ namespace System.Threading
             t_comState &= ~ComState.InitializedByUs;
         }
 
-        // TODO: https://github.com/dotnet/corefx/issues/20766
+        // TODO: https://github.com/dotnet/runtime/issues/22161
         public void DisableComObjectEagerCleanup() { }
 
         private static Thread InitializeExistingThreadPoolThread()
@@ -394,24 +401,8 @@ namespace System.Threading
 
         public void Interrupt() { throw new PlatformNotSupportedException(); }
 
-        //
-        // Suppresses reentrant waits on the current thread, until a matching call to RestoreReentrantWaits.
-        // This should be used by code that's expected to be called inside the STA message pump, so that it won't
-        // reenter itself.  In an ASTA, this should only be the CCW implementations of IUnknown and IInspectable.
-        //
-        internal static void SuppressReentrantWaits()
-        {
-            t_reentrantWaitSuppressionCount++;
-        }
-
-        internal static void RestoreReentrantWaits()
-        {
-            Debug.Assert(t_reentrantWaitSuppressionCount > 0);
-            t_reentrantWaitSuppressionCount--;
-        }
-
         internal static bool ReentrantWaitsEnabled =>
-            GetCurrentApartmentType() == ApartmentType.STA && t_reentrantWaitSuppressionCount == 0;
+            GetCurrentApartmentType() == ApartmentType.STA;
 
         internal static ApartmentType GetCurrentApartmentType()
         {
@@ -488,8 +479,5 @@ namespace System.Threading
             InitializedByUs = 1,
             Locked = 2,
         }
-
-        // TODO: Use GetCurrentProcessorNumberEx for NUMA
-        private static int ComputeCurrentProcessorId() => (int)Interop.Kernel32.GetCurrentProcessorNumber();
     }
 }

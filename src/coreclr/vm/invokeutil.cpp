@@ -138,6 +138,44 @@ void InvokeUtil::CopyArg(TypeHandle th, PVOID argRef, ArgDestination *argDest) {
     CorElementType type = th.GetVerifierCorElementType();
 
     switch (type) {
+#ifdef TARGET_RISCV64
+    // RISC-V call convention requires integer scalars narrower than XLEN bits to be widened according to the sign
+    // of their type up to 32 bits, then sign-extended to XLEN bits. In practice it means type-extending all ints
+    // except `uint` which is sign-extended regardless.
+    case ELEMENT_TYPE_BOOLEAN:
+    case ELEMENT_TYPE_U1:
+        _ASSERTE(argRef != NULL);
+        *(UINT64 *)pArgDst = *(UINT8 *)argRef;
+        break;
+
+    case ELEMENT_TYPE_I1:
+        _ASSERTE(argRef != NULL);
+        *(INT64 *)pArgDst = *(INT8 *)argRef;
+        break;
+
+    case ELEMENT_TYPE_U2:
+    case ELEMENT_TYPE_CHAR:
+        _ASSERTE(argRef != NULL);
+        *(UINT64 *)pArgDst = *(UINT16 *)argRef;
+        break;
+
+    case ELEMENT_TYPE_I2:
+        _ASSERTE(argRef != NULL);
+        *(INT64 *)pArgDst = *(INT16 *)argRef;
+        break;
+
+    case ELEMENT_TYPE_R4:
+        _ASSERTE(argRef != NULL);
+        argDest->CopySingleFloatToRegister(argRef);
+        break;
+
+    case ELEMENT_TYPE_I4:
+    case ELEMENT_TYPE_U4:
+        _ASSERTE(argRef != NULL);
+        *(INT64 *)pArgDst = *(INT32 *)argRef;
+        break;
+
+#else // !TARGET_RISCV64
     case ELEMENT_TYPE_BOOLEAN:
     case ELEMENT_TYPE_U1:
     case ELEMENT_TYPE_I1:
@@ -166,6 +204,7 @@ void InvokeUtil::CopyArg(TypeHandle th, PVOID argRef, ArgDestination *argDest) {
         *(INT32 *)pArgDst = *(INT32 *)argRef;
         break;
     }
+#endif // TARGET_RISCV64
 
     case ELEMENT_TYPE_I8:
     case ELEMENT_TYPE_U8:
@@ -338,10 +377,10 @@ void InvokeUtil::CreatePrimitiveValue(CorElementType dstType,
             *pDst = data;
             break;
         case ELEMENT_TYPE_R4:
-            *pDst = (I8)(*(R4*)pSrc);
+            *pDst = (CLR_I8)(*(CLR_R4*)pSrc);
             break;
         case ELEMENT_TYPE_R8:
-            *pDst = (I8)(*(R8*)pSrc);
+            *pDst = (CLR_I8)(*(CLR_R8*)pSrc);
             break;
         default:
             _ASSERTE(!"Unknown conversion");
@@ -352,35 +391,35 @@ void InvokeUtil::CreatePrimitiveValue(CorElementType dstType,
     case ELEMENT_TYPE_R4:
     case ELEMENT_TYPE_R8:
         {
-        R8 r8 = 0;
+        CLR_R8 r8 = 0;
         switch (srcType) {
         case ELEMENT_TYPE_BOOLEAN:
         case ELEMENT_TYPE_I1:
         case ELEMENT_TYPE_I2:
         case ELEMENT_TYPE_I4:
         IN_TARGET_32BIT(case ELEMENT_TYPE_I:)
-            r8 = (R8)((INT32)data);
+            r8 = (CLR_R8)((INT32)data);
             break;
         case ELEMENT_TYPE_U1:
         case ELEMENT_TYPE_CHAR:
         case ELEMENT_TYPE_U2:
         case ELEMENT_TYPE_U4:
         IN_TARGET_32BIT(case ELEMENT_TYPE_U:)
-            r8 = (R8)((UINT32)data);
+            r8 = (CLR_R8)((UINT32)data);
             break;
         case ELEMENT_TYPE_U8:
         IN_TARGET_64BIT(case ELEMENT_TYPE_U:)
-            r8 = (R8)((UINT64)data);
+            r8 = (CLR_R8)((UINT64)data);
             break;
         case ELEMENT_TYPE_I8:
         IN_TARGET_64BIT(case ELEMENT_TYPE_I:)
-            r8 = (R8)((INT64)data);
+            r8 = (CLR_R8)((INT64)data);
             break;
         case ELEMENT_TYPE_R4:
-            r8 = *(R4*)pSrc;
+            r8 = *(CLR_R4*)pSrc;
             break;
         case ELEMENT_TYPE_R8:
-            r8 = *(R8*)pSrc;
+            r8 = *(CLR_R8*)pSrc;
             break;
         default:
             _ASSERTE(!"Unknown R4 or R8 conversion");
@@ -389,7 +428,7 @@ void InvokeUtil::CreatePrimitiveValue(CorElementType dstType,
         }
 
         if (dstType == ELEMENT_TYPE_R4) {
-            R4 r4 = (R4)r8;
+            CLR_R4 r4 = (CLR_R4)r8;
             *pDst = (UINT32&)r4;
         }
         else {
@@ -515,7 +554,7 @@ OBJECTREF InvokeUtil::CreateObjectAfterInvoke(TypeHandle th, void * pValue) {
 
     case ELEMENT_TYPE_PTR:
     {
-        obj = CreatePointer(th, *(void **)pValue);
+        obj = CreatePointer(th, *(LPVOID*)pValue);
         break;
     }
 
@@ -525,7 +564,7 @@ OBJECTREF InvokeUtil::CreateObjectAfterInvoke(TypeHandle th, void * pValue) {
     case ELEMENT_TYPE_STRING:
     case ELEMENT_TYPE_OBJECT:
     case ELEMENT_TYPE_VAR:
-        obj = *(OBJECTREF *)pValue;
+        obj = ObjectToOBJECTREF(*(Object**)pValue);
         break;
 
     case ELEMENT_TYPE_FNPTR:
@@ -570,7 +609,8 @@ OBJECTREF InvokeUtil::CreateClassLoadExcept(OBJECTREF* classes, OBJECTREF* excep
         OBJECTREF o;
         STRINGREF str;
     } gc;
-    ZeroMemory(&gc, sizeof(gc));
+    gc.o = NULL;
+    gc.str = NULL;
 
     MethodTable *pVMClassLoadExcept = CoreLibBinder::GetException(kReflectionTypeLoadException);
     gc.o = AllocateObject(pVMClassLoadExcept);
@@ -649,7 +689,7 @@ OBJECTREF InvokeUtil::CreateTargetExcept(OBJECTREF* except) {
     }
     else
     {
-        args[1] = NULL;
+        args[1] = 0;
     }
 
     ctor.Call(args);
@@ -680,7 +720,7 @@ void InvokeUtil::ValidateObjectTarget(FieldDesc *pField, TypeHandle enclosingTyp
         return;
 
     if (!pField->IsStatic() && !*target)
-        COMPlusThrow(kTargetException,W("RFLCT.Targ_StatFldReqTarg"));
+        COMPlusThrow(kTargetException,W("RFLCT_Targ_StatFldReqTarg"));
 
     // Verify that the object is of the proper type...
     TypeHandle ty = (*target)->GetTypeHandle();
@@ -698,14 +738,14 @@ void InvokeUtil::ValidateObjectTarget(FieldDesc *pField, TypeHandle enclosingTyp
 
 // SetValidField
 // Given an target object, a value object and a field this method will set the field
-//  on the target object.  The field must be validate before calling this.
+//  on the target object.  The field must be validated before calling this.
 void InvokeUtil::SetValidField(CorElementType fldType,
                                TypeHandle fldTH,
                                FieldDesc *pField,
                                OBJECTREF *target,
                                OBJECTREF *valueObj,
                                TypeHandle declaringType,
-                               CLR_BOOL *pDomainInitialized) {
+                               BOOL *pIsClassInitialized) {
     CONTRACTL {
         THROWS;
         GC_TRIGGERS;
@@ -743,19 +783,18 @@ void InvokeUtil::SetValidField(CorElementType fldType,
         pDeclMT = pField->GetModule()->GetGlobalMethodTable();
     }
 
-    if (*pDomainInitialized == FALSE)
+    if (*pIsClassInitialized == FALSE)
     {
         EX_TRY
         {
             pDeclMT->EnsureInstanceActive();
             pDeclMT->CheckRunClassInitThrowing();
-
-            *pDomainInitialized = TRUE;
+            *pIsClassInitialized = pDeclMT->IsClassInited();
         }
         EX_CATCH_THROWABLE(&Throwable);
     }
 #ifdef _DEBUG
-    else if (*pDomainInitialized == TRUE && !declaringType.IsNull())
+    else if (*pIsClassInitialized == TRUE && !declaringType.IsNull())
        CONSISTENCY_CHECK(declaringType.GetMethodTable()->CheckActivated());
 #endif
 
@@ -905,9 +944,13 @@ void InvokeUtil::SetValidField(CorElementType fldType,
         {
             void* pFieldData;
             if (pField->IsStatic())
+            {
                 pFieldData = pField->GetCurrentStaticAddress();
+            }
             else
-                pFieldData = (*((BYTE**)target)) + pField->GetOffset() + sizeof(Object);
+            {
+                pFieldData = pField->GetInstanceAddress(*target);
+            }
 
             if (*valueObj == NULL)
                 InitValueClass(pFieldData, pMT);
@@ -926,9 +969,7 @@ void InvokeUtil::SetValidField(CorElementType fldType,
 
 // GetFieldValue
 // This method will return an ARG_SLOT containing the value of the field.
-// GetFieldValue
-// This method will return an ARG_SLOT containing the value of the field.
-OBJECTREF InvokeUtil::GetFieldValue(FieldDesc* pField, TypeHandle fieldType, OBJECTREF* target, TypeHandle declaringType, CLR_BOOL *pDomainInitialized) {
+OBJECTREF InvokeUtil::GetFieldValue(FieldDesc* pField, TypeHandle fieldType, OBJECTREF* target, TypeHandle declaringType, BOOL *pIsClassInitialized) {
     CONTRACTL {
         THROWS;
         GC_TRIGGERS;
@@ -952,7 +993,7 @@ OBJECTREF InvokeUtil::GetFieldValue(FieldDesc* pField, TypeHandle fieldType, OBJ
     {
         pDeclMT = declaringType.GetMethodTable();
 
-        // We don't allow getting the field just so we don't have more specical
+        // We don't allow getting the field just so we don't have more special
         // cases than we need to.  Then we need at least the throw check to ensure
         // we don't allow data corruption.
         if (Nullable::IsNullableType(pDeclMT))
@@ -966,22 +1007,20 @@ OBJECTREF InvokeUtil::GetFieldValue(FieldDesc* pField, TypeHandle fieldType, OBJ
         pDeclMT = pField->GetModule()->GetGlobalMethodTable();
     }
 
-    if (*pDomainInitialized == FALSE)
+    if (*pIsClassInitialized == FALSE)
     {
         EX_TRY
         {
             pDeclMT->EnsureInstanceActive();
             pDeclMT->CheckRunClassInitThrowing();
-
-            *pDomainInitialized = TRUE;
+            *pIsClassInitialized = pDeclMT->IsClassInited();
         }
         EX_CATCH_THROWABLE(&Throwable);
     }
 #ifdef _DEBUG
-    else if (*pDomainInitialized == TRUE && !declaringType.IsNull())
+    else if (*pIsClassInitialized == TRUE && !declaringType.IsNull())
        CONSISTENCY_CHECK(declaringType.GetMethodTable()->CheckActivated());
 #endif
-
 
     if(Throwable != NULL)
     {
@@ -1037,7 +1076,7 @@ OBJECTREF InvokeUtil::GetFieldValue(FieldDesc* pField, TypeHandle fieldType, OBJ
 
     case ELEMENT_TYPE_VALUETYPE:
     {
-        // Value classes require createing a boxed version of the field and then
+        // Value classes require creating a boxed version of the field and then
         //  copying from the source...
         // Allocate an object to return...
         _ASSERTE(!fieldType.IsTypeDesc());
@@ -1048,9 +1087,12 @@ OBJECTREF InvokeUtil::GetFieldValue(FieldDesc* pField, TypeHandle fieldType, OBJ
         GCPROTECT_BEGIN(obj);
         // calculate the offset to the field...
         if (pField->IsStatic())
+        {
             p = pField->GetCurrentStaticAddress();
-        else {
-                p = (*((BYTE**)target)) + pField->GetOffset() + sizeof(Object);
+        }
+        else
+        {
+            p = pField->GetInstanceAddress(*target);
         }
         GCPROTECT_END();
 

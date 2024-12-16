@@ -9,10 +9,15 @@
 // (C) 2002, 2003 Motus Technologies Inc. (http://www.motus.com)
 // Copyright (C) 2004-2005, 2008 Novell, Inc (http://www.novell.com)
 
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Net;
+using System.Net.Sockets;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Xml;
 using System.Xml.XPath;
 using Test.Cryptography;
@@ -1587,6 +1592,138 @@ namespace System.Security.Cryptography.Xml.Tests
             Assert.Throws<FormatException>(() => sign.CheckSignature(new HMACSHA1("no clue"u8.ToArray())));
         }
 
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        [ActiveIssue("https://github.com/dotnet/runtime/issues/74115")]
+        public void VerifyXmlResolver(bool provideResolver)
+        {
+            TcpListener listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+
+            string xml = $@"<!DOCTYPE foo [<!ENTITY xxe SYSTEM ""http://127.0.0.1:{port}/"" >]>
+<ExampleDoc>Example doc to be signed.&xxe;<Signature xmlns=""http://www.w3.org/2000/09/xmldsig#"">
+    <SignedInfo>
+      <CanonicalizationMethod Algorithm=""http://www.w3.org/TR/2001/REC-xml-c14n-20010315"" />
+      <SignatureMethod Algorithm=""http://www.w3.org/2001/04/xmldsig-more#hmac-sha256"" />
+      <Reference URI="""">
+        <Transforms>
+          <Transform Algorithm=""http://www.w3.org/2000/09/xmldsig#enveloped-signature"" />
+        </Transforms>
+        <DigestMethod Algorithm=""http://www.w3.org/2001/04/xmlenc#sha256"" />
+        <DigestValue>CLUSJx4H4EwydAT/CtNWYu/l6R8uZe0tO2rlM/o0iM4=</DigestValue>
+      </Reference>
+    </SignedInfo>
+    <SignatureValue>o0IAVyovNUYKs5CCIRpZVy6noLpdJBp8LwWrqzzhKPg=</SignatureValue>
+  </Signature>
+</ExampleDoc>";
+
+            bool listenerContacted = false;
+            CancellationTokenSource tokenSource = new CancellationTokenSource();
+            Task listenerTask = ProcessRequests(listener, () => listenerContacted = true, tokenSource.Token);
+
+            XmlDocument doc = new XmlDocument();
+            doc.LoadXml(xml);
+
+            SignedXml signedXml = new SignedXml(doc);
+            signedXml.LoadXml((XmlElement)doc.GetElementsByTagName("Signature")[0]);
+
+            try
+            {
+                using (HMAC key = new HMACSHA256(Encoding.UTF8.GetBytes("sample")))
+                {
+                    if (provideResolver)
+                    {
+                        signedXml.Resolver = new XmlUrlResolver();
+                        Assert.True(signedXml.CheckSignature(key), "signedXml.CheckSignature(key)");
+                        Assert.True(listenerContacted, "listenerContacted");
+                    }
+                    else
+                    {
+                        XmlException ex = Assert.Throws<XmlException>(() => signedXml.CheckSignature(key));
+                        Assert.False(listenerContacted, "listenerContacted");
+                    }
+                }
+            }
+            finally
+            {
+                tokenSource.Cancel();
+
+                try
+                {
+                    listener.Stop();
+                }
+                catch
+                {
+                }
+            }
+
+            static async Task ProcessRequests(
+                TcpListener listener,
+                Action requestReceived,
+                CancellationToken cancellationToken)
+            {
+                static byte[] GetResponse() =>
+                    ("HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Length: 0\r\n\r\n"u8).ToArray();
+
+                while (!cancellationToken.IsCancellationRequested)
+                {
+                    Socket socket;
+
+                    try
+                    {
+#if NET
+                        socket = await listener.AcceptSocketAsync(cancellationToken);
+#else
+                        socket = await listener.AcceptSocketAsync();
+#endif
+                    }
+                    catch
+                    {
+                        break;
+                    }
+
+                    using (socket)
+                    using (NetworkStream stream = new NetworkStream(socket))
+                    {
+                        requestReceived();
+                        byte[] buf = new byte[1024];
+                        int offset = 0;
+
+                        // Drain out the request.
+                        do
+                        {
+                            int read = await stream.ReadAsync(buf, offset, buf.Length - offset, cancellationToken);
+
+                            if (read <= 0)
+                            {
+                                break;
+                            }
+
+                            offset += read;
+
+                            if (offset >= buf.Length)
+                            {
+                                throw new InvalidOperationException();
+                            }
+
+                            if (offset > 4)
+                            {
+                                if (buf.AsSpan(offset - 4, 4).SequenceEqual("\r\n\r\n"u8))
+                                {
+                                    break;
+                                }
+                            }
+                        } while (true);
+
+                        byte[] response = GetResponse();
+                        await stream.WriteAsync(response, 0, response.Length, cancellationToken);
+                    }
+                }
+            }
+        }
+
         [Fact]
         public void CoreFxSignedXmlUsesSha256ByDefault()
         {
@@ -1856,6 +1993,46 @@ namespace System.Security.Cryptography.Xml.Tests
             SignedXml subject = CreateSubjectForMultipleEnvelopedSignatures(tampered, signatureParent);
 
             Assert.False(subject.CheckSignature());
+        }
+
+        public static object[][] EnvelopedSignatureWithRootXpointerReference = new object[][]
+        {
+            new object[] { true,  """<?xml version="1.0" encoding="UTF-8"?><hello><world>Hi</world><Signature xmlns="http://www.w3.org/2000/09/xmldsig#"><SignedInfo><CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#WithComments" /><SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256" /><Reference URI="#xpointer(/)"><Transforms><Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature" /><Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#WithComments" /></Transforms><DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256" /><DigestValue>SVaCE5w9iLXTVYTKP1t/yjjmPXvWovMYpgljGgpgz2Y=</DigestValue></Reference></SignedInfo><SignatureValue>dqcBmS1ZvDJNhmCEgobpAb+A2XaiuB69dfGIhisZvqoxaWqAqv/0w49jp38+usJ5t3wcq3aMC631QE8iln+lHWrarojDMDWLa00isv3oE3q9UgOIV9e6MUSoRTTvQkmlK/LSYV9T/SKx6h03vLLcIkUMXaTkC/n2kthlJTGkLbU=</SignatureValue><KeyInfo><KeyValue><RSAKeyValue><Modulus>t6qV1iTlkCPoaIeOTvnDczQv5pytUxMoyNXws5vaMQYxfJMKos47dvmiLtfWUDLYXFX3Yf/JMC14plJw2JA5jLrlHLnZj/vCjRtXckmWW/wGYewXUqrgR1CytStUeQKj9mNsi76erukua10UhzIrWG+H6YQ/qS4AMMJZU6jBvO0=</Modulus><Exponent>AQAB</Exponent></RSAKeyValue></KeyValue></KeyInfo></Signature></hello>""" },
+            new object[] { false, """<?xml version="1.0" encoding="UTF-8"?><hello>Tempered world<Signature xmlns="http://www.w3.org/2000/09/xmldsig#"><SignedInfo><CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#WithComments" /><SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256" /><Reference URI="#xpointer(/)"><Transforms><Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature" /><Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#WithComments" /></Transforms><DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256" /><DigestValue>SVaCE5w9iLXTVYTKP1t/yjjmPXvWovMYpgljGgpgz2Y=</DigestValue></Reference></SignedInfo><SignatureValue>dqcBmS1ZvDJNhmCEgobpAb+A2XaiuB69dfGIhisZvqoxaWqAqv/0w49jp38+usJ5t3wcq3aMC631QE8iln+lHWrarojDMDWLa00isv3oE3q9UgOIV9e6MUSoRTTvQkmlK/LSYV9T/SKx6h03vLLcIkUMXaTkC/n2kthlJTGkLbU=</SignatureValue><KeyInfo><KeyValue><RSAKeyValue><Modulus>t6qV1iTlkCPoaIeOTvnDczQv5pytUxMoyNXws5vaMQYxfJMKos47dvmiLtfWUDLYXFX3Yf/JMC14plJw2JA5jLrlHLnZj/vCjRtXckmWW/wGYewXUqrgR1CytStUeQKj9mNsi76erukua10UhzIrWG+H6YQ/qS4AMMJZU6jBvO0=</Modulus><Exponent>AQAB</Exponent></RSAKeyValue></KeyValue></KeyInfo></Signature></hello>""" },
+        };
+
+        [Theory]
+        [MemberData(nameof(EnvelopedSignatureWithRootXpointerReference))]
+        public void CheckSignatureHandlesEnvelopedSignatureWithRootXpointerReference(bool isValid, string xml)
+        {
+            XmlDocument xmlDoc = new ();
+            xmlDoc.LoadXml(xml);
+            SignedXml signedXml = new (xmlDoc);
+            signedXml.LoadXml(xmlDoc.GetElementsByTagName("Signature", SignedXml.XmlDsigNamespaceUrl)[0] as XmlElement);
+
+            Assert.Equal(isValid, signedXml.CheckSignature());
+        }
+
+
+        public static object[][] EnvelopedSignatureWithEmptyReference = new object[][]
+        {
+            new object[] { true,  """<?xml version="1.0" encoding="UTF-8"?><hello><world>Hi</world><Signature xmlns="http://www.w3.org/2000/09/xmldsig#"><SignedInfo><CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#WithComments" /><SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256" /><Reference><Transforms><Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature" /></Transforms><DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256" /><DigestValue>SVaCE5w9iLXTVYTKP1t/yjjmPXvWovMYpgljGgpgz2Y=</DigestValue></Reference></SignedInfo><SignatureValue>CiB9jgIS7+Wq+lpyzCGsBZQcQ2BxqQuEU9VCvb3Li5jMtjwRV1bMO+4Wfnb4VWhEtEUq6NdiVGXhC1xvtVLnnLDX7CD/jG6NvM1Yd0/rf0UUceBhzYLFE9HLsopsBmmm3t8FO6ZtRr1QqKM0XDaQleGK9vYd2m2Jq8OR3r/w4OY=</SignatureValue><KeyInfo><KeyValue><RSAKeyValue><Modulus>vcM1wQVmLB9DwdnAym8l8nw63/HlTVzgTDhIwNzWPhsPE/qr2wlK4TEQ3rjU+RAdNytfFNCnuuh75ZVMjAWCV9h6VDlp0DOvBhb6GenhymtTAdJJKzBXKJP6mNPga9cPOP31IZ36Ui00G3fjBBPrHa7nStludgL9Wi0dBU28DjU=</Modulus><Exponent>AQAB</Exponent></RSAKeyValue></KeyValue></KeyInfo></Signature></hello>""" },
+            new object[] { false, """<?xml version="1.0" encoding="UTF-8"?><hello><WORLD>HI</WORLD><Signature xmlns="http://www.w3.org/2000/09/xmldsig#"><SignedInfo><CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#WithComments" /><SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256" /><Reference><Transforms><Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature" /></Transforms><DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256" /><DigestValue>SVaCE5w9iLXTVYTKP1t/yjjmPXvWovMYpgljGgpgz2Y=</DigestValue></Reference></SignedInfo><SignatureValue>CiB9jgIS7+Wq+lpyzCGsBZQcQ2BxqQuEU9VCvb3Li5jMtjwRV1bMO+4Wfnb4VWhEtEUq6NdiVGXhC1xvtVLnnLDX7CD/jG6NvM1Yd0/rf0UUceBhzYLFE9HLsopsBmmm3t8FO6ZtRr1QqKM0XDaQleGK9vYd2m2Jq8OR3r/w4OY=</SignatureValue><KeyInfo><KeyValue><RSAKeyValue><Modulus>vcM1wQVmLB9DwdnAym8l8nw63/HlTVzgTDhIwNzWPhsPE/qr2wlK4TEQ3rjU+RAdNytfFNCnuuh75ZVMjAWCV9h6VDlp0DOvBhb6GenhymtTAdJJKzBXKJP6mNPga9cPOP31IZ36Ui00G3fjBBPrHa7nStludgL9Wi0dBU28DjU=</Modulus><Exponent>AQAB</Exponent></RSAKeyValue></KeyValue></KeyInfo></Signature></hello>""" },
+        };
+
+        [Theory]
+        [MemberData(nameof(EnvelopedSignatureWithEmptyReference))]
+        public void CheckSignatureHandlesEnvelopedSignatureWithEmptyReference(bool isValid, string xml)
+        {
+            XmlDocument xmlDoc = new ();
+            xmlDoc.LoadXml(xml);
+            SignedXml signedXml = new (xmlDoc);
+            signedXml.LoadXml(xmlDoc.GetElementsByTagName("Signature", SignedXml.XmlDsigNamespaceUrl)[0] as XmlElement);
+
+            // without this, CheckSignature throws
+            ((Reference)signedXml.SignedInfo.References[0]).TransformChain[0].LoadInput(xmlDoc);
+
+            Assert.Equal(isValid, signedXml.CheckSignature());
         }
     }
 }
