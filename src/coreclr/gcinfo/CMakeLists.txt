@@ -77,6 +77,10 @@ if (CLR_CMAKE_TARGET_ARCH_RISCV64)
   create_gcinfo_lib(TARGET gcinfo_unix_riscv64 OS unix ARCH riscv64)
 endif (CLR_CMAKE_TARGET_ARCH_RISCV64)
 
+if (CLR_CMAKE_TARGET_ARCH_POWERPC64)
+  create_gcinfo_lib(TARGET gcinfo_unix_ppc64le OS unix ARCH ppc64le)
+endif (CLR_CMAKE_TARGET_ARCH_POWERPC64)
+
 if (NOT CLR_CMAKE_TARGET_ARCH_RISCV64)
   create_gcinfo_lib(TARGET gcinfo_universal_arm OS universal ARCH arm)
   create_gcinfo_lib(TARGET gcinfo_win_x86 OS win ARCH x86)
