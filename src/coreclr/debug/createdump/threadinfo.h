@@ -59,6 +59,11 @@ struct user_vfpregs_struct
 #define user_fpregs_struct lasx_context
 #endif
 
+#if defined(__ppc64le__) //Todo (remove ref ): https://patchwork.ozlabs.org/project/linuxppc-dev/patch/20181013105646.5147-1-mpe@ellerman.id.au/#2009820
+#define user_regs_struct pt_regs
+#define user_fpregs_struct user_fp_state
+#endif
+
 #define STACK_OVERFLOW_EXCEPTION    0x800703e9
 
 class ThreadInfo
@@ -168,7 +173,13 @@ public:
     inline const uint64_t GetInstructionPointer() const { return MCREG_Pc(m_gpRegisters); }
     inline const uint64_t GetStackPointer() const { return MCREG_Sp(m_gpRegisters); }
     inline const uint64_t GetFramePointer() const { return MCREG_Fp(m_gpRegisters); }
+
+#elif defined(__ppc64le__)
+    inline const uint64_t GetInstructionPointer() const { return m_gpRegisters.nip; } 
+    inline const uint64_t GetStackPointer() const { return m_gpRegisters.gpr[1]; }   
+    inline const uint64_t GetFramePointer() const { return m_gpRegisters.gpr[31]; }  
 #endif
+
 #endif // __APPLE__
     bool IsCrashThread() const;
 
