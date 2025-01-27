@@ -1076,7 +1076,7 @@ public:
     bool IsVersionable()
     {
         WRAPPER_NO_CONTRACT;
-        return IsEligibleForTieredCompilation() || IsEligibleForReJIT();
+        return false; // FIXME TARGET_POWERPC64 IsEligibleForTieredCompilation() || IsEligibleForReJIT();
     }
 
     // True iff all calls to the method should funnel through a Precode which can be updated to point to the current method
