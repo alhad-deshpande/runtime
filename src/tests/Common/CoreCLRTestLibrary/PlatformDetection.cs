@@ -15,6 +15,7 @@ namespace TestLibrary
         public static bool IsX86Process => RuntimeInformation.ProcessArchitecture == Architecture.X86;
         public static bool IsNotX86Process => !IsX86Process;
         public static bool IsArm64Process => RuntimeInformation.ProcessArchitecture == Architecture.Arm64;
+	public static bool IsPpc64leProcess => RuntimeInformation.ProcessArchitecture == Architecture.Ppc64le;
 
         public static bool IsWindows => OperatingSystem.IsWindows();
 

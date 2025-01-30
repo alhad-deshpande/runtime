@@ -5,6 +5,8 @@
 
     <!-- Not even printf is AOT compatible in F# -->
     <NativeAotIncompatible>true</NativeAotIncompatible>
+    <!-- Interpreter-only stack overflow -->
+    <CLRTestTargetUnsupported Condition="'$(TargetArchitecture)' == 'ppc64le'">true</CLRTestTargetUnsupported>
 
     <!-- Test is slow enough to time out under GC stress -->
     <GCStressIncompatible>true</GCStressIncompatible>

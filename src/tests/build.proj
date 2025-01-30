@@ -19,6 +19,8 @@
     <DisabledTestDir Include="Common" />
     <DisabledTestDir Include="Tests" />
     <DisabledTestDir Include="TestWrappers" />
+    <!-- FIXME TARGET_POWERPC64 - tests run too long for interpreter-only mode -->
+    <DisabledTestDir Include="GC" />
   </ItemGroup>
 
   <ItemGroup>

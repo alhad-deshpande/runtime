@@ -113,8 +113,8 @@ typedef PVOID NATIVE_LIBRARY_HANDLE;
 #define _M_LOONGARCH64 1
 #elif defined(__s390x__) && !defined(_M_S390X)
 #define _M_S390X 1
-#elif defined(__ppc64le__) && !defined(_M_PPC64)
-#define _M_PPC64 1
+#elif defined(__ppc64le__) && !defined(_M_POWERPC64)
+#define _M_POWERPC64 1
 #endif
 
 #if defined(_M_IX86) && !defined(HOST_X86)
@@ -129,7 +129,7 @@ typedef PVOID NATIVE_LIBRARY_HANDLE;
 #define HOST_LOONGARCH64
 #elif defined(_M_S390X) && !defined(HOST_S390X)
 #define HOST_S390X
-#elif defined(_M_PPC64) && !defined(HOST_POWERPC64)
+#elif defined(_M_POWERPC64) && !defined(HOST_POWERPC64)
 #define HOST_POWERPC64
 
 #if defined(HOST_ARM64)
