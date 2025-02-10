@@ -242,6 +242,25 @@ typedef struct _RiscV64VolatileContextPointer
 } RiscV64VolatileContextPointer;
 #endif
 
+#if defined(TARGET_POWERPC64)
+typedef struct _Ppc64VolatileContextPointer
+{
+    PDWORD64 R0;
+    PDWORD64 R2; // TODO TARGET_POWERPC64: should we put in non-volatile?
+    PDWORD64 R3; // Return value register
+    PDWORD64 R4;
+    PDWORD64 R5;
+    PDWORD64 R6;
+    PDWORD64 R7;
+    PDWORD64 R8;
+    PDWORD64 R9;
+    PDWORD64 R10;
+    PDWORD64 R11;
+    PDWORD64 R12;
+    PDWORD64 LR; // Link Register
+} Ppc64VolatileContextPointer;// TODO TARGET_POWERPC64: what about other volatile registers like CTR??
+#endif
+
 struct REGDISPLAY : public REGDISPLAY_BASE {
 #ifdef TARGET_ARM64
     Arm64VolatileContextPointer     volatileCurrContextPointers;
@@ -253,6 +272,10 @@ struct REGDISPLAY : public REGDISPLAY_BASE {
 
 #ifdef TARGET_RISCV64
     RiscV64VolatileContextPointer    volatileCurrContextPointers;
+#endif
+
+#ifdef TARGET_POWERPC64
+    Ppc64VolatileContextPointer    volatileCurrContextPointers;
 #endif
 
     REGDISPLAY()
@@ -287,7 +310,7 @@ inline TADDR GetRegdisplayStackMark(REGDISPLAY *display)
     _ASSERTE(GetRegdisplaySP(display) == GetSP(display->pCurrentContext));
     return GetRegdisplaySP(display);
 
-#elif defined(TARGET_ARM64) || defined(TARGET_RISCV64) || defined(TARGET_LOONGARCH64)
+#elif defined(TARGET_ARM64) || defined(TARGET_RISCV64) || defined(TARGET_LOONGARCH64) || defined(TARGET_POWERPC64)
 
     _ASSERTE(display->IsCallerContextValid);
     return GetSP(display->pCallerContext);
@@ -367,6 +390,8 @@ inline LPVOID GetRegdisplayReturnValue(REGDISPLAY *display)
     return (LPVOID)display->pCurrentContext->A0;
 #elif defined(TARGET_RISCV64)
     return (LPVOID)display->pCurrentContext->A0;
+#elif defined(TARGET_POWERPC64)
+    return (LPVOID)display->pCurrentContext->R3; // PowerPC64 uses R3 for return values
 #else
     PORTABILITY_ASSERT("GetRegdisplayReturnValue NYI for this platform (Regdisp.h)");
     return NULL;
@@ -383,6 +408,11 @@ inline void SyncRegDisplayToCurrentContext(REGDISPLAY* pRD)
 #elif defined(TARGET_ARM)
     pRD->SP         = (DWORD)GetSP(pRD->pCurrentContext);
     pRD->ControlPC  = (DWORD)GetIP(pRD->pCurrentContext);
+
+#elif defined(TARGET_POWERPC64)
+    pRD->SP         = (TADDR)pRD->pCurrentContext->r1;
+    pRD->ControlPC  = (TADDR)pRD->pCurrentContext->NIP;
+
 #elif defined(TARGET_X86)
     pRD->SP         = (DWORD)GetSP(pRD->pCurrentContext);
     pRD->ControlPC  = (DWORD)GetIP(pRD->pCurrentContext);
@@ -394,7 +424,7 @@ inline void SyncRegDisplayToCurrentContext(REGDISPLAY* pRD)
     CheckRegDisplaySP(pRD);
 #endif // DEBUG_REGDISPLAY
 }
-#endif // TARGET_64BIT || TARGET_ARM || (TARGET_X86 && FEATURE_EH_FUNCLETS)
+#endif // TARGET_64BIT || TARGET_ARM || TARGET_POWERPC64 || (TARGET_X86 && FEATURE_EH_FUNCLETS)
 
 typedef REGDISPLAY *PREGDISPLAY;
 
@@ -454,6 +484,11 @@ inline void FillContextPointers(PT_KNONVOLATILE_CONTEXT_POINTERS pCtxPtrs, PT_CO
 #else // TARGET_RISCV64
     PORTABILITY_ASSERT("FillContextPointers");
 #endif // _TARGET_???_ (ELSE)
+#if defined(TARGET_POWERPC64)
+    for (int i = 0; i <= 31 - 14; i++) // R14 to R31
+    {
+        *(&pCtxPtrs->R14 + i) = (&pCtx->R14 + i);//the context pointers for non-volatile registers for PPC64
+    }
 }
 #endif // FEATURE_EH_FUNCLETS
 
