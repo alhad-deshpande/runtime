@@ -245,20 +245,26 @@ typedef struct _RiscV64VolatileContextPointer
 #if defined(TARGET_POWERPC64)
 typedef struct _Ppc64VolatileContextPointer
 {
-    PDWORD64 R0;
-    PDWORD64 R2; // TODO TARGET_POWERPC64: should we put in non-volatile?
-    PDWORD64 R3; // Return value register
+    PDWORD64 R0; // Volatile, used for function linkage
+
+    // TOC pointer - Special handling required
+    // Caller-saved in leaf functions
+    // Must be preserved in functions that use TOC
+    PDWORD64 R2; 
+
+    // Parameter/return registers
+    PDWORD64 R3; // First parameter and return value
     PDWORD64 R4;
     PDWORD64 R5;
     PDWORD64 R6;
     PDWORD64 R7;
     PDWORD64 R8;
     PDWORD64 R9;
-    PDWORD64 R10;
-    PDWORD64 R11;
+    PDWORD64 R10; // Eighth parameter
+
+    PDWORD64 R11; 
     PDWORD64 R12;
-    PDWORD64 LR; // Link Register
-} Ppc64VolatileContextPointer;// TODO TARGET_POWERPC64: what about other volatile registers like CTR??
+} Ppc64VolatileContextPointer;
 #endif
 
 struct REGDISPLAY : public REGDISPLAY_BASE {
@@ -408,11 +414,6 @@ inline void SyncRegDisplayToCurrentContext(REGDISPLAY* pRD)
 #elif defined(TARGET_ARM)
     pRD->SP         = (DWORD)GetSP(pRD->pCurrentContext);
     pRD->ControlPC  = (DWORD)GetIP(pRD->pCurrentContext);
-
-#elif defined(TARGET_POWERPC64)
-    pRD->SP         = (TADDR)pRD->pCurrentContext->r1;
-    pRD->ControlPC  = (TADDR)pRD->pCurrentContext->NIP;
-
 #elif defined(TARGET_X86)
     pRD->SP         = (DWORD)GetSP(pRD->pCurrentContext);
     pRD->ControlPC  = (DWORD)GetIP(pRD->pCurrentContext);
@@ -481,15 +482,18 @@ inline void FillContextPointers(PT_KNONVOLATILE_CONTEXT_POINTERS pCtxPtrs, PT_CO
     *(&pCtxPtrs->Tp) = &pCtx->Tp;
     *(&pCtxPtrs->Fp) = &pCtx->Fp;
     *(&pCtxPtrs->Ra) = &pCtx->Ra;
-#else // TARGET_RISCV64
+#elif defined(TARGET_POWERPC64) //TARGET_RISCV64
+    for (int i = 0; i <= 17; i++) // PowerPC64 nonvolatile registers R14-R31 (18 registers)
+    {
+        *(&pCtxPtrs->R14 + i) = (&pCtx->R14 + i);
+    }
+    // Link Register (LR) for return addresses and exception handling
+    *(&pCtxPtrs->LR) = &pCtx->LR;
+    // Table of Contents (TOC) pointer - R2 in PowerPC64 ABI
+    *(&pCtxPtrs->R2) = &pCtx->R2;
+#else // TARGET_POWERPC64
     PORTABILITY_ASSERT("FillContextPointers");
 #endif // _TARGET_???_ (ELSE)
-#if defined(TARGET_POWERPC64)
-    for (int i = 0; i <= 31 - 14; i++) // R14 to R31
-    {
-        *(&pCtxPtrs->R14 + i) = (&pCtx->R14 + i);//the context pointers for non-volatile registers for PPC64
-    }
-}
 #endif // FEATURE_EH_FUNCLETS
 
 inline void FillRegDisplay(const PREGDISPLAY pRD, PT_CONTEXT pctx, PT_CONTEXT pCallerCtx = NULL, bool fLightUnwind = false)
