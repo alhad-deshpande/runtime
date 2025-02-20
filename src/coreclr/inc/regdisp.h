@@ -242,31 +242,6 @@ typedef struct _RiscV64VolatileContextPointer
 } RiscV64VolatileContextPointer;
 #endif
 
-#if defined(TARGET_POWERPC64)
-typedef struct _Ppc64VolatileContextPointer
-{
-    PDWORD64 R0; // Volatile, used for function linkage
-
-    // TOC pointer - Special handling required
-    // Caller-saved in leaf functions
-    // Must be preserved in functions that use TOC
-    PDWORD64 R2; 
-
-    // Parameter/return registers
-    PDWORD64 R3; // First parameter and return value
-    PDWORD64 R4;
-    PDWORD64 R5;
-    PDWORD64 R6;
-    PDWORD64 R7;
-    PDWORD64 R8;
-    PDWORD64 R9;
-    PDWORD64 R10; // Eighth parameter
-
-    PDWORD64 R11; 
-    PDWORD64 R12;
-} Ppc64VolatileContextPointer;
-#endif
-
 struct REGDISPLAY : public REGDISPLAY_BASE {
 #ifdef TARGET_ARM64
     Arm64VolatileContextPointer     volatileCurrContextPointers;
@@ -278,10 +253,6 @@ struct REGDISPLAY : public REGDISPLAY_BASE {
 
 #ifdef TARGET_RISCV64
     RiscV64VolatileContextPointer    volatileCurrContextPointers;
-#endif
-
-#ifdef TARGET_POWERPC64
-    Ppc64VolatileContextPointer    volatileCurrContextPointers;
 #endif
 
     REGDISPLAY()
@@ -425,7 +396,7 @@ inline void SyncRegDisplayToCurrentContext(REGDISPLAY* pRD)
     CheckRegDisplaySP(pRD);
 #endif // DEBUG_REGDISPLAY
 }
-#endif // TARGET_64BIT || TARGET_ARM || TARGET_POWERPC64 || (TARGET_X86 && FEATURE_EH_FUNCLETS)
+#endif // TARGET_64BIT || TARGET_ARM || (TARGET_X86 && FEATURE_EH_FUNCLETS)
 
 typedef REGDISPLAY *PREGDISPLAY;
 
@@ -487,8 +458,6 @@ inline void FillContextPointers(PT_KNONVOLATILE_CONTEXT_POINTERS pCtxPtrs, PT_CO
     {
         *(&pCtxPtrs->R14 + i) = (&pCtx->R14 + i);
     }
-    // Link Register (LR) for return addresses and exception handling
-    *(&pCtxPtrs->LR) = &pCtx->LR;
     // Table of Contents (TOC) pointer - R2 in PowerPC64 ABI
     *(&pCtxPtrs->R2) = &pCtx->R2;
 #else // TARGET_POWERPC64
@@ -693,6 +662,9 @@ inline size_t * getRegAddr (unsigned regNum, PTR_CONTEXT regs)
 #elif defined(TARGET_RISCV64)
     _ASSERTE(regNum < 32);
     return (size_t *)&regs->R0 + regNum;
+#elif defined(TARGET_POWERPC64)
+    _ASSERTE(regNum < 32);
+    return (size_t*)&regs->R0 + regNum;
 #else
     _ASSERTE(!"@TODO Port - getRegAddr (Regdisp.h)");
 #endif
