@@ -288,6 +288,7 @@ interface ICorDebugDataTarget : IUnknown
         CORDB_PLATFORM_POSIX_ARM64,       // Posix supporting OS on ARM64
         CORDB_PLATFORM_POSIX_LOONGARCH64, // Posix supporting OS on LoongArch64
         CORDB_PLATFORM_POSIX_RISCV64      // Posix supporting OS on RISC64
+        CORDB_PLATFORM_POSIX_POWERPC64    // Posix supporting OS on PowerPC64
     } CorDebugPlatform;
 
     HRESULT GetPlatform([out] CorDebugPlatform * pTargetPlatform);
@@ -4052,6 +4053,109 @@ interface ICorDebugRegisterSet : IUnknown
         REGISTER_RISCV64_F30,
         REGISTER_RISCV64_F31
 
+        REGISTER_POWERPC64_NIP = 0,     // Next Instruction Pointer (SRR0), equivalent to PC, Matches Linux kernel usage
+        REGISTER_POWERPC64_SP,          // Stack Pointer (R1)
+        REGISTER_POWERPC64_TOC,         // Table of Contents Pointer (R2)
+        REGISTER_POWERPC64_R3,          // First parameter/return register
+        REGISTER_POWERPC64_R4,          // Second parameter/return register
+        REGISTER_POWERPC64_R5,          
+        REGISTER_POWERPC64_R6,          
+        REGISTER_POWERPC64_R7,          
+        REGISTER_POWERPC64_R8,          
+        REGISTER_POWERPC64_R9,          
+        REGISTER_POWERPC64_R10,         // Eighth parameter register
+        REGISTER_POWERPC64_R0,          // Volatile register
+        REGISTER_POWERPC64_R11,         
+        REGISTER_POWERPC64_R12,         
+        REGISTER_POWERPC64_R13,         // Reserved for system thread ID
+        REGISTER_POWERPC64_R14,         // Nonvolatile register
+        REGISTER_POWERPC64_R15,         
+        REGISTER_POWERPC64_R16,          
+        REGISTER_POWERPC64_R17,          
+        REGISTER_POWERPC64_R18,         
+        REGISTER_POWERPC64_R19,         
+        REGISTER_POWERPC64_R20,         
+        REGISTER_POWERPC64_R21,         
+        REGISTER_POWERPC64_R22,         
+        REGISTER_POWERPC64_R23,         
+        REGISTER_POWERPC64_R24,         
+        REGISTER_POWERPC64_R25,         
+        REGISTER_POWERPC64_R26,         
+        REGISTER_POWERPC64_R27,         
+        REGISTER_POWERPC64_R28,         
+        REGISTER_POWERPC64_R29,         
+        REGISTER_POWERPC64_R30,         
+        REGISTER_POWERPC64_R31,         
+        REGISTER_POWERPC64_LR,          // Link Register
+        REGISTER_POWERPC64_CTR,         // Count Register
+        REGISTER_POWERPC64_XER,         // Fixed-Point Exception Register
+        REGISTER_POWERPC64_CR,          // Condition Register
+        REGISTER_POWERPC64_F0,          // FP parameter/return register
+        REGISTER_POWERPC64_F1,          // FP parameter/return register
+        REGISTER_POWERPC64_F2,          // FP parameter register
+        REGISTER_POWERPC64_F3,          
+        REGISTER_POWERPC64_F4,          
+        REGISTER_POWERPC64_F5,          
+        REGISTER_POWERPC64_F6,          
+        REGISTER_POWERPC64_F7,          
+        REGISTER_POWERPC64_F8,          
+        REGISTER_POWERPC64_F9,          
+        REGISTER_POWERPC64_F10,         
+        REGISTER_POWERPC64_F11,         
+        REGISTER_POWERPC64_F12,         
+        REGISTER_POWERPC64_F13,         
+        REGISTER_POWERPC64_F14,         // Nonvolatile FP register
+        REGISTER_POWERPC64_F15,         
+        REGISTER_POWERPC64_F16,         
+        REGISTER_POWERPC64_F17,         
+        REGISTER_POWERPC64_F18,         
+        REGISTER_POWERPC64_F19,         
+        REGISTER_POWERPC64_F20,         
+        REGISTER_POWERPC64_F21,         
+        REGISTER_POWERPC64_F22,         
+        REGISTER_POWERPC64_F23,         
+        REGISTER_POWERPC64_F24,         
+        REGISTER_POWERPC64_F25,         
+        REGISTER_POWERPC64_F26,         
+        REGISTER_POWERPC64_F27,         
+        REGISTER_POWERPC64_F28,         
+        REGISTER_POWERPC64_F29,         
+        REGISTER_POWERPC64_F30,         
+        REGISTER_POWERPC64_F31,         
+        REGISTER_POWERPC64_FPSCR,       // Floating-Point Status and Control Register
+        REGISTER_POWERPC64_V0,          // Vector register
+        REGISTER_POWERPC64_V1,          
+        REGISTER_POWERPC64_V2,          
+        REGISTER_POWERPC64_V3,          
+        REGISTER_POWERPC64_V4,          
+        REGISTER_POWERPC64_V5,          
+        REGISTER_POWERPC64_V6,          
+        REGISTER_POWERPC64_V7,          
+        REGISTER_POWERPC64_V8,          
+        REGISTER_POWERPC64_V9,          
+        REGISTER_POWERPC64_V10,         
+        REGISTER_POWERPC64_V11,         
+        REGISTER_POWERPC64_V12,         
+        REGISTER_POWERPC64_V13,         
+        REGISTER_POWERPC64_V14,         
+        REGISTER_POWERPC64_V15,         
+        REGISTER_POWERPC64_V16,         
+        REGISTER_POWERPC64_V17,         
+        REGISTER_POWERPC64_V18,         
+        REGISTER_POWERPC64_V19,         
+        REGISTER_POWERPC64_V20,         
+        REGISTER_POWERPC64_V21,         
+        REGISTER_POWERPC64_V22,         
+        REGISTER_POWERPC64_V23,         
+        REGISTER_POWERPC64_V24,         
+        REGISTER_POWERPC64_V25,         
+        REGISTER_POWERPC64_V26,         
+        REGISTER_POWERPC64_V27,         
+        REGISTER_POWERPC64_V28,         
+        REGISTER_POWERPC64_V29,         
+        REGISTER_POWERPC64_V30,         
+        REGISTER_POWERPC64_V31,         
+        REGISTER_POWERPC64_VSCR,        // Vector Status and Control Register
         // other architectures here
 
     } CorDebugRegister;
