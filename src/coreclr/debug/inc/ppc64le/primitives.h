@@ -58,6 +58,7 @@ constexpr CorDebugRegister g_JITToCorDbgReg[] =
     REGISTER_POWERPC64_R10,
     REGISTER_POWERPC64_R11,        
     REGISTER_POWERPC64_R12,            
+    REGISTER_POWERPC64_R13,
                                     // Nonvolatile (R14-R31)
     REGISTER_POWERPC64_R14,        
     REGISTER_POWERPC64_R15,        
