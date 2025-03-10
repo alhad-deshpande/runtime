@@ -44,7 +44,10 @@ inline CORDB_ADDRESS GetPatchEndAddr(CORDB_ADDRESS patchAddr)
 
 constexpr CorDebugRegister g_JITToCorDbgReg[] =
 {
-    // Parameters/Return (R3-R10)
+    REGISTER_POWERPC64_R0,          
+    REGISTER_POWERPC64_R1,          // Stack Pointer (R1)
+    REGISTER_POWERPC64_R2,          // Table of Contents Pointer (R2)
+                                    // Parameters/Return (R3-R10)
     REGISTER_POWERPC64_R3,          // First parameter/return register
     REGISTER_POWERPC64_R4,          // Second parameter/return register
     REGISTER_POWERPC64_R5,          // Third parameter register
@@ -52,9 +55,10 @@ constexpr CorDebugRegister g_JITToCorDbgReg[] =
     REGISTER_POWERPC64_R7,         
     REGISTER_POWERPC64_R8,         
     REGISTER_POWERPC64_R9,         
-    REGISTER_POWERPC64_R10,        
-
-    // Nonvolatile (R14-R31)
+    REGISTER_POWERPC64_R10,
+    REGISTER_POWERPC64_R11,        
+    REGISTER_POWERPC64_R12,            
+                                    // Nonvolatile (R14-R31)
     REGISTER_POWERPC64_R14,        
     REGISTER_POWERPC64_R15,        
     REGISTER_POWERPC64_R16,        
@@ -73,15 +77,7 @@ constexpr CorDebugRegister g_JITToCorDbgReg[] =
     REGISTER_POWERPC64_R29,        
     REGISTER_POWERPC64_R30,        
     REGISTER_POWERPC64_R31,        
-
-    // Volatile (R0, R11-R12)
-    REGISTER_POWERPC64_R0,         
-    REGISTER_POWERPC64_R11,        
-    REGISTER_POWERPC64_R12,        
-
-    // Special registers
-    REGISTER_POWERPC64_TOC,         // Table of Contents Pointer (R2)
-    REGISTER_POWERPC64_SP,          // Stack Pointer (R1)
+                                    //Special Registers 
     REGISTER_POWERPC64_LR,          // Link Register
     REGISTER_POWERPC64_CTR          // Count Register
 };
