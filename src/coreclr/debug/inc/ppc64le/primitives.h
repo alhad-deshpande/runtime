@@ -22,7 +22,7 @@ typedef DPTR(CORDB_ADDRESS_TYPE)    PTR_CORDB_ADDRESS_TYPE;
 
 #define PRD_TYPE                               LONG
 #define CORDbg_BREAK_INSTRUCTION_SIZE 4
-#define CORDbg_BREAK_INSTRUCTION (LONG)0x7FE00008  // PowerPC64 trap instruction (tw 31,31,0)
+#define CORDbg_BREAK_INSTRUCTION (LONG)0x7FFF0008  // PowerPC64 trap instruction (tw 31,31,0)
 
 inline CORDB_ADDRESS GetPatchEndAddr(CORDB_ADDRESS patchAddr)
 {
@@ -94,13 +94,14 @@ inline CorDebugRegister ConvertRegNumToCorDebugRegister(ICorDebugInfo::RegNum re
 inline LPVOID CORDbgGetIP(DT_CONTEXT *context)
 {
     LIMITED_METHOD_CONTRACT;
-    return (LPVOID)(size_t)(context->Nip);
+    return (LPVOID)(size_t)(context->Nip);// Link ??
 }
 
 inline void CORDbgSetIP(DT_CONTEXT *context, LPVOID ip)
 {
     LIMITED_METHOD_CONTRACT;
-    context->Nip = (DWORD64)ip;
+    context->Link = (DWORD64)ip; // Link?
+   // context->Nip = (DWORD64)ip; // Link?
 }
 
 inline LPVOID CORDbgGetSP(const DT_CONTEXT * context)
