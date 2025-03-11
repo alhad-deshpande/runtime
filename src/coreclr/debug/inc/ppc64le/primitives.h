@@ -22,7 +22,7 @@ typedef DPTR(CORDB_ADDRESS_TYPE)    PTR_CORDB_ADDRESS_TYPE;
 
 #define PRD_TYPE                               LONG
 #define CORDbg_BREAK_INSTRUCTION_SIZE 4
-#define CORDbg_BREAK_INSTRUCTION (LONG)0x7FFF0008  // PowerPC64 trap instruction (tw 31,31,0)
+#define CORDbg_BREAK_INSTRUCTION (LONG)0x7FE00008  // as in GDB, PowerPC64 trap instruction (tw 31,0,0), ra, rb is 0 here. 
 
 inline CORDB_ADDRESS GetPatchEndAddr(CORDB_ADDRESS patchAddr)
 {
