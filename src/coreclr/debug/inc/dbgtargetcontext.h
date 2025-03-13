@@ -58,6 +58,8 @@
 #define DTCONTEXT_IS_LOONGARCH64
 #elif defined (TARGET_RISCV64)
 #define DTCONTEXT_IS_RISCV64
+#elif defined (TARGET_POWERPC64)
+#define DTCONTEXT_IS_POWERPC64
 #endif
 
 #define CONTEXT_AREA_MASK 0xffff
