@@ -4054,8 +4054,9 @@ interface ICorDebugRegisterSet : IUnknown
         REGISTER_RISCV64_F31
 
         REGISTER_POWERPC64_NIP = 0,     // Next Instruction Pointer (SRR0), equivalent to PC, Matches Linux kernel usage
-        REGISTER_POWERPC64_SP,          // Stack Pointer (R1)
-        REGISTER_POWERPC64_TOC,         // Table of Contents Pointer (R2)
+        REGISTER_POWERPC64_R0,          // Volatile register
+        REGISTER_POWERPC64_R1,          // Stack Pointer (R1)
+        REGISTER_POWERPC64_R2,          // Table of Contents Pointer (R2)
         REGISTER_POWERPC64_R3,          // First parameter/return register
         REGISTER_POWERPC64_R4,          // Second parameter/return register
         REGISTER_POWERPC64_R5,          
@@ -4064,7 +4065,6 @@ interface ICorDebugRegisterSet : IUnknown
         REGISTER_POWERPC64_R8,          
         REGISTER_POWERPC64_R9,          
         REGISTER_POWERPC64_R10,         // Eighth parameter register
-        REGISTER_POWERPC64_R0,          // Volatile register
         REGISTER_POWERPC64_R11,         
         REGISTER_POWERPC64_R12,         
         REGISTER_POWERPC64_R13,         // Reserved for system thread ID

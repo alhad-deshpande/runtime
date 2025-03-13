@@ -22,7 +22,7 @@ typedef DPTR(CORDB_ADDRESS_TYPE)    PTR_CORDB_ADDRESS_TYPE;
 
 #define PRD_TYPE                               LONG
 #define CORDbg_BREAK_INSTRUCTION_SIZE 4
-#define CORDbg_BREAK_INSTRUCTION (LONG)0x7FE00008  // PowerPC64 trap instruction (tw 31,31,0)
+#define CORDbg_BREAK_INSTRUCTION (LONG)0x7FE00008  // as in GDB, PowerPC64 trap instruction (tw 31,0,0), ra, rb is 0 here. 
 
 inline CORDB_ADDRESS GetPatchEndAddr(CORDB_ADDRESS patchAddr)
 {
@@ -44,7 +44,10 @@ inline CORDB_ADDRESS GetPatchEndAddr(CORDB_ADDRESS patchAddr)
 
 constexpr CorDebugRegister g_JITToCorDbgReg[] =
 {
-    // Parameters/Return (R3-R10)
+    REGISTER_POWERPC64_R0,          
+    REGISTER_POWERPC64_R1,          // Stack Pointer (R1)
+    REGISTER_POWERPC64_R2,          // Table of Contents Pointer (R2)
+                                    // Parameters/Return (R3-R10)
     REGISTER_POWERPC64_R3,          // First parameter/return register
     REGISTER_POWERPC64_R4,          // Second parameter/return register
     REGISTER_POWERPC64_R5,          // Third parameter register
@@ -52,9 +55,11 @@ constexpr CorDebugRegister g_JITToCorDbgReg[] =
     REGISTER_POWERPC64_R7,         
     REGISTER_POWERPC64_R8,         
     REGISTER_POWERPC64_R9,         
-    REGISTER_POWERPC64_R10,        
-
-    // Nonvolatile (R14-R31)
+    REGISTER_POWERPC64_R10,
+    REGISTER_POWERPC64_R11,        
+    REGISTER_POWERPC64_R12,            
+    REGISTER_POWERPC64_R13,
+                                    // Nonvolatile (R14-R31)
     REGISTER_POWERPC64_R14,        
     REGISTER_POWERPC64_R15,        
     REGISTER_POWERPC64_R16,        
@@ -73,15 +78,7 @@ constexpr CorDebugRegister g_JITToCorDbgReg[] =
     REGISTER_POWERPC64_R29,        
     REGISTER_POWERPC64_R30,        
     REGISTER_POWERPC64_R31,        
-
-    // Volatile (R0, R11-R12)
-    REGISTER_POWERPC64_R0,         
-    REGISTER_POWERPC64_R11,        
-    REGISTER_POWERPC64_R12,        
-
-    // Special registers
-    REGISTER_POWERPC64_TOC,         // Table of Contents Pointer (R2)
-    REGISTER_POWERPC64_SP,          // Stack Pointer (R1)
+                                    //Special Registers 
     REGISTER_POWERPC64_LR,          // Link Register
     REGISTER_POWERPC64_CTR          // Count Register
 };
@@ -97,13 +94,14 @@ inline CorDebugRegister ConvertRegNumToCorDebugRegister(ICorDebugInfo::RegNum re
 inline LPVOID CORDbgGetIP(DT_CONTEXT *context)
 {
     LIMITED_METHOD_CONTRACT;
-    return (LPVOID)(size_t)(context->Nip);
+    return (LPVOID)(size_t)(context->Nip);// Link ??
 }
 
 inline void CORDbgSetIP(DT_CONTEXT *context, LPVOID ip)
 {
     LIMITED_METHOD_CONTRACT;
-    context->Nip = (DWORD64)ip;
+    context->Link = (DWORD64)ip; // Link?
+   // context->Nip = (DWORD64)ip; // Link?
 }
 
 inline LPVOID CORDbgGetSP(const DT_CONTEXT * context)
