@@ -855,6 +855,9 @@ public:
 #elif defined(TARGET_RISCV64)
             Object** firstIntReg = (Object**)&this->GetContext()->Gp;
             Object** lastIntReg  = (Object**)&this->GetContext()->T6;
+elif defined(TARGET_POWERPC64)
+            Object** firstIntReg = (Object**)&this->GetContext()->GPR[0];  
+            Object** lastIntReg  = (Object**)&this->GetContext()->GPR[31]; 
 #else
             _ASSERTE(!"nyi for platform");
 #endif
