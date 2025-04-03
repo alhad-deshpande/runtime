@@ -34,3 +34,10 @@ C_FUNC(\Name\()_End):
         .global C_FUNC(\Name\()_End)
         LEAF_END \Name, \Section
 .endm
+
+.macro PREPARE_EXTERNAL_VAR Name, HelperReg
+	std r2, -8(r1) 			// save r2 
+	ld r2, C_FUNC(\Name)@got(r2) 	//load the address from got entry to r2 considering r2 has toc, relative to toc the got value will be calculated.
+        ld \HelperReg, 0(r2)
+	ld r2, -8(r1)			// restore r2
+.endm
