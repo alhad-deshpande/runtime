@@ -254,7 +254,16 @@ extern "C" TADDR GetCurrentSP();
 
 inline void emitJump(LPBYTE pBufferRX, LPBYTE pBufferRW, LPVOID target)
 {
-	//TODO TARGET_POWERPC64
+    LIMITED_METHOD_CONTRACT;
+    UINT32* pCode = (UINT32*)pBufferRW;
+
+    pCode[0] = 0x3d600000 | (((guint64)(target) >> 48) & 0xffff);  // lis
+    pCode[1] = 0x616b0000 | (((guint64)(target) >> 32) & 0xffff);  // ori
+    pCode[2] = 0x796b07c6;                                         // sldi
+    pCode[3] = 0x656b0000 | (((guint64)(target) >> 16) & 0xffff);  // oris
+    pCode[4] = 0x616b0000 | ((guint64)(target)         & 0xffff);  // ori
+    pCode[5] = 0x7d8903a6;                                         // mtctr
+    pCode[6] = 0x4e800420;                                         // bcctr
 }
 
 inline PCODE decodeJump(PCODE pCode)
