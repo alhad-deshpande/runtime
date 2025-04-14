@@ -273,17 +273,29 @@ inline PCODE decodeJump(PCODE pCode)
 
 inline void emitBackToBackJump(LPBYTE pBufferRX, LPBYTE pBufferRW, LPVOID target)
 {
-	//TODO TARGET_POWERPC64
+    WRAPPER_NO_CONTRACT;
+    emitJump(pBufferRX, pBufferRW, target);
 }
 
 inline PCODE decodeBackToBackJump(PCODE pBuffer)
 {
-	//TODO TARGET_POWERPC64
+    WRAPPER_NO_CONTRACT;
+    return decodeJump(pBuffer);
 }
 
 struct HijackArgs
 {
-	//TODO TARGET_POWERPC64
+    union
+    {
+        ULONG64 R3;
+        ULONG64 ReturnValue[1];
+    };
+    CalleeSavedRegisters Regs;
+    union
+    {
+        ULONG64 Link;  //As per ABI
+        size_t ReturnAddress;
+    };
 };
 
 extern PCODE GetPreStubEntryPoint();
@@ -291,6 +303,7 @@ extern PCODE GetPreStubEntryPoint();
 // Precode to shuffle this and retbuf for closed delegates over static methods with return buffer
 struct ThisPtrRetBufPrecode {
 	//TODO TARGET_POWERPC64
+	//This structure is removed in commit: https://github.com/dotnet/runtime/commit/d7c4f0292dc9840c033c82ec3fa36af57dc3d8f6
 };
 typedef DPTR(ThisPtrRetBufPrecode) PTR_ThisPtrRetBufPrecode;
 
@@ -302,7 +315,16 @@ typedef DPTR(ThisPtrRetBufPrecode) PTR_ThisPtrRetBufPrecode;
 
 inline BOOL ClrFlushInstructionCache(LPCVOID pCodeAddr, size_t sizeOfCode, bool hasCodeExecutedBefore = false)
 {
-	//TODO TARGET_POWERPC64
+    //TODO TARGET_POWERPC64  -> need to implement FlushInstructionCache in pal debug.cpp
+    //if (hasCodeExecutedBefore)
+    //{
+    //    FlushInstructionCache(GetCurrentProcess(), pCodeAddr, sizeOfCode);
+    //}
+    //else
+    //{
+    //    MemoryBarrier();
+    //}
+    return TRUE;
 }
 
 
