@@ -257,7 +257,7 @@ inline void emitJump(LPBYTE pBufferRX, LPBYTE pBufferRW, LPVOID target)
     LIMITED_METHOD_CONTRACT;
     UINT32* pCode = (UINT32*)pBufferRW;
 
-    pCode[0] = 0x3d800000 | (((guint64)(target) >> 48) & 0xffff);  // lis r12, 0
+    pCode[0] = 0x3d800000 | (((guint64)(target) >> 48) & 0xffff);  // lis r12, <target>
     pCode[1] = 0x618c0000 | (((guint64)(target) >> 32) & 0xffff);  // ori r12, r12, <target>
     pCode[2] = 0x798c07c6;                                         // sldi r12, r12, 32
     pCode[3] = 0x658c0000 | (((guint64)(target) >> 16) & 0xffff);  // oris r12, r12, <target>
