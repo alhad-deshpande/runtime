@@ -129,7 +129,7 @@ void HelperMethodFrame::UpdateRegDisplay(const PREGDISPLAY pRD, bool updateFloat
         NOTHROW;
 	GC_NOTRIGGER;
 	MODE_ANY;
-	PRECONDITION(m_MachState._pRetAddr == PTR_TADDR(&m_MachState.m_Rip));
+	PRECONDITION(m_MachState._pRetAddr == PTR_TADDR(&m_MachState.m_nip));
 	SUPPORTS_DAC;
     }
     CONTRACTL_END;
@@ -138,7 +138,7 @@ void HelperMethodFrame::UpdateRegDisplay(const PREGDISPLAY pRD, bool updateFloat
     if (updateFloats)
     {
         UpdateFloatingPointRegisters(pRD);
-	_ASSERTE(pRD->pCurrentContext->Nip == m_MachState.m_Rip);
+	_ASSERTE(pRD->pCurrentContext->Nip == m_MachState.m_nip);
     }
 #endif // DACCESS_COMPILE
 
@@ -149,7 +149,7 @@ void HelperMethodFrame::UpdateRegDisplay(const PREGDISPLAY pRD, bool updateFloat
     // Copy the saved state from the frame to the current context.
     //
 
-    LOG((LF_GCROOTS, LL_INFO100000, "STACKWALK    HelperMethodFrame::UpdateRegDisplay cached ip:%p, sp:%p\n", m_MachState.m_Rip, m_MachState.m_Rsp));
+    LOG((LF_GCROOTS, LL_INFO100000, "STACKWALK    HelperMethodFrame::UpdateRegDisplay cached ip:%p, sp:%p\n", m_MachState.m_nip, m_MachState.m_sp));
 
 #if defined(DACCESS_COMPILE)
     // For DAC, we may get here when the HMF is still uninitialized.
@@ -161,8 +161,8 @@ void HelperMethodFrame::UpdateRegDisplay(const PREGDISPLAY pRD, bool updateFloat
 
 	InsureInit(false, pUnwoundState);
 
-	pRD->pCurrentContext->Nip = pRD->ControlPC = pUnwoundState->m_Rip;
-	pRD->pCurrentContext->R1 = pRD->SP = pUnwoundState->m_Rsp;
+	pRD->pCurrentContext->Nip = pRD->ControlPC = pUnwoundState->m_nip;
+	pRD->pCurrentContext->R1 = pRD->SP = pUnwoundState->m_sp;
 
 #define CALLEE_SAVED_REGISTER(regname) pRD->pCurrentContext->regname = pUnwoundState->m_Capture.regname;
 	ENUM_CALLEE_SAVED_REGISTERS();
@@ -178,8 +178,8 @@ void HelperMethodFrame::UpdateRegDisplay(const PREGDISPLAY pRD, bool updateFloat
     }
 #endif // DACCESS_COMPILE
 
-    pRD->pCurrentContext->Nip = pRD->ControlPC = m_MachState.m_Rip;
-    pRD->pCurrentContext->R1 = pRD->SP = m_MachState.m_Rsp;
+    pRD->pCurrentContext->Nip = pRD->ControlPC = m_MachState.m_nip;
+    pRD->pCurrentContext->R1 = pRD->SP = m_MachState.m_sp;
 
 #define CALLEE_SAVED_REGISTER(regname) pRD->pCurrentContext->regname = (m_MachState.m_Ptrs.p##regname != NULL) ? \
         *m_MachState.m_Ptrs.p##regname : m_MachState.m_Unwound.regname;
@@ -295,7 +295,7 @@ void HijackFrame::UpdateRegDisplay(const PREGDISPLAY pRD, bool updateFloats)
     pRD->IsCallerSPValid      = FALSE;        // Don't add usage of this field.  This is only temporary.
 
     pRD->pCurrentContext->Nip = m_ReturnAddress;
-    pRD->pCurrentContext->R1 = PTR_TO_MEMBER_TADDR(HijackArgs, m_Args, Rip) + sizeof(void *);   // FIXME TARGET_POWERPC64!!!
+    pRD->pCurrentContext->R1 = PTR_TO_MEMBER_TADDR(HijackArgs, m_Args, Nip) + sizeof(void *);   // FIXME TARGET_POWERPC64!!!
     
     UpdateRegDisplayFromCalleeSavedRegisters(pRD, &(m_Args->Regs));
 
@@ -314,7 +314,7 @@ void HijackFrame::UpdateRegDisplay(const PREGDISPLAY pRD, bool updateFloats)
    // This only describes the top-most frame
    pRD->pContext = NULL;
 
-   pRD->PCTAddr = dac_cast<TADDR>(m_Args) + offsetof(HijackArgs, Rip);
+   pRD->PCTAddr = dac_cast<TADDR>(m_Args) + offsetof(HijackArgs, Nip);
    //pRD->pPC  = PTR_SLOT(pRD->PCTAddr);
    pRD->SP   = (ULONG64)(pRD->PCTAddr + sizeof(TADDR));
 */
