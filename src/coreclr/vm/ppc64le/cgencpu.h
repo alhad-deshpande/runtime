@@ -16,14 +16,13 @@
 
 // Given a return address retrieved during stackwalk,
 // this is the offset by which it should be decremented to lend somewhere in a call instruction.
-#define STACKWALK_CONTROLPC_ADJUST_OFFSET 1 // ?? Other arch except amd64 defined this offset to 4 -- emitjump
+#define STACKWALK_CONTROLPC_ADJUST_OFFSET 4 // ?? Other arch except amd64 defined this offset to 4 -- emitjump
 
 // preferred alignment for data
 #define DATA_ALIGNMENT 8
 
 class MethodDesc;
 
-// Need to check how to calculate below sizes JUMP_ALLOCATE_SIZE and BACK_TO_BACK_JUMP_ALLOCATE_SIZE
 #define STACK_ALIGN_SIZE                        16    // for ppc64le stack align size is 16 
 
 #define JUMP_ALLOCATE_SIZE                      28   // # bytes to allocate for a 64-bit jump instruction
@@ -268,7 +267,13 @@ inline void emitJump(LPBYTE pBufferRX, LPBYTE pBufferRW, LPVOID target)
 
 inline PCODE decodeJump(PCODE pCode)
 {
-	//TODO TARGET_POWERPC64
+    LIMITED_METHOD_CONTRACT;
+
+    return ((guint64)(((pCode)) [0] & 0x0000ffff) << 48)
+                 + ((guint64)(((pCode)) [1] & 0x0000ffff) << 32)
+                 + ((guint64)(((pCode)) [3] & 0x0000ffff) << 16)
+                 + (guint64)(((pCode)) [4] & 0x0000ffff);
+
 }
 
 inline void emitBackToBackJump(LPBYTE pBufferRX, LPBYTE pBufferRW, LPVOID target)
