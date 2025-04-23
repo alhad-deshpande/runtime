@@ -43,7 +43,7 @@ void LazyMachState::unwindLazyState(LazyMachState* baseState,
 
 #endif // !DACCESS_COMPILE
 
-    LOG((LF_GCROOTS, LL_INFO100000, "STACKWALK    LazyMachState::unwindLazyState(ip:%p,sp:%p)\n", baseState->m_CaptureRip, baseState->m_CaptureRsp));
+    LOG((LF_GCROOTS, LL_INFO100000, "STACKWALK    LazyMachState::unwindLazyState(ip:%p,sp:%p)\n", baseState->m_CaptureNip, baseState->m_CaptureSp));
 
     PCODE pvControlPc;
 
@@ -93,7 +93,7 @@ void LazyMachState::unwindLazyState(LazyMachState* baseState,
     unwoundState->m_sp = ctx.R1;
 
     // For DAC, the return value of this function may be used after unwoundState goes out of scope. so we cannot do
-    // "unwoundState->_pRetAddr = PTR_TADDR(&unwoundState->m_Rip)".
+    // "unwoundState->_pRetAddr = PTR_TADDR(&unwoundState->m_Nip)".
     unwoundState->_pRetAddr = PTR_TADDR(unwoundState->m_sp + 14*8);  // ppc64le TODO need to check for ppc64le
 
 #define CALLEE_SAVED_REGISTER(regname) unwoundState->m_Unwound.regname = ctx.regname;
