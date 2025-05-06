@@ -27,7 +27,7 @@ void LazyMachState::unwindLazyState(LazyMachState* baseState,
     ctx.ContextFlags = 0; // Read by PAL_VirtualUnwind.
 
     ctx.Nip = baseState->m_CaptureNip;
-    ctx.R1 = baseState->m_CaptureSp;  // PPC64le TODO FIXME + 8; // +8 for return addr pushed before calling LazyMachStateCaptureState
+    ctx.R1 = baseState->m_CaptureSp;  
 
 #define CALLEE_SAVED_REGISTER(regname) ctx.regname = unwoundState->m_Capture.regname = baseState->m_Capture.regname;
     ENUM_CALLEE_SAVED_REGISTERS();
@@ -94,7 +94,7 @@ void LazyMachState::unwindLazyState(LazyMachState* baseState,
 
     // For DAC, the return value of this function may be used after unwoundState goes out of scope. so we cannot do
     // "unwoundState->_pRetAddr = PTR_TADDR(&unwoundState->m_Nip)".
-    unwoundState->_pRetAddr = PTR_TADDR(unwoundState->m_sp + 14*8);  // ppc64le TODO need to check for ppc64le
+    unwoundState->_pRetAddr = PTR_TADDR(unwoundState->m_sp + 16);  // In ABI for ppc64le return address LR saved at SP+16 in stack fram 
 
 #define CALLEE_SAVED_REGISTER(regname) unwoundState->m_Unwound.regname = ctx.regname;
     ENUM_CALLEE_SAVED_REGISTERS();
