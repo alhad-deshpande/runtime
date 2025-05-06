@@ -26,11 +26,17 @@
 class PPC64LECall : public InstructionFormat
 {
 public:
-	PPC64LECall ()
+	PPC64LECall (): InstructionFormat(InstructionFormat::k32)
 	{
+	    LIMITED_METHOD_CONTRACT;
 	}
 	virtual UINT GetSizeOfInstruction(UINT refsize, UINT variationCode)
 	{
+            LIMITED_METHOD_CONTRACT;
+
+            _ASSERTE(refsize == InstructionFormat::k32);
+
+            return 4;
 	}
 	virtual VOID EmitInstruction(UINT refsize, int64_t fixedUpReference, BYTE *pOutBufferRX, BYTE *pOutBufferRW, UINT variationCode, BYTE *pDataBuffer)
         {
@@ -47,6 +53,19 @@ static BYTE gPPC64LECall[sizeof(PPC64LECall)];
 
 /* static */ void StubLinkerCPU::Init()
 {
+     CONTRACTL
+     {
+         THROWS;
+         GC_NOTRIGGER;
+         INJECT_FAULT(COMPlusThrowOM(););
+     }
+     CONTRACTL_END;
+ #if 0
+     new (gX86NearJump) X86NearJump();
+     new (gX86CondJump) X86CondJump( InstructionFormat::k8|InstructionFormat::k32);
+     new (gX86PushImm32) X86PushImm32(InstructionFormat::k32);
+ #endif
+     new (gPPC64LECall) PPC64LECall();
 }
 
 void StubLinkerCPU::EmitBranchOnConditionRegister(CondMask M1, IntReg R2)
