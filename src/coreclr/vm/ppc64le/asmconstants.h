@@ -31,8 +31,8 @@ ASMCONSTANTS_C_ASSERT(SIZEOF__##classname == sizeof(classname));
 #define DynamicHelperFrameFlags_ObjectArg   1
 #define DynamicHelperFrameFlags_ObjectArg2  2
 
-#define METHODDESC_REGNUM                     0
-#define METHODDESC_REGISTER                 %r0
+#define METHODDESC_REGNUM                     11
+#define METHODDESC_REGISTER                 %r11
 
 #if 0
 
@@ -85,10 +85,17 @@ ASMCONSTANTS_C_ASSERT(OFFSETOF__MachState__m_sp
 ASMCONSTANTS_C_ASSERT(OFFSETOF__MachState__m_Capture
                     == offsetof(MachState, m_Capture));
 
-#define               OFFSETOF__MachState__m_Ptrs           0x50
-#define               OFFSETOF__MachState___pRetAddr        0x90
-#define               OFFSETOF__LazyMachState__m_CaptureNip 0xD8
-#define               OFFSETOF__LazyMachState__m_CaptureSp  0xE0
+#define               OFFSETOF__MachState__m_Ptrs           0xA0
+#define               OFFSETOF__MachState___pRetAddr        0x130
+
+#ifndef TARGET_UNIX
+#define               OFFSETOF__LazyMachState__m_CaptureNip 0x138
+#define               OFFSETOF__LazyMachState__m_CaptureSp  0x140
+#else
+#define               OFFSETOF__LazyMachState__m_CaptureNip 0x1C8
+#define               OFFSETOF__LazyMachState__m_CaptureSp  0x1D0
+#endif
+
 ASMCONSTANTS_C_ASSERT(OFFSETOF__MachState__m_Ptrs
                     == offsetof(MachState, m_Ptrs));
 ASMCONSTANTS_C_ASSERT(OFFSETOF__MachState___pRetAddr
