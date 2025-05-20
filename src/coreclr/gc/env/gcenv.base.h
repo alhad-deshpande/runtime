@@ -218,9 +218,9 @@ typedef DWORD (WINAPI *PTHREAD_START_ROUTINE)(void* lpThreadParameter);
  #define MemoryBarrier __sync_synchronize
 #endif // __riscv
 
-#ifdef __ppc64le__
+#ifdef __powerpc64__
  #define YieldProcessor()
-#endif // __ppc64le__
+#endif // __powerpc64__
 
 #endif // _MSC_VER
 

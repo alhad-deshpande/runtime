@@ -7,7 +7,7 @@
 // DO NOT INCLUDE THIS FILE DIRECTLY - ALWAYS USE CGENSYS.H INSTEAD
 //
 
-#ifndef TARGET_POWERPC64_
+#ifndef TARGET_POWERPC64
 #error Should only include "PPC64LE\cgencpu.h" for PPC64LE builds
 #endif
 
@@ -256,11 +256,11 @@ inline void emitJump(LPBYTE pBufferRX, LPBYTE pBufferRW, LPVOID target)
     LIMITED_METHOD_CONTRACT;
     UINT32* pCode = (UINT32*)pBufferRW;
 
-    pCode[0] = 0x3d800000 | (((guint64)(target) >> 48) & 0xffff);  // lis r12, <target>
-    pCode[1] = 0x618c0000 | (((guint64)(target) >> 32) & 0xffff);  // ori r12, r12, <target>
+    pCode[0] = 0x3d800000 | (((UINT64)(target) >> 48) & 0xffff);  // lis r12, <target>
+    pCode[1] = 0x618c0000 | (((UINT64)(target) >> 32) & 0xffff);  // ori r12, r12, <target>
     pCode[2] = 0x798c07c6;                                         // sldi r12, r12, 32
-    pCode[3] = 0x658c0000 | (((guint64)(target) >> 16) & 0xffff);  // oris r12, r12, <target>
-    pCode[4] = 0x618c0000 | ((guint64)(target)         & 0xffff);  // ori r12, r12, <target>
+    pCode[3] = 0x658c0000 | (((UINT64)(target) >> 16) & 0xffff);  // oris r12, r12, <target>
+    pCode[4] = 0x618c0000 | ((UINT64)(target)         & 0xffff);  // ori r12, r12, <target>
     pCode[5] = 0x7d8903a6;                                         // mtctr r12
     pCode[6] = 0x4e800420;                                         // bcctr
 }
@@ -269,10 +269,13 @@ inline PCODE decodeJump(PCODE pCode)
 {
     LIMITED_METHOD_CONTRACT;
 
-    return ((guint64)(((pCode)) [0] & 0x0000ffff) << 48)
-                 + ((guint64)(((pCode)) [1] & 0x0000ffff) << 32)
-                 + ((guint64)(((pCode)) [3] & 0x0000ffff) << 16)
-                 + (guint64)(((pCode)) [4] & 0x0000ffff);
+    //TODO VIKAS
+    return pCode;
+
+    //return ((UINT64)(((pInstr)) [0] & 0x0000ffff) << 48)
+    //             + ((UINT64)(((pInstr)) [1] & 0x0000ffff) << 32)
+    //             + ((UINT64)(((pInstr)) [3] & 0x0000ffff) << 16)
+    //             + (UINT64)(((pInstr)) [4] & 0x0000ffff);
 
 }
 

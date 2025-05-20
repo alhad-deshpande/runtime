@@ -27,6 +27,7 @@
 
 #define BITS_PER_SIZE_T ((int)sizeof(size_t)*8)
 
+#if !defined(TARGET_POWERPC64)
 inline UINT32 CeilOfLog2(size_t x)
 {
     // it is ok to use bsr or clz unconditionally
@@ -55,6 +56,7 @@ inline UINT32 CeilOfLog2(size_t x)
 #endif // _MSC_VER
 #endif
 }
+#endif
 
 enum GcSlotFlags
 {
@@ -973,8 +975,6 @@ inline UINT32 CeilOfLog2(size_t x)
     return (UINT32)63 ^ (UINT32)__builtin_clzll((unsigned long long)x);
 }
 #endif
-
-#endif // TARGET_POWERPC64
 
 #else
 

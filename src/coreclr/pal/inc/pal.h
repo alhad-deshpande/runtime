@@ -113,7 +113,7 @@ typedef PVOID NATIVE_LIBRARY_HANDLE;
 #define _M_LOONGARCH64 1
 #elif defined(__s390x__) && !defined(_M_S390X)
 #define _M_S390X 1
-#elif defined(__ppc64le__) && !defined(_M_POWERPC64)
+#elif defined(__powerpc64__) && !defined(_M_POWERPC64)
 #define _M_POWERPC64 1
 #endif
 
@@ -131,12 +131,15 @@ typedef PVOID NATIVE_LIBRARY_HANDLE;
 #define HOST_S390X
 #elif defined(_M_POWERPC64) && !defined(HOST_POWERPC64)
 #define HOST_POWERPC64
+#endif
 
 #if defined(HOST_ARM64)
 // Flag to check if atomics feature is available on
 // the machine
 extern bool g_arm64_atomics_present;
 #endif
+
+#endif // !_MSC_VER
 
 /******************* ABI-specific glue *******************************/
 

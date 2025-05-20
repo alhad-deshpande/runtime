@@ -69,7 +69,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.  */
 	//lg    %r1,0x30(%r1)
 	//br    %r1
 
-	.cfi_endproc
+	//.cfi_endproc
 	//.size _Us390x_setcontext, . - _Us390x_setcontext
 
 	// We do not need executable stack.

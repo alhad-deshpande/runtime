@@ -459,7 +459,7 @@ inline void FillContextPointers(PT_KNONVOLATILE_CONTEXT_POINTERS pCtxPtrs, PT_CO
         *(&pCtxPtrs->R14 + i) = (&pCtx->R14 + i);
     }
     // Table of Contents (TOC) pointer - R2 in PowerPC64 ABI
-    *(&pCtxPtrs->R2) = &pCtx->R2;
+    //*(&pCtxPtrs->R2) = &pCtx->R2; TODO JAYANTH
 #else // TARGET_POWERPC64
     PORTABILITY_ASSERT("FillContextPointers");
 #endif // _TARGET_???_ (ELSE)

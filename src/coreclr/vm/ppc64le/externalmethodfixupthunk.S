@@ -28,7 +28,6 @@ NESTED_END DelayLoad_Helper\suffix, _TEXT
 
 DYNAMICHELPER DynamicHelperFrameFlags_Default
 DYNAMICHELPER DynamicHelperFrameFlags_ObjectArg, _Obj
-DYNAMICHELPER (DynamicHelperFrameFlags_ObjectArg | 
-DynamicHelperFrameFlags_ObjectArg2), _ObjObj
+DYNAMICHELPER (DynamicHelperFrameFlags_ObjectArg | DynamicHelperFrameFlags_ObjectArg2), _ObjObj
 
 #endif // FEATURE_READYTORUN

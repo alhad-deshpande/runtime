@@ -618,7 +618,7 @@ static_assert(sizeof(DT_CONTEXT) == sizeof(T_CONTEXT), "DT_CONTEXT size must equ
 
 #elif defined(DTCONTEXT_IS_POWERPC64)
 
-#define DT_CONTEXT_POWERPC64 0x200000
+#define DT_CONTEXT_POWERPC64 0x100000
 
 #define DT_CONTEXT_CONTROL        (DT_CONTEXT_PPC64 | 0x1L)
 #define DT_CONTEXT_INTEGER        (DT_CONTEXT_PPC64 | 0x2L)
@@ -631,11 +631,11 @@ static_assert(sizeof(DT_CONTEXT) == sizeof(T_CONTEXT), "DT_CONTEXT size must equ
 #define DT_POWERPC64_MAX_BREAKPOINTS 8
 #define DT_POWERPC64_MAX_WATCHPOINTS 1
 
-typedef DECLSPEC_ALIGN(16) struct {
+typedef struct DECLSPEC_ALIGN(16) _DT_CONTEXT {
     DWORD ContextFlags;
 
     union {
-        DWORD64 Gpr[32];
+       DWORD64 Gpr[32];
         struct {
             DWORD64 R0, R1, R2, R3, R4, R5, R6, R7;
             DWORD64 R8, R9, R10, R11, R12, R13, R14, R15;
@@ -645,12 +645,12 @@ typedef DECLSPEC_ALIGN(16) struct {
     };
 
     union {
-        double Fpr[32];
+        DWORD64 Fpr[32];
         struct {
-            double F0, F1, F2, F3, F4, F5, F6, F7;
-            double F8, F9, F10, F11, F12, F13, F14, F15;
-            double F16, F17, F18, F19, F20, F21, F22, F23;
-            double F24, F25, F26, F27, F28, F29, F30, F31;
+            DWORD64 F0, F1, F2, F3, F4, F5, F6, F7;
+            DWORD64 F8, F9, F10, F11, F12, F13, F14, F15;
+            DWORD64 F16, F17, F18, F19, F20, F21, F22, F23;
+            DWORD64 F24, F25, F26, F27, F28, F29, F30, F31;
         };
     };
 

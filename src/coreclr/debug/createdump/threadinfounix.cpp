@@ -61,7 +61,7 @@ ThreadInfo::Initialize()
     TRACE("Thread %04x PC %016llx SP %016llx\n", m_tid, (unsigned long long)m_gpRegisters.csr_era, (unsigned long long)m_gpRegisters.regs[3]);
 #elif defined(__riscv)
     TRACE("Thread %04x PC %016llx SP %016llx\n", m_tid, (unsigned long long)m_gpRegisters.pc, (unsigned long long)m_gpRegisters.sp);
-#elif defined(__ppc64le__)
+#elif defined(__powerpc64__)
     TRACE("Thread %04x PC %016llx SP %016llx\n", m_tid, (unsigned long long)m_gpRegisters.nip,  (unsigned long long)m_gpRegisters.gpr[1]); 
 #else
 #error "Unsupported architecture"
@@ -294,12 +294,12 @@ ThreadInfo::GetThreadContext(uint32_t flags, CONTEXT* context) const
         memcpy(context->F, m_fpRegisters.fpregs, sizeof(context->F));
         context->Fcsr = m_fpRegisters.fcsr;
     }
-#elif defined(__ppc64le__)
+#elif defined(__powerpc64__)
     if ((flags & CONTEXT_CONTROL) == CONTEXT_CONTROL)
     {
-        context->Pc = m_gpRegisters.nip;   
-        context->Sp = m_gpRegisters.gpr[1]; 
-        context->Lr = m_gpRegisters.link;  // todo: .lr?   
+        context->Nip = m_gpRegisters.nip;   
+        context->R1 = m_gpRegisters.gpr[1]; 
+        context->Link = m_gpRegisters.link;  // todo: .lr?   
         context->Ctr = m_gpRegisters.ctr; 
         context->Msr = m_gpRegisters.msr; 
     }
@@ -307,13 +307,18 @@ ThreadInfo::GetThreadContext(uint32_t flags, CONTEXT* context) const
     {
         for (int i = 0; i < 32; i++)
         {
-            context->Gpr[i] = m_gpRegisters.gpr[i];
+            *(&context->R0 + i*sizeof(DWORD64)) = m_gpRegisters.gpr[i];
         }
     }
     if ((flags & CONTEXT_FLOATING_POINT) == CONTEXT_FLOATING_POINT)
     {
-        assert(sizeof(context->Fpr) == sizeof(m_fpRegisters.fprs));
-        memcpy(context->Fpr, m_fpRegisters.fprs, sizeof(context->Fpr)); 
+        assert((sizeof(context->F0)*32) == sizeof(m_fpRegisters.fpr));
+
+	for (int i = 0; i < 32; i++)
+	{
+	    *(&context->F0 + i*sizeof(DWORD64)) = m_fpRegisters.fpr[i];
+	}
+
         context->Fpscr = m_fpRegisters.fpscr; 
     }
 
