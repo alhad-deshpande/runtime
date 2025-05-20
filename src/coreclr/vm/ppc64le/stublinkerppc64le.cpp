@@ -43,6 +43,12 @@ public:
 	}
 	virtual BOOL CanReach(UINT refsize, UINT variationCode, BOOL fExternal, INT_PTR offset)
 	{
+            _ASSERTE(refsize == InstructionFormat::k32);
+
+	    if (fExternal)
+		return false;
+
+    	    return FitsInI4(offset);
 	}
 
 

@@ -301,19 +301,21 @@ struct HijackArgs
     CalleeSavedRegisters Regs;
     union
     {
-        ULONG64 Link;  //As per ABI
+        ULONG64 Nip;  //As per ABI
         size_t ReturnAddress;
     };
 };
 
 extern PCODE GetPreStubEntryPoint();
 
+#if 0
 // Precode to shuffle this and retbuf for closed delegates over static methods with return buffer
 struct ThisPtrRetBufPrecode {
 	//TODO TARGET_POWERPC64
 	//This structure is removed in commit: https://github.com/dotnet/runtime/commit/d7c4f0292dc9840c033c82ec3fa36af57dc3d8f6
 };
 typedef DPTR(ThisPtrRetBufPrecode) PTR_ThisPtrRetBufPrecode;
+#endif
 
 // ClrFlushInstructionCache is used when we want to call FlushInstructionCache
 // for a specific architecture in the common code, but not for other architectures.
