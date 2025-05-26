@@ -308,11 +308,12 @@ struct HijackArgs
 
 extern PCODE GetPreStubEntryPoint();
 
-#if 0
+#if 1
 // Precode to shuffle this and retbuf for closed delegates over static methods with return buffer
 struct ThisPtrRetBufPrecode {
 	//TODO TARGET_POWERPC64
 	//This structure is removed in commit: https://github.com/dotnet/runtime/commit/d7c4f0292dc9840c033c82ec3fa36af57dc3d8f6
+    static const int Type = 0xE0; //TODO Vikas
 };
 typedef DPTR(ThisPtrRetBufPrecode) PTR_ThisPtrRetBufPrecode;
 #endif

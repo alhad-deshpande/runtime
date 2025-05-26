@@ -75,7 +75,7 @@ DumpDataTarget::GetMachineType(
 #elif HOST_RISCV64
     *machine = IMAGE_FILE_MACHINE_RISCV64;
 #elif HOST_POWERPC64
-    *machine = IMAGE_FILE_MACHINE_UNKNOWN;
+    *machine = IMAGE_FILE_MACHINE_POWERPC;
 #else
 #error Unsupported architecture
 #endif
