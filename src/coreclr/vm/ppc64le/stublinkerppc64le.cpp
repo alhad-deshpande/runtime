@@ -74,9 +74,9 @@ static BYTE gPPC64LECall[sizeof(PPC64LECall)];
      new (gPPC64LECall) PPC64LECall();
 }
 
-void StubLinkerCPU::EmitBranchOnConditionRegister(CondMask M1, IntReg R2)
+/*void StubLinkerCPU::EmitBranchOnConditionRegister(CondMask M1, IntReg R2)
 {
-}
+}*/
 
 void StubLinkerCPU::EmitBranchRegister(IntReg R2)
 {
@@ -179,6 +179,8 @@ VOID StubLinkerCPU::EmitComputedInstantiatingMethodStub(MethodDesc* pSharedMD, s
 
 VOID StubLinkerCPU::EmitShuffleThunk(ShuffleEntry *pShuffleEntryArray)
 {
+    // TODO POERPC64
+    _ASSERTE(!"NYI");
 }
 
 #endif // !DACCESS_COMPILE

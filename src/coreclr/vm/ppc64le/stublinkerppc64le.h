@@ -42,7 +42,7 @@ struct VecReg
 class StubLinkerCPU : public StubLinker
 {
 private:
-     void EmitBranchOnConditionRegister(CondMask M1, IntReg R2);
+     //void EmitBranchOnConditionRegister(CondMask M1, IntReg R2);
      void EmitBranchRegister(IntReg R2);
      void EmitLoadHalfwordImmediate(IntReg R1, int I2);
      void EmitLoadLogicalImmediateLow(IntReg R1, DWORD I2);

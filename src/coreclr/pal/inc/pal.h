@@ -3065,7 +3065,7 @@ typedef IMAGE_ARM64_RUNTIME_FUNCTION_ENTRY RUNTIME_FUNCTION, *PRUNTIME_FUNCTION;
 #else // HOST_ARM64
 typedef struct _RUNTIME_FUNCTION {
     DWORD BeginAddress;
-#ifdef HOST_AMD64
+#if defined(HOST_AMD64) || defined(HOST_POWERPC64)
     DWORD EndAddress;
 #endif
     DWORD UnwindData;

@@ -14,6 +14,8 @@
 #ifndef __cgencpu_h__
 #define __cgencpu_h__
 
+#include "stublinkerppc64le.h"
+
 // Given a return address retrieved during stackwalk,
 // this is the offset by which it should be decremented to lend somewhere in a call instruction.
 #define STACKWALK_CONTROLPC_ADJUST_OFFSET 4 // ?? Other arch except amd64 defined this offset to 4 -- emitjump
@@ -37,7 +39,7 @@ class MethodDesc;
 // ThisPtrRetBufPrecode one is necessary for closed delegates over static methods with return buffer
 #define HAS_THISPTR_RETBUF_PRECODE              1
 
-#define CODE_SIZE_ALIGN                         32   // must alloc code blocks on 4-byte boundaries; for perf reasons we use 32 byte boundaries
+#define CODE_SIZE_ALIGN                         16   // must alloc code blocks on 4-byte boundaries; for perf reasons we use 32 byte boundaries //TODO Vikas
 #define CACHE_LINE_SIZE                         128  // ppc64le processors have 128-byte cache lines
 #define LOG2SLOT                                LOG2_PTRSIZE // LOG2_PTRSIZE is defined in src/coreclr/inc/stdmacros.h
 
@@ -291,6 +293,37 @@ inline PCODE decodeBackToBackJump(PCODE pBuffer)
     return decodeJump(pBuffer);
 }
 
+struct DECLSPEC_ALIGN(8) UMEntryThunkCode
+{
+    // TODO POWERPC64 removed this structure commit https://github.com/dotnet/runtime/commit/1f6b690378ba4adf9567746acb3d213ef0bc40bf
+    // Implemented for building coreclr --> vikas
+    UINT16      m_code[8];
+    TADDR       m_pTargetCode;
+    TADDR       m_pvSecretParam;
+
+    void Encode(UMEntryThunkCode *pEntryThunkCodeRX, BYTE* pTargetCode, void* pvSecretParam);
+    void Poison();
+
+    LPCBYTE GetEntryPoint() const
+    {
+        LIMITED_METHOD_CONTRACT;
+
+        return (LPCBYTE)this;
+    }
+
+    static int GetEntryPointOffset()
+    {
+        LIMITED_METHOD_CONTRACT;
+
+        return 0;
+    }
+};
+
+void UMEntryThunkCode::Poison()
+{
+    // TODO POWERPC64 removed this structure commit https://github.com/dotnet/runtime/commit/1f6b690378ba4adf9567746acb3d213ef0bc40bf
+    // Implemented for building coreclr --> vikas
+}
 struct HijackArgs
 {
     union
@@ -313,7 +346,47 @@ extern PCODE GetPreStubEntryPoint();
 struct ThisPtrRetBufPrecode {
 	//TODO TARGET_POWERPC64
 	//This structure is removed in commit: https://github.com/dotnet/runtime/commit/d7c4f0292dc9840c033c82ec3fa36af57dc3d8f6
-    static const int Type = 0xE0; //TODO Vikas
+    static const int Type = 0x80; //TODO Vikas
+
+    UINT16  m_rgCode[12];
+    TADDR   m_pTarget;
+    TADDR   m_pMethodDesc;
+
+    void Init(MethodDesc* pMD, LoaderAllocator *pLoaderAllocator)
+    {
+	//TODO TARGET_POWERPC64
+    }
+
+    TADDR GetMethodDesc()
+    {
+        LIMITED_METHOD_DAC_CONTRACT;
+
+        return m_pMethodDesc;
+    }
+
+    PCODE GetTarget()
+    {
+        LIMITED_METHOD_DAC_CONTRACT;
+        return m_pTarget;
+    }
+
+#ifndef DACCESS_COMPILE
+    BOOL SetTargetInterlocked(TADDR target, TADDR expected)
+    {
+	//TODO TARGET_POWERPC64
+	CONTRACTL
+        {
+            THROWS;
+            GC_NOTRIGGER;
+        }
+        CONTRACTL_END;
+
+        ExecutableWriterHolder<ThisPtrRetBufPrecode> precodeWriterHolder(this, sizeof(ThisPtrRetBufPrecode));
+        return (TADDR)InterlockedCompareExchange64(
+            (LONGLONG*)&precodeWriterHolder.GetRW()->m_pTarget, (TADDR)target, (TADDR)expected) == expected;
+    }
+#endif // !DACCESS_COMPILE
+       //
 };
 typedef DPTR(ThisPtrRetBufPrecode) PTR_ThisPtrRetBufPrecode;
 #endif

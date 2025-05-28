@@ -79,6 +79,7 @@ constexpr CorDebugRegister g_JITToCorDbgReg[] =
     REGISTER_POWERPC64_R30,        
     REGISTER_POWERPC64_R31,        
                                     //Special Registers 
+    REGISTER_POWERPC64_NIP,         // Next instruction pointer (PC)
     REGISTER_POWERPC64_LR,          // Link Register
     REGISTER_POWERPC64_CTR          // Count Register
 };
@@ -169,12 +170,25 @@ inline bool AddressIsBreakpoint(CORDB_ADDRESS_TYPE* address)
 class Thread;
 // Enable single stepping.
 void SetSSFlag(DT_CONTEXT *pCtx, Thread *pThread);
+/*{
+    _ASSERTE(pCtx != NULL);
+    _ASSERTE(!"NYI");
+}*/
 
 // Disable single stepping
 void UnsetSSFlag(DT_CONTEXT *pCtx, Thread *pThread);
+/*{
+    _ASSERTE(pCtx != NULL);
+    _ASSERTE(!"NYI");
+}*/
 
 // Check if single stepping is enabled.
 bool IsSSFlagEnabled(DT_CONTEXT *pCtx, Thread *pThread);
+/*{
+    _ASSERTE(pCtx != NULL);
+    _ASSERTE(!"NYI");
+    return 0;
+}*/
 
 inline bool PRDIsEqual(PRD_TYPE p1, PRD_TYPE p2)
 {
