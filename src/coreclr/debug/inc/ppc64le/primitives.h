@@ -45,44 +45,44 @@ inline CORDB_ADDRESS GetPatchEndAddr(CORDB_ADDRESS patchAddr)
 
 constexpr CorDebugRegister g_JITToCorDbgReg[] =
 {
-    REGISTER_POWERPC64_R0,          
-    REGISTER_POWERPC64_R1,          // Stack Pointer (R1)
-    REGISTER_POWERPC64_R2,          // Table of Contents Pointer (R2)
+    REGISTER_PPC64LE_R0,
+    REGISTER_PPC64LE_R1,          // Stack Pointer (R1)
+    REGISTER_PPC64LE_R2,          // Table of Contents Pointer (R2)
                                     // Parameters/Return (R3-R10)
-    REGISTER_POWERPC64_R3,          // First parameter/return register
-    REGISTER_POWERPC64_R4,          // Second parameter/return register
-    REGISTER_POWERPC64_R5,          // Third parameter register
-    REGISTER_POWERPC64_R6,         
-    REGISTER_POWERPC64_R7,         
-    REGISTER_POWERPC64_R8,         
-    REGISTER_POWERPC64_R9,         
-    REGISTER_POWERPC64_R10,
-    REGISTER_POWERPC64_R11,        
-    REGISTER_POWERPC64_R12,            
-    REGISTER_POWERPC64_R13,
+    REGISTER_PPC64LE_R3,          // First parameter/return register
+    REGISTER_PPC64LE_R4,          // Second parameter/return register
+    REGISTER_PPC64LE_R5,          // Third parameter register
+    REGISTER_PPC64LE_R6,
+    REGISTER_PPC64LE_R7,
+    REGISTER_PPC64LE_R8,
+    REGISTER_PPC64LE_R9,
+    REGISTER_PPC64LE_R10,
+    REGISTER_PPC64LE_R11,
+    REGISTER_PPC64LE_R12,
+    REGISTER_PPC64LE_R13,
                                     // Nonvolatile (R14-R31)
-    REGISTER_POWERPC64_R14,        
-    REGISTER_POWERPC64_R15,        
-    REGISTER_POWERPC64_R16,        
-    REGISTER_POWERPC64_R17,        
-    REGISTER_POWERPC64_R18,        
-    REGISTER_POWERPC64_R19,        
-    REGISTER_POWERPC64_R20,        
-    REGISTER_POWERPC64_R21,        
-    REGISTER_POWERPC64_R22,        
-    REGISTER_POWERPC64_R23,        
-    REGISTER_POWERPC64_R24,        
-    REGISTER_POWERPC64_R25,        
-    REGISTER_POWERPC64_R26,        
-    REGISTER_POWERPC64_R27,        
-    REGISTER_POWERPC64_R28,        
-    REGISTER_POWERPC64_R29,        
-    REGISTER_POWERPC64_R30,        
-    REGISTER_POWERPC64_R31,        
+    REGISTER_PPC64LE_R14,
+    REGISTER_PPC64LE_R15,
+    REGISTER_PPC64LE_R16,
+    REGISTER_PPC64LE_R17,
+    REGISTER_PPC64LE_R18,
+    REGISTER_PPC64LE_R19,
+    REGISTER_PPC64LE_R20,
+    REGISTER_PPC64LE_R21,
+    REGISTER_PPC64LE_R22,
+    REGISTER_PPC64LE_R23,
+    REGISTER_PPC64LE_R24,
+    REGISTER_PPC64LE_R25,
+    REGISTER_PPC64LE_R26,
+    REGISTER_PPC64LE_R27,
+    REGISTER_PPC64LE_R28,
+    REGISTER_PPC64LE_R29,
+    REGISTER_PPC64LE_R30,
+    REGISTER_PPC64LE_R31,
                                     //Special Registers 
-    REGISTER_POWERPC64_NIP,         // Next instruction pointer (PC)
-    REGISTER_POWERPC64_LR,          // Link Register
-    REGISTER_POWERPC64_CTR          // Count Register
+    REGISTER_PPC64LE_NIP,         // Next instruction pointer (PC)
+    REGISTER_PPC64LE_LR,          // Link Register
+    REGISTER_PPC64LE_CTR          // Count Register
 };
 
 inline CorDebugRegister ConvertRegNumToCorDebugRegister(ICorDebugInfo::RegNum reg)
