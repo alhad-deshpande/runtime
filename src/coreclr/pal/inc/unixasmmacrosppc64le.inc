@@ -41,3 +41,15 @@ C_FUNC(\Name\()_End):
         ld \HelperReg, 0(r2)
 	ld r2, -8(r1)			// restore r2
 .endm
+
+.macro EMIT_BREAKPOINT
+    trap			// equivalent to: tw 31,0,0 
+.endm
+
+.macro EPILOG_STACK_FREE Size
+        addi %r1, %r1, \Size
+.endm
+
+.macro PROLOG_SAVE_REG_PAIR_INDEXED reg1, reg2, ssize
+// TODO POWERPC64
+.endm
