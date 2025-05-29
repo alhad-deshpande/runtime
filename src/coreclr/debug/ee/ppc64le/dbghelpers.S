@@ -11,42 +11,13 @@
 // On entry:
 //   r3  : pointer to DebuggerEval object
 //
-
+// TODO JAYANTH
 NESTED_ENTRY FuncEvalHijack, _TEXT, UnhandledExceptionHandlerUnix
-    // NOTE: FuncEvalHijackPersonalityRoutine depends on this stack layout
-    
-    // ELFv2 ABI compliant register saving
-    PROLOG_SAVE_REG_PAIR_INDEXED r29, r30, -32   // Save frame pointer and link register
-    std     r2, -16(r1)        // Save TOC with proper alignment
-    std     r3, 16(r1)         // Store DebuggerEval pointer
+// NOT YET IMPLEMENTED
+NESTED_END FuncEvalHijack, _TEXT
 
-    // Call worker function
-    bl      C_FUNC(FuncEvalHijackWorker)
-    ld      r2, -16(r1)        // Immediate TOC restore
-
-    // Verify return address and branch
-    cmpdi   r3, 0              // Check for null return address
-    beq     1f                 // Branch if null
-    mtctr   r3                 // Move return address to CTR
-    EPILOG_STACK_FREE 32
-    bctr                       // Branch to new instruction pointer
-1:  EMIT_BREAKPOINT           // Handle null pointer case
-
-NESTED_END FuncEvalHijack
-
+// This is the general purpose hijacking stub. The DacDbi Hijack primitive will
+// set up the stack and then set the IP here, and so this just makes the call.
 NESTED_ENTRY ExceptionHijack, _TEXT, UnhandledExceptionHandlerUnix
-    // Save TOC and make the call
-    std     r2, -16(r1)        // Save TOC with proper alignment
-    bl      C_FUNC(ExceptionHijackWorker)
-    ld      r2, -16(r1)        // Immediate TOC restore
-
-    // Critical for proper unwinding
-    nop
-
-    // *** Should never get here ***
-    EMIT_BREAKPOINT
-
-// Debug information label
-PATCH_LABEL ExceptionHijackEnd
+// NOT YET IMPLEMENTED
 NESTED_END ExceptionHijack, _TEXT
-

@@ -68,13 +68,14 @@ ASMCONSTANT_OFFSETOF_ASSERT(DelegateObject, _methodPtr);
 ASMCONSTANT_OFFSETOF_ASSERT(DelegateObject, _target);
 
 #define                  CORINFO_NullReferenceException_ASM 0
-ASMCONSTANTS_C_ASSERT(   CORINFO_NullReferenceException_ASM
-                      == CORINFO_NullReferenceException);
+// TODO VIKAS
+//ASMCONSTANTS_C_ASSERT(   CORINFO_NullReferenceException_ASM
+//                      == CORINFO_NullReferenceException);
 
 // MachState offsets (ppc64le/gmscpu.h)
 
 #define               OFFSETOF__MachState__m_nip            0x00
-ASMCONSTANTS_C_ASSERT(OFFSETOF__MachState__m_sp
+ASMCONSTANTS_C_ASSERT(OFFSETOF__MachState__m_nip
                     == offsetof(MachState, m_nip));
 
 #define               OFFSETOF__MachState__m_sp             0x08

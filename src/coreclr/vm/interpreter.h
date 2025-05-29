@@ -2088,6 +2088,8 @@ unsigned short Interpreter::NumberOfIntegerRegArgs() { return 8; }
 unsigned short Interpreter::NumberOfIntegerRegArgs() { return 8; }
 #elif defined(HOST_RISCV64)
 unsigned short Interpreter::NumberOfIntegerRegArgs() { return 8; }
+#elif defined(HOST_POWERPC64)
+unsigned short Interpreter::NumberOfIntegerRegArgs() { return 8; }
 #else
 #error Unsupported architecture.
 #endif

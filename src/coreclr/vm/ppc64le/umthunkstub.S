@@ -9,5 +9,4 @@
 //
 NESTED_ENTRY TheUMEntryPrestub, _TEXT, UnhandledExceptionHandlerUnix
 // NOT YET IMPLEMENTED
-.long 0x71
 NESTED_END TheUMEntryPrestub, _TEXT

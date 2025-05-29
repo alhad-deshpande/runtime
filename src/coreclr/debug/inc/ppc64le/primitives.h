@@ -167,28 +167,24 @@ inline bool AddressIsBreakpoint(CORDB_ADDRESS_TYPE* address)
     return CORDbgGetInstruction(address) == CORDbg_BREAK_INSTRUCTION;
 }
 
-class Thread;
-// Enable single stepping.
-void SetSSFlag(DT_CONTEXT *pCtx, Thread *pThread);
-/*{
-    _ASSERTE(pCtx != NULL);
-    _ASSERTE(!"NYI");
-}*/
+inline void SetSSFlag(DT_CONTEXT *pContext)
+{
+    _ASSERTE(pContext != NULL);
+    _ASSERTE(!"NYI SetSSFlag");
+}
 
-// Disable single stepping
-void UnsetSSFlag(DT_CONTEXT *pCtx, Thread *pThread);
-/*{
-    _ASSERTE(pCtx != NULL);
-    _ASSERTE(!"NYI");
-}*/
+inline void UnsetSSFlag(DT_CONTEXT *pContext)
+{
+    _ASSERTE(pContext != NULL);
+    _ASSERTE(!"NYI UnsetSSFlag");
+}
 
-// Check if single stepping is enabled.
-bool IsSSFlagEnabled(DT_CONTEXT *pCtx, Thread *pThread);
-/*{
-    _ASSERTE(pCtx != NULL);
-    _ASSERTE(!"NYI");
+inline bool IsSSFlagEnabled(DT_CONTEXT * context)
+{
+    _ASSERTE(context != NULL);
+    _ASSERTE(!"NYI IsSSFlagEnabled");
     return 0;
-}*/
+}
 
 inline bool PRDIsEqual(PRD_TYPE p1, PRD_TYPE p2)
 {
