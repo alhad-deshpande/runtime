@@ -174,7 +174,7 @@ void InvokeUtil::CopyArg(TypeHandle th, PVOID argRef, ArgDestination *argDest) {
         _ASSERTE(argRef != NULL);
         *(INT64 *)pArgDst = *(INT32 *)argRef;
         break;
-#ifdef TARGET_POWERPC64
+#elif TARGET_POWERPC64
 // PowerPC64 calling convention requires sign-extension for signed ints and zero-extension for unsigned ints
 case ELEMENT_TYPE_BOOLEAN:
 case ELEMENT_TYPE_U1:
@@ -200,7 +200,7 @@ case ELEMENT_TYPE_I2:
 
 case ELEMENT_TYPE_R4:
     _ASSERTE(argRef != NULL);
-    if (argDest->IsFloatArgumentRegister())
+    if (argDest->IsIsFloatArgumentRegister())
         *((UINT32 *)pArgDst) = *(UINT32 *)argRef;  // Store as 32-bit float in FPR
     else
         *((UINT64 *)pArgDst) = *(UINT32 *)argRef;  // Zero-extend when passed in GPR

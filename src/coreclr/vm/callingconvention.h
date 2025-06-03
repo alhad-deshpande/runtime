@@ -881,7 +881,7 @@ public:
     }
 #endif // TARGET_AMD64
 
-#if defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64)
+#if defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64) || defined(TARGET_POWERPC64)
     // Get layout information for the argument that the ArgIterator is currently visiting.
     // TODO-RISCV64: support SIMD.
     void GetArgLoc(int argOffset, ArgLocDesc *pLoc)
@@ -948,7 +948,7 @@ protected:
     CorElementType      m_argType;
     int                 m_argSize;
     TypeHandle          m_argTypeHandle;
-#if (defined(TARGET_AMD64) && defined(UNIX_AMD64_ABI)) || defined(TARGET_ARM64) || defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64)
+#if (defined(TARGET_AMD64) && defined(UNIX_AMD64_ABI)) || defined(TARGET_ARM64) || defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64) || defined(TARGET_POWERPC64)
     ArgLocDesc          m_argLocDescForStructInRegs;
     bool                m_hasArgLocDescForStructInRegs;
 #endif // (TARGET_AMD64 && UNIX_AMD64_ABI) || TARGET_ARM64 || TARGET_LOONGARCH64 || TARGET_RISCV64
@@ -1267,7 +1267,7 @@ int ArgIteratorTemplate<ARGITERATOR_BASE>::GetNextOffset()
     m_argSize = argSize;
     m_argTypeHandle = thValueType;
 
-#if defined(UNIX_AMD64_ABI) || defined (TARGET_ARM64) || defined (TARGET_LOONGARCH64) || defined (TARGET_RISCV64)
+#if defined(UNIX_AMD64_ABI) || defined (TARGET_ARM64) || defined (TARGET_LOONGARCH64) || defined (TARGET_RISCV64) || defined (TARGET_POWERPC64)
     m_hasArgLocDescForStructInRegs = false;
 #endif
 

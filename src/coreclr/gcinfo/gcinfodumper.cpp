@@ -264,6 +264,8 @@ BOOL GcInfoDumper::ReportPointerRecord (
         vREG(t6, T6),
 #undef vREG
 #undef REG
+#elif defined(TARGET_POWERPC64)
+	// TODO TAREGT_POWERPC64
 #else
 PORTABILITY_ASSERT("GcInfoDumper::ReportPointerRecord is not implemented on this platform.")
 #endif
@@ -289,6 +291,8 @@ PORTABILITY_ASSERT("GcInfoDumper::ReportPointerRecord is not implemented on this
     iSPRegister = (offsetof(T_CONTEXT, Sp) - offsetof(T_CONTEXT, R0)) / sizeof(ULONGLONG);
 #elif defined(TARGET_RISCV64)
     iSPRegister = (offsetof(T_CONTEXT, Sp) - offsetof(T_CONTEXT, R0)) / sizeof(ULONGLONG);
+#elif defined(TARGET_POWERPC64)
+    iSPRegister = 0; //TODO POWERPC64 
 #endif
 
 #if defined(TARGET_ARM) || defined(TARGET_ARM64) || defined(TARGET_RISCV64) || defined(TARGET_LOONGARCH64)

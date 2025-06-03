@@ -159,7 +159,7 @@ void HelperMethodFrame::UpdateRegDisplay(const PREGDISPLAY pRD, bool updateFloat
         // This allocation throws on OOM.
 	MachState* pUnwoundState = (MachState*)DacAllocHostOnlyInstance(sizeof(*pUnwoundState), true);
 
-	InsureInit(false, pUnwoundState);
+	InsureInit(pUnwoundState);
 
 	pRD->pCurrentContext->Nip = pRD->ControlPC = pUnwoundState->m_nip;
 	pRD->pCurrentContext->R1 = pRD->SP = pUnwoundState->m_sp;
@@ -256,24 +256,24 @@ void ResumableFrame::UpdateRegDisplay(const PREGDISPLAY pRD, bool updateFloats)
 
     pRD->SP = m_Regs->R1;
 
-    pRD->pCurrentContextPointers->R14  = &m_ctx.R14;
-    pRD->pCurrentContextPointers->R15  = &m_ctx.R15;
-    pRD->pCurrentContextPointers->R16  = &m_ctx.R16;
-    pRD->pCurrentContextPointers->R17  = &m_ctx.R17;
-    pRD->pCurrentContextPointers->R18  = &m_ctx.R18;
-    pRD->pCurrentContextPointers->R19  = &m_ctx.R19;
-    pRD->pCurrentContextPointers->R20  = &m_ctx.R20;
-    pRD->pCurrentContextPointers->R21  = &m_ctx.R21;
-    pRD->pCurrentContextPointers->R22  = &m_ctx.R22;
-    pRD->pCurrentContextPointers->R23  = &m_ctx.R23;
-    pRD->pCurrentContextPointers->R24  = &m_ctx.R24;
-    pRD->pCurrentContextPointers->R25  = &m_ctx.R25;
-    pRD->pCurrentContextPointers->R26  = &m_ctx.R26;
-    pRD->pCurrentContextPointers->R27  = &m_ctx.R27;
-    pRD->pCurrentContextPointers->R28  = &m_ctx.R28;
-    pRD->pCurrentContextPointers->R29  = &m_ctx.R29;
-    pRD->pCurrentContextPointers->R30  = &m_ctx.R30;
-    pRD->pCurrentContextPointers->R31  = &m_ctx.R31;
+    pRD->pCurrentContextPointers->R14  = &m_Regs->R14;
+    pRD->pCurrentContextPointers->R15  = &m_Regs->R15;
+    pRD->pCurrentContextPointers->R16  = &m_Regs->R16;
+    pRD->pCurrentContextPointers->R17  = &m_Regs->R17;
+    pRD->pCurrentContextPointers->R18  = &m_Regs->R18;
+    pRD->pCurrentContextPointers->R19  = &m_Regs->R19;
+    pRD->pCurrentContextPointers->R20  = &m_Regs->R20;
+    pRD->pCurrentContextPointers->R21  = &m_Regs->R21;
+    pRD->pCurrentContextPointers->R22  = &m_Regs->R22;
+    pRD->pCurrentContextPointers->R23  = &m_Regs->R23;
+    pRD->pCurrentContextPointers->R24  = &m_Regs->R24;
+    pRD->pCurrentContextPointers->R25  = &m_Regs->R25;
+    pRD->pCurrentContextPointers->R26  = &m_Regs->R26;
+    pRD->pCurrentContextPointers->R27  = &m_Regs->R27;
+    pRD->pCurrentContextPointers->R28  = &m_Regs->R28;
+    pRD->pCurrentContextPointers->R29  = &m_Regs->R29;
+    pRD->pCurrentContextPointers->R30  = &m_Regs->R30;
+    pRD->pCurrentContextPointers->R31  = &m_Regs->R31;
 
     pRD->IsCallerContextValid = FALSE;
     pRD->IsCallerSPValid      = FALSE;        // Don't add usage of this field.  This is only temporary.

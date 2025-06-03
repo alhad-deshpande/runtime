@@ -319,11 +319,11 @@ struct DECLSPEC_ALIGN(8) UMEntryThunkCode
     }
 };
 
-void UMEntryThunkCode::Poison()
-{
+//void UMEntryThunkCode::Poison()
+//{
     // TODO POWERPC64 removed this structure commit https://github.com/dotnet/runtime/commit/1f6b690378ba4adf9567746acb3d213ef0bc40bf
     // Implemented for building coreclr --> vikas
-}
+//}
 struct HijackArgs
 {
     union

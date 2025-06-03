@@ -926,7 +926,7 @@ void DoGcStress (PCONTEXT regs, NativeCodeVersion nativeCodeVersion)
     return;
 }
 
-#elif defined(TARGET_AMD64) || defined(TARGET_ARM) || defined(TARGET_ARM64) || defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64)
+#elif defined(TARGET_AMD64) || defined(TARGET_ARM) || defined(TARGET_ARM64) || defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64) || defined(TARGET_POWERPC64)
 /////////////////////////////////////////////////////////////////////////////
 ////////////////////////////// end of x86-specific //////////////////////////
 /////////////////////////////////////////////////////////////////////////////
@@ -970,7 +970,7 @@ void replaceSafePointInstructionWithGcStressInstr(GcInfoDecoder* decoder, UINT32
     {
         *((DWORD*)instrPtrWriterHolder.GetRW()) = INTERRUPT_INSTR_32;
     }
-#elif defined(TARGET_ARM64) || defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64)
+#elif defined(TARGET_ARM64) || defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64) || defined(TARGET_POWERPC64)
     *((DWORD*)instrPtrWriterHolder.GetRW()) = INTERRUPT_INSTR;
 #else
     *((BYTE*)instrPtrWriterHolder.GetRW()) = INTERRUPT_INSTR;
@@ -1052,7 +1052,7 @@ bool replaceInterruptibleRangesWithGcStressInstr (UINT32 startOffset, UINT32 sto
             }
 
             instrPtrRW += instrLen;
-#elif defined(TARGET_ARM64) || defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64)
+#elif defined(TARGET_ARM64) || defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64) || defined(TARGET_POWERPC64)
             *((DWORD*)instrPtrRW) = INTERRUPT_INSTR;
             instrPtrRW += 4;
 #else // AMD64

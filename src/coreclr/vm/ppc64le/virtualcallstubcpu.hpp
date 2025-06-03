@@ -6,6 +6,40 @@
 #ifndef _VIRTUAL_CALL_STUB_PPC64LE_H
 #define _VIRTUAL_CALL_STUB_PPC64LE_H
 
+#define USES_LOOKUP_STUBS   1
+
+struct LookupStub
+{
+    inline PCODE entryPoint() { LIMITED_METHOD_CONTRACT; return (PCODE)&_entryPoint[0]; }
+    inline size_t token() { LIMITED_METHOD_CONTRACT; return _token; }
+    inline size_t size() { LIMITED_METHOD_CONTRACT; return sizeof(LookupStub); }
+private:
+    friend struct LookupHolder;
+
+    UINT16 _entryPoint[8];
+    PCODE _resolveWorkerTarget;
+    size_t _token;
+};
+
+struct LookupHolder
+{
+    private:
+        LookupStub _stub;
+    public:
+	static void InitializeStatic() { }
+
+	void  Initialize(LookupHolder* pLookupHolderRX, PCODE resolveWorkerTarget, size_t dispatchToken)
+	{
+            //TODO POWERPC64
+	}
+
+	LookupStub*    stub()        { LIMITED_METHOD_CONTRACT; return &_stub; }
+	static LookupHolder*  FromLookupEntry(PCODE lookupEntry)
+	{
+            return (LookupHolder*) ( lookupEntry - offsetof(LookupHolder, _stub) - offsetof(LookupStub, _entryPoint)  );
+	}
+};
+
 struct DispatchStub
 {
     inline PCODE entryPoint()         { LIMITED_METHOD_CONTRACT; return (PCODE)&_entryPoint[0]; }

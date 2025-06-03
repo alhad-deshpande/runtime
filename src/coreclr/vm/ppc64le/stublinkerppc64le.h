@@ -39,6 +39,8 @@ struct VecReg
     int operator != (VecReg other) { return reg != other.reg; }
 };
 
+const IntReg RegSp  = IntReg(1);
+
 class StubLinkerCPU : public StubLinker
 {
 private:
@@ -51,8 +53,6 @@ private:
      void EmitInsertImmediateHigh(IntReg R1, DWORD I2);
      void EmitLoadAddress(IntReg R1, int D2, IntReg X2, IntReg B2);
      void EmitLoadAddress(IntReg R1, int D2, IntReg B2);
-     void EmitLoad(IntReg R1, int D2, IntReg X2, IntReg B2);
-     void EmitLoad(IntReg R1, int D2, IntReg B2);
      void EmitStore(IntReg R1, int D2, IntReg X2, IntReg B2);
      void EmitStore(IntReg R1, int D2, IntReg B2);
      void EmitStoreFloat(VecReg R1, int D2, IntReg X2, IntReg B2);
@@ -66,12 +66,19 @@ private:
      void EmitLoadRegister(IntReg target, IntReg source);
      void EmitLoadImmediate(IntReg target, UINT64 constant);
  
-     void EmitCallLabel(CodeLabel *target);
+     void EmitCallLabel(CodeLabel *target, BOOL fTailCall, BOOL fIndirect);
  
      void EmitSaveIncomingArguments(unsigned int cIntRegArgs, unsigned int cFloatRegArgs);
  
      void EmitComputedInstantiatingMethodStub(MethodDesc* pSharedMD, struct ShuffleEntry *pShuffleEntryArray, void* extraArg);
      void EmitShuffleThunk(struct ShuffleEntry *pShuffleEntryArray);
+     void EmitMovReg(IntReg R1, IntReg R2);
+     void EmitMovConstant(IntReg R1, int I2);
+     void EmitAddImm(IntReg R1, IntReg R2, unsigned int I3);
+     unsigned int GetSavedRegArgsOffset();
+     void EmitLoad(IntReg R1, int D2, IntReg X2, IntReg B2);
+     void EmitLoad(IntReg R1, int D2, IntReg B2);
+     void EmitEpilog();
 };
 
 #endif  // STUBLINKERPPC64LE_H_

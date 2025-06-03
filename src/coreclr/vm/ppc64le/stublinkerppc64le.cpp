@@ -159,18 +159,14 @@ void StubLinkerCPU::EmitProlog(unsigned short cIntRegArgs, unsigned short cVecRe
 {
 }
 
-void StubLinkerCPU::EmitEpilog()
-{
-}
-
 void StubLinkerCPU::EmitLoadIncomingSaveArea(IntReg target)
 {
 }
 #endif
 
-void StubLinkerCPU::EmitCallLabel(CodeLabel *target)
+void StubLinkerCPU::EmitCallLabel(CodeLabel *target, BOOL fTailCall, BOOL fIndirect)
 {
-
+    _ASSERTE(!"NYI EmitCallLabel");
 }
 
 VOID StubLinkerCPU::EmitComputedInstantiatingMethodStub(MethodDesc* pSharedMD, struct ShuffleEntry *pShuffleEntryArray, void* extraArg)
@@ -179,8 +175,33 @@ VOID StubLinkerCPU::EmitComputedInstantiatingMethodStub(MethodDesc* pSharedMD, s
 
 VOID StubLinkerCPU::EmitShuffleThunk(ShuffleEntry *pShuffleEntryArray)
 {
-    // TODO POERPC64
+    // TODO TARGET_POWERPC64
     _ASSERTE(!"NYI");
+}
+
+void StubLinkerCPU::EmitMovReg(IntReg R1, IntReg R2)
+{
+    _ASSERTE(!"NYI EmitMovReg");
+}
+
+void StubLinkerCPU::EmitMovConstant(IntReg R1, int I2)
+{
+    _ASSERTE(!"NYI EmitMovConstant");
+}
+
+void StubLinkerCPU::EmitAddImm(IntReg R1, IntReg R2, unsigned int I3)
+{
+    _ASSERTE(!"NYI EmitAddImm");
+}
+
+unsigned int StubLinkerCPU::GetSavedRegArgsOffset()
+{
+    _ASSERTE(!"NYI GetSavedRegArgsOffset");
+}
+
+void StubLinkerCPU::EmitEpilog()
+{
+    _ASSERTE(!"NYI EmitEpilog");
 }
 
 #endif // !DACCESS_COMPILE
