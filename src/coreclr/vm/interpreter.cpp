@@ -758,8 +758,8 @@ CorJitResult Interpreter::GenerateInterpreterStub(CEEInfo* comp,
     {
         const char* clsName;
         const char* methName = getMethodName(comp, info->ftn, &clsName);
-        if (   !s_InterpretMeths.contains(methName, clsName, info->args.pSig)
-            || s_InterpretMethsExclude.contains(methName, clsName, info->args.pSig))
+        if (   !s_InterpretMeths.contains(methName, clsName, (CORINFO_SIG_INFO *)info->args.pSig)
+            || s_InterpretMethsExclude.contains(methName, clsName, (CORINFO_SIG_INFO *)info->args.pSig))
         {
             TRACE_SKIPPED(clsName, methName, "not in set of methods to interpret");
             return CORJIT_SKIPPED;
@@ -2993,7 +2993,7 @@ EvalLoop:
             ConvOvfUn<INT32, INT_MIN, INT_MAX, /*TCanHoldPtr*/false, CORINFO_TYPE_INT>();
             break;
         case CEE_CONV_OVF_I8_UN:
-            ConvOvfUn<INT64, _I64_MIN, _I64_MAX, /*TCanHoldPtr*/true, CORINFO_TYPE_LONG>();
+            ConvOvfUn<INT64, INT64_MIN, INT64_MAX, /*TCanHoldPtr*/true, CORINFO_TYPE_LONG>();
             break;
         case CEE_CONV_OVF_U1_UN:
             ConvOvfUn<UINT8, 0, UCHAR_MAX, /*TCanHoldPtr*/false, CORINFO_TYPE_INT>();
@@ -3005,7 +3005,7 @@ EvalLoop:
             ConvOvfUn<UINT32, 0, UINT_MAX, /*TCanHoldPtr*/false, CORINFO_TYPE_INT>();
             break;
         case CEE_CONV_OVF_U8_UN:
-            ConvOvfUn<UINT64, 0, _UI64_MAX, /*TCanHoldPtr*/true, CORINFO_TYPE_LONG>();
+            ConvOvfUn<UINT64, 0, UINT64_MAX, /*TCanHoldPtr*/true, CORINFO_TYPE_LONG>();
             break;
         case CEE_CONV_OVF_I_UN:
             if (sizeof(NativeInt) == 4)
@@ -3015,7 +3015,7 @@ EvalLoop:
             else
             {
                 _ASSERTE(sizeof(NativeInt) == 8);
-                ConvOvfUn<NativeInt, _I64_MIN, _I64_MAX, /*TCanHoldPtr*/true, CORINFO_TYPE_NATIVEINT>();
+                ConvOvfUn<NativeInt, INT64_MIN, INT64_MAX, /*TCanHoldPtr*/true, CORINFO_TYPE_NATIVEINT>();
             }
             break;
         case CEE_CONV_OVF_U_UN:
@@ -3026,7 +3026,7 @@ EvalLoop:
             else
             {
                 _ASSERTE(sizeof(NativeUInt) == 8);
-                ConvOvfUn<NativeUInt, 0, _UI64_MAX, /*TCanHoldPtr*/true, CORINFO_TYPE_NATIVEINT>();
+                ConvOvfUn<NativeUInt, 0, UINT64_MAX, /*TCanHoldPtr*/true, CORINFO_TYPE_NATIVEINT>();
             }
             break;
         case CEE_BOX:
@@ -3128,10 +3128,10 @@ EvalLoop:
             ConvOvf<UINT32, 0, UINT_MAX, /*TCanHoldPtr*/false, CORINFO_TYPE_INT>();
             break;
         case CEE_CONV_OVF_I8:
-            ConvOvf<INT64, _I64_MIN, _I64_MAX, /*TCanHoldPtr*/true, CORINFO_TYPE_LONG>();
+            ConvOvf<INT64, INT64_MIN, INT64_MAX, /*TCanHoldPtr*/true, CORINFO_TYPE_LONG>();
             break;
         case CEE_CONV_OVF_U8:
-            ConvOvf<UINT64, 0, _UI64_MAX, /*TCanHoldPtr*/true, CORINFO_TYPE_LONG>();
+            ConvOvf<UINT64, 0, UINT64_MAX, /*TCanHoldPtr*/true, CORINFO_TYPE_LONG>();
             break;
         case CEE_REFANYVAL:
             RefanyVal();
@@ -3162,7 +3162,7 @@ EvalLoop:
             else
             {
                 _ASSERTE(sizeof(NativeInt) == 8);
-                ConvOvf<NativeInt, _I64_MIN, _I64_MAX, /*TCanHoldPtr*/true, CORINFO_TYPE_NATIVEINT>();
+                ConvOvf<NativeInt, INT64_MIN, INT64_MAX, /*TCanHoldPtr*/true, CORINFO_TYPE_NATIVEINT>();
             }
             break;
         case CEE_CONV_OVF_U:
@@ -3173,7 +3173,7 @@ EvalLoop:
             else
             {
                 _ASSERTE(sizeof(NativeUInt) == 8);
-                ConvOvf<NativeUInt, 0, _UI64_MAX, /*TCanHoldPtr*/true, CORINFO_TYPE_NATIVEINT>();
+                ConvOvf<NativeUInt, 0, UINT64_MAX, /*TCanHoldPtr*/true, CORINFO_TYPE_NATIVEINT>();
             }
             break;
         case CEE_ADD_OVF:
@@ -12329,13 +12329,13 @@ void Interpreter::PrintValue(InterpreterType it, BYTE* valAddr)
     case CORINFO_TYPE_NATIVEINT:
         {
             INT64 val = static_cast<INT64>(*reinterpret_cast<NativeInt*>(valAddr));
-            fprintf(GetLogFile(), "%lld (= 0x%llx)", val, val);
+            fprintf(GetLogFile(), "%ld (= 0x%lx)", val, val);
         }
         break;
     case CORINFO_TYPE_NATIVEUINT:
         {
             UINT64 val = static_cast<UINT64>(*reinterpret_cast<NativeUInt*>(valAddr));
-            fprintf(GetLogFile(), "%lld (= 0x%llx)", val, val);
+            fprintf(GetLogFile(), "%ld (= 0x%lx)", val, val);
         }
         break;
 
@@ -12346,11 +12346,11 @@ void Interpreter::PrintValue(InterpreterType it, BYTE* valAddr)
     case CORINFO_TYPE_LONG:
         {
             INT64 val = *reinterpret_cast<INT64*>(valAddr);
-            fprintf(GetLogFile(), "%lld (= 0x%llx)", val, val);
+            fprintf(GetLogFile(), "%ld (= 0x%lx)", val, val);
         }
         break;
     case CORINFO_TYPE_ULONG:
-        fprintf(GetLogFile(), "%lld", *reinterpret_cast<UINT64*>(valAddr));
+        fprintf(GetLogFile(), "%ld", *reinterpret_cast<UINT64*>(valAddr));
         break;
 
     case CORINFO_TYPE_CLASS:

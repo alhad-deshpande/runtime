@@ -197,6 +197,7 @@ void StubLinkerCPU::EmitAddImm(IntReg R1, IntReg R2, unsigned int I3)
 unsigned int StubLinkerCPU::GetSavedRegArgsOffset()
 {
     _ASSERTE(!"NYI GetSavedRegArgsOffset");
+    return 0;
 }
 
 void StubLinkerCPU::EmitEpilog()
