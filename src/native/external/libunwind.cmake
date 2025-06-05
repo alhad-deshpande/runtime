@@ -397,7 +397,7 @@ set(libunwind_ppc64le_la_SOURCES_ppc64le
     ${libunwind_la_SOURCES_generic}
     ppc64/Gapply_reg_state.c ppc64/Greg_states_iterate.c
     ppc64/Gcreate_addr_space.c ppc/Gget_save_loc.c ppc64/Gglobal.c
-    ppc64/Ginit.c ppc/Ginit_local.c
+    ppc64/Ginit.c ppc/Ginit_local.c ppc/Ginit_remote.c
     ppc64/Gregs.c ppc64/Gresume.c
     ppc/Gis_signal_frame.c ppc64/Gstep.c
 )
