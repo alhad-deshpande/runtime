@@ -36,12 +36,51 @@ public:
 
             _ASSERTE(refsize == InstructionFormat::k32);
 
-            return 4;
+            return 28;
 	}
 	virtual VOID EmitInstruction(UINT refsize, int64_t fixedUpReference, BYTE *pOutBufferRX, BYTE *pOutBufferRW, UINT variationCode, BYTE *pDataBuffer)
         {
+	    UINT64 target = (UINT64)(((INT64)pOutBufferRX) + fixedUpReference + GetSizeOfInstruction(refsize, variationCode));
+
+            // lis r12, <target>
+            pOutBufferRW[0] = 0x3D;
+            pOutBufferRW[1] = 0x80;
+            *((UINT64*)&pOutBufferRW[2]) = ((UINT64)(target) >> 48 & 0xffff);
+
+            // ori r12, r12, <target>
+            pOutBufferRW[4] = 0x61;
+            pOutBufferRW[5] = 0x8C;
+            *((UINT64*)&pOutBufferRW[6]) = ((UINT64)(target) >> 32) & 0xffff;
+
+            // sldi r12, r12, 32
+            pOutBufferRW[8] = 0x79;
+            pOutBufferRW[9] = 0x8C;
+            pOutBufferRW[10] = 0x07;
+            pOutBufferRW[11] = 0xC6;
+
+            // oris r12, r12, <target>
+            pOutBufferRW[12] = 0x65;
+            pOutBufferRW[13] = 0x8C;
+            *((UINT64*)&pOutBufferRW[14]) = ((UINT64)(target) >> 16) & 0xffff;
+
+            // ori r12, r12, <target>
+            pOutBufferRW[16] = 0x61;
+            pOutBufferRW[17] = 0x8C;
+            *((UINT64*)&pOutBufferRW[18]) = (UINT64)(target) & 0xffff;
+
+            // mtctr r12
+            pOutBufferRW[20] = 0x7D;
+            pOutBufferRW[21] = 0x89;
+            pOutBufferRW[22] = 0x03;
+            pOutBufferRW[23] = 0xA6;
+
+            // bcctr
+            pOutBufferRW[24] = 0x4E;
+            pOutBufferRW[25] = 0x80;
+            pOutBufferRW[26] = 0x04;
+            pOutBufferRW[27] = 0x20;
 	}
-	virtual BOOL CanReach(UINT refsize, UINT variationCode, BOOL fExternal, INT_PTR offset)
+	/*virtual BOOL CanReach(UINT refsize, UINT variationCode, BOOL fExternal, INT_PTR offset)
 	{
             _ASSERTE(refsize == InstructionFormat::k32);
 
@@ -49,7 +88,7 @@ public:
 		return false;
 
     	    return FitsInI4(offset);
-	}
+	}*/
 
 
 };

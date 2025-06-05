@@ -10,4 +10,5 @@ NESTED_END ThePreStub, _TEXT
 
 LEAF_ENTRY ThePreStubPatch, _TEXT
 // NOT YET IMPLEMENTED
+PATCH_LABEL ThePreStubPatchLabel
 LEAF_END ThePreStubPatch, _TEXT

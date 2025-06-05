@@ -7,4 +7,12 @@
 //extern "C" void CallDescrWorkerInternal(CallDescrData * pCallDescrData);
 
 NESTED_ENTRY CallDescrWorkerInternal, _TEXT, NoHandler
+
+LOCAL_LABEL(CallDescrWorkerInternalReturnAddress):
+
+PATCH_LABEL CallDescrWorkerInternalReturnAddressOffset
+    .quad LOCAL_LABEL(CallDescrWorkerInternalReturnAddress) - C_FUNC(CallDescrWorkerInternal)
+
 NESTED_END CallDescrWorkerInternal, _TEXT
+
+

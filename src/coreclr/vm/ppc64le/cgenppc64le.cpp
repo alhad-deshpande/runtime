@@ -322,7 +322,26 @@ void HijackFrame::UpdateRegDisplay(const PREGDISPLAY pRD, bool updateFloats)
 #endif // FEATURE_HIJACK
 
 #ifndef DACCESS_COMPILE
+void UMEntryThunkCode::Encode(UMEntryThunkCode *pEntryThunkCodeRX, BYTE* pTargetCode, void* pvSecretParam)
+{
+    //TODO TARGET_POWERPC64
+}
 
+void UMEntryThunkCode::Poison()
+{
+    //TODO TARGET_POWERPC64
+}
+
+UMEntryThunk* UMEntryThunk::Decode(LPVOID pCallback)
+{
+    //TODO TARGET_POWERPC64
+    LIMITED_METHOD_CONTRACT;
+
+    _ASSERTE(offsetof(UMEntryThunkCode, m_code) == 0);
+    UMEntryThunkCode * pCode = (UMEntryThunkCode*)pCallback;
+
+    return (UMEntryThunk*)pCode->m_pvSecretParam;
+}
 #ifdef FEATURE_READYTORUN
 
 PCODE DynamicHelpers::CreateHelper(LoaderAllocator * pAllocator, TADDR arg, PCODE target)

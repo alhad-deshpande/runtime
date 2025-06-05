@@ -201,4 +201,30 @@ private:
     // use short/long instruction sizes for LDR, depending on the slot value.
 };
 
+#ifdef DECLARE_DATA
+
+#ifndef DACCESS_COMPILE
+ResolveHolder* ResolveHolder::FromFailEntry(PCODE failEntry)
+{
+    LIMITED_METHOD_CONTRACT;
+    ResolveHolder* resolveHolder = (ResolveHolder*) ( failEntry - offsetof(ResolveHolder, _stub) - offsetof(ResolveStub, _failEntryPoint) );
+    return resolveHolder;
+}
+
+ResolveHolder* ResolveHolder::FromResolveEntry(PCODE resolveEntry)
+{
+    LIMITED_METHOD_CONTRACT;
+    ResolveHolder* resolveHolder = (ResolveHolder*) ( resolveEntry - offsetof(ResolveHolder, _stub) - offsetof(ResolveStub, _resolveEntryPoint) );
+    return resolveHolder;
+}
+
+void VTableCallHolder::Initialize(unsigned slot)
+{
+    _ASSERTE(!"TARGET_POWERPC64:NYI");
+}
+
+#endif // DACCESS_COMPILE
+
+#endif //DECLARE_DATA
+
 #endif // #endif // _VIRTUAL_CALL_STUB_PPC64LE_H

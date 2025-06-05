@@ -30,3 +30,9 @@ NESTED_ENTRY ProfileTailcallNaked, _TEXT, NoHandler
 # NOT YET IMPLEMENTED
 .long 0x13
 NESTED_END ProfileTailcallNaked, _TEXT
+
+
+LEAF_ENTRY JIT_ProfilerEnterLeaveTailcallStub, _TEXT
+    # NOT YET IMPLEMENTED
+LEAF_END JIT_ProfilerEnterLeaveTailcallStub, _TEXT
+
