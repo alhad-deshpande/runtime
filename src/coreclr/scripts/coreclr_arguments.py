@@ -213,7 +213,7 @@ class CoreclrArguments:
             return "armel"
         elif platform_machine == "aarch64" or platform_machine == "arm64":
             return "arm64"
-        elif platform_machine == "ppc64le"
+        elif platform_machine == "ppc64le":
             return "ppc64le"
         else:
             print("Unknown architecture: %s" % platform_machine)
