@@ -412,9 +412,32 @@ void (*StubPrecode::StubPrecodeCode)();
 void (*StubPrecode::StubPrecodeCode_End)();
 #endif
 
+#if defined(TARGET_POWERPC64) && defined(TARGET_UNIX)
+extern "C" void StubPrecodeCode();
+extern "C" void StubPrecodeCode_End();
+extern "C" void FixupPrecodeCode();
+extern "C" void FixupPrecodeCode_End();
+#endif
+
 void StubPrecode::StaticInitialize()
 {
 #if defined(TARGET_ARM64) && defined(TARGET_UNIX)
+    #define ENUM_PAGE_SIZE(size) \
+        case size: \
+            StubPrecodeCode = StubPrecodeCode##size; \
+            StubPrecodeCode_End = StubPrecodeCode##size##_End; \
+            _ASSERTE((SIZE_T)((BYTE*)StubPrecodeCode##size##_End - (BYTE*)StubPrecodeCode##size) <= StubPrecode::CodeSize); \
+            break;
+
+    int pageSize = GetStubCodePageSize();
+    switch (pageSize)
+    {
+        ENUM_PAGE_SIZES
+        default:
+            EEPOLICY_HANDLE_FATAL_ERROR_WITH_MESSAGE(COR_E_EXECUTIONENGINE, W("Unsupported OS page size"));
+    }
+    #undef ENUM_PAGE_SIZE
+#elif defined(TARGET_POWERPC64) && defined(TARGET_UNIX)
     #define ENUM_PAGE_SIZE(size) \
         case size: \
             StubPrecodeCode = StubPrecodeCode##size; \
@@ -435,7 +458,7 @@ void StubPrecode::StaticInitialize()
 #endif
 #ifdef TARGET_LOONGARCH64
     _ASSERTE(((*((short*)PCODEToPINSTR((PCODE)StubPrecodeCode) + OFFSETOF_PRECODE_TYPE)) >> 5) == StubPrecode::Type);
-#elif TARGET_RISCV64
+#elif (TARGET_RISCV64 || TARGET_POWERPC64)
     _ASSERTE((*((BYTE*)PCODEToPINSTR((PCODE)StubPrecodeCode) + OFFSETOF_PRECODE_TYPE)) == StubPrecode::Type);
 #else
     _ASSERTE((*((BYTE*)PCODEToPINSTR((PCODE)StubPrecodeCode) + OFFSETOF_PRECODE_TYPE)) == StubPrecode::Type);
@@ -550,12 +573,28 @@ void FixupPrecode::StaticInitialize()
             EEPOLICY_HANDLE_FATAL_ERROR_WITH_MESSAGE(COR_E_EXECUTIONENGINE, W("Unsupported OS page size"));
     }
     #undef ENUM_PAGE_SIZE
+#elif defined(TARGET_POWERPC64) && defined(TARGET_UNIX)
+    #define ENUM_PAGE_SIZE(size) \
+        case size: \
+            FixupPrecodeCode = FixupPrecodeCode##size; \
+            FixupPrecodeCode_End = FixupPrecodeCode##size##_End; \
+            _ASSERTE((SIZE_T)((BYTE*)FixupPrecodeCode##size##_End - (BYTE*)FixupPrecodeCode##size) <= FixupPrecode::CodeSize); \
+            break;
+
+    int pageSize = GetStubCodePageSize();
+    switch (pageSize)
+    {
+        ENUM_PAGE_SIZES
+        default:
+            EEPOLICY_HANDLE_FATAL_ERROR_WITH_MESSAGE(COR_E_EXECUTIONENGINE, W("Unsupported OS page size"));
+    }
+    #undef ENUM_PAGE_SIZE
 #else
     _ASSERTE((SIZE_T)((BYTE*)FixupPrecodeCode_End - (BYTE*)FixupPrecodeCode) <= FixupPrecode::CodeSize);
 #endif
 #ifdef TARGET_LOONGARCH64
     _ASSERTE(((*((short*)PCODEToPINSTR((PCODE)StubPrecodeCode) + OFFSETOF_PRECODE_TYPE)) >> 5) == StubPrecode::Type);
-#elif TARGET_RISCV64
+#elif (TARGET_RISCV64 || TARGET_POWERPC64)
     _ASSERTE((*((BYTE*)PCODEToPINSTR((PCODE)FixupPrecodeCode) + OFFSETOF_PRECODE_TYPE)) == FixupPrecode::Type);
 #else
     _ASSERTE(*((BYTE*)PCODEToPINSTR((PCODE)FixupPrecodeCode) + OFFSETOF_PRECODE_TYPE) == FixupPrecode::Type);
