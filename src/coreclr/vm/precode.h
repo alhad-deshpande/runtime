@@ -260,9 +260,9 @@ struct FixupPrecode
     static const SIZE_T CodeSize = 32;
     static const int FixupCodeOffset = 10;
 #elif defined(TARGET_POWERPC64)
-    static const int Type = 0xFF;	//TODO Vikas
-    static const SIZE_T CodeSize = 24;
-    static const int FixupCodeOffset = 10;
+    static const int Type = 0x51;	// Unique type for PowerPC64 FixupPrecode
+    static const SIZE_T CodeSize = 12; // b or ba in PowerPC64) requires 4 bytes, and even with data or padding, 8-12 bytes should suffice.
+    static const int FixupCodeOffset = 8; // Aligned to instruction boundary 
 #endif // TARGET_AMD64
 
     BYTE m_code[CodeSize];
