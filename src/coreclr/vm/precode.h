@@ -117,8 +117,8 @@ struct StubPrecode
     static const int Type = 0x17;
     static const SIZE_T CodeSize = 24;
 #elif defined(TARGET_POWERPC64)
-    static const int Type = 0x50;    //coinciding with P in ascii
-    static const SIZE_T CodeSize = 24;
+    static const int Type = 0x60;    //coinciding with P in ascii
+    static const SIZE_T CodeSize = 48;
 #endif // TARGET_AMD64
 
     BYTE m_code[CodeSize];
