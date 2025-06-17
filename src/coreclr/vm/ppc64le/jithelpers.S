@@ -24,7 +24,6 @@ LEAF_END JIT_PatchedCodeStart, _TEXT
 // void JIT_CheckedWriteBarrier(Object** dst, Object* src)
 LEAF_ENTRY JIT_CheckedWriteBarrier, _TEXT
 // NOT YET IMPLEMENTED
-.long 0x31
 LEAF_END_MARKED JIT_CheckedWriteBarrier, _TEXT
 
 // This is used by the mechanism to hold either the JIT_WriteBarrier_PreGrow
@@ -32,10 +31,9 @@ LEAF_END_MARKED JIT_CheckedWriteBarrier, _TEXT
 // change at runtime as the GC changes. Initially it should simply be a copy of the
 // larger of the two functions (JIT_WriteBarrier_PostGrow) to ensure we have created
 // enough space to copy that code in.
-.balign 16
+//.balign 16
 LEAF_ENTRY JIT_WriteBarrier, _TEXT
 // NOT YET IMPLEMENTED
-.long 0x32
 LEAF_END_MARKED JIT_WriteBarrier, _TEXT
 
 // Mark start of the code region that we patch at runtime
@@ -63,13 +61,11 @@ LEAF_END JIT_PatchedCodeLast, _TEXT
 //   RDI, RSI are incremented by SIZEOF(LPVOID)
 LEAF_ENTRY JIT_ByRefWriteBarrier, _TEXT
 // NOT YET IMPLEMENTED
-.long 0x33
 LEAF_END_MARKED JIT_ByRefWriteBarrier, _TEXT
 
 // ------------------------------------------------------------------
 // __declspec(naked) void F_CALL_CONV JIT_WriteBarrier_Callable(Object **dst, Object* val)
-.balign 16
+//.balign 16
 LEAF_ENTRY  JIT_WriteBarrier_Callable, _TEXT
 // NOT YET IMPLEMENTED
-.long 0x34
 LEAF_END JIT_WriteBarrier_Callable, _TEXT

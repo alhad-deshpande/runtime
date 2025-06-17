@@ -260,8 +260,8 @@ struct FixupPrecode
     static const SIZE_T CodeSize = 32;
     static const int FixupCodeOffset = 10;
 #elif defined(TARGET_POWERPC64)
-    static const int Type = 0xFF;	//TODO Vikas
-    static const SIZE_T CodeSize = 24;
+    static const int Type = 0x80;	//TODO Vikas
+    static const SIZE_T CodeSize = 76;
     static const int FixupCodeOffset = 10;
 #endif // TARGET_AMD64
 

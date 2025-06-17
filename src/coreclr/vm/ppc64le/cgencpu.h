@@ -346,7 +346,7 @@ extern PCODE GetPreStubEntryPoint();
 struct ThisPtrRetBufPrecode {
 	//TODO TARGET_POWERPC64
 	//This structure is removed in commit: https://github.com/dotnet/runtime/commit/d7c4f0292dc9840c033c82ec3fa36af57dc3d8f6
-    static const int Type = 0x80; //TODO Vikas
+    static const int Type = 0x40; //TODO Vikas
 
     UINT16  m_rgCode[12];
     TADDR   m_pTarget;
