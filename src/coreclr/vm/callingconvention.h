@@ -991,6 +991,11 @@ protected:
     int             m_idxFPReg;         // Next FP register to be assigned a value
 #endif
 
+#ifdef TARGET_POWERPC64
+    int             m_idxGenReg;        // Next general register to be assigned a value
+    int             m_idxFPReg;         // Next FP register to be assigned a value
+#endif
+
     enum {
         ITERATION_STARTED               = 0x0001,   // Started iterating over arguments
         SIZE_OF_ARG_STACK_COMPUTED      = 0x0002,
@@ -1235,6 +1240,10 @@ int ArgIteratorTemplate<ARGITERATOR_BASE>::GetNextOffset()
 
         m_idxFPReg = 0;
 #elif defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64)
+        m_idxGenReg = numRegistersUsed;
+        m_ofsStack = 0;
+        m_idxFPReg = 0;
+#elif defined(TARGET_POWERPC64)
         m_idxGenReg = numRegistersUsed;
         m_ofsStack = 0;
         m_idxFPReg = 0;

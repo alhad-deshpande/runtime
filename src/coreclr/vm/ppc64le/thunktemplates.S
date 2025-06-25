@@ -49,6 +49,7 @@ LEAF_ENTRY FixupPrecodeCode, _TEXT
 	ori %r12, %r12, DATA_SLOT(FixupPrecode, PrecodeFixupThunk)@l
 	mtctr %r12
 	bctr
+	nop
 LEAF_END_MARKED FixupPrecodeCode, _TEXT
 
 LEAF_ENTRY CallCountingStubCode, _TEXT

@@ -261,7 +261,7 @@ struct FixupPrecode
     static const int FixupCodeOffset = 10;
 #elif defined(TARGET_POWERPC64)
     static const int Type = 0x80;	//TODO Vikas
-    static const SIZE_T CodeSize = 76;
+    static const SIZE_T CodeSize = 80;
     static const int FixupCodeOffset = 10;
 #endif // TARGET_AMD64
 
@@ -459,6 +459,9 @@ public:
 #elif defined(TARGET_RISCV64)
         assert(0 == OFFSETOF_PRECODE_TYPE);
         BYTE type = *((BYTE*)m_data + OFFSETOF_PRECODE_TYPE);
+#elif defined(TARGET_POWERPC64)
+        assert(0 == OFFSETOF_PRECODE_TYPE);
+        BYTE type = *((BYTE*)m_data + OFFSETOF_PRECODE_TYPE + 2);
 #else
 #if defined(SHIFTOF_PRECODE_TYPE)
 #error "did not expect SHIFTOF_PRECODE_TYPE to be defined"
