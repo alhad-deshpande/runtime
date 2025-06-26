@@ -562,6 +562,8 @@ public:
         return (size > ENREGISTERED_PARAMTYPE_MAXSIZE);
 #elif defined(TARGET_RISCV64)
         return (size > ENREGISTERED_PARAMTYPE_MAXSIZE);
+#elif defined(TARGET_POWERPC64)
+        return (size > ENREGISTERED_PARAMTYPE_MAXSIZE);
 #else
         PORTABILITY_ASSERT("ArgIteratorTemplate::IsArgPassedByRef");
         return FALSE;
@@ -616,7 +618,7 @@ public:
             return ((m_argSize > ENREGISTERED_PARAMTYPE_MAXSIZE) && (!m_argTypeHandle.IsHFA() || this->IsVarArg()));
         }
         return FALSE;
-#elif defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64)
+#elif defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64) || defined(TARGET_POWERPC64)
         if (m_argType == ELEMENT_TYPE_VALUETYPE)
         {
             _ASSERTE(!m_argTypeHandle.IsNull());
@@ -1826,6 +1828,63 @@ int ArgIteratorTemplate<ARGITERATOR_BASE>::GetNextOffset()
     int argOfs = TransitionBlock::GetOffsetOfArgs() + m_ofsStack;
     m_ofsStack += ALIGN_UP(cbArg, TARGET_POINTER_SIZE);
 
+    return argOfs;
+#elif defined(TARGET_POWERPC64)
+
+    int cFPRegs = 0;
+
+    switch (argType)
+    {
+	case ELEMENT_TYPE_R4:
+	    // 32-bit floating point argument.
+	    cFPRegs = 1;
+	    break;
+
+	case ELEMENT_TYPE_R8:
+	    // 64-bit floating point argument.
+	    cFPRegs = 1;
+	    break;
+
+	case ELEMENT_TYPE_VALUETYPE:
+	    // If the size is bigger than 8, or if the size is NOT a power of 2, then
+	    // the argument is passed by reference.
+	    if (argSize > ENREGISTERED_PARAMTYPE_MAXSIZE || (argSize & (argSize-1)) != 0)
+	    {
+		argSize = sizeof(TADDR);
+	    }
+	    // Single-element aggregates with float/double element are passed in FPRs.
+	    else if ((argSize == 4 && thValueType.GetHFAType() == CORINFO_HFA_ELEM_FLOAT)
+	        || (argSize == 8 && thValueType.GetHFAType() == CORINFO_HFA_ELEM_DOUBLE))
+	    {
+		cFPRegs = 1;
+	    }
+	    break;
+
+	default:
+    	    break;
+    }
+
+    if (cFPRegs)
+    {
+	if (m_idxFPReg < 4)
+	{
+	    int argOfs = TransitionBlock::GetOffsetOfFloatArgumentRegisters() + m_idxFPReg * 8;
+	    m_idxFPReg += 1;
+	    return argOfs;
+	}
+    }
+    else
+    {
+	if (m_idxGenReg < 5)
+	{
+	    int argOfs = TransitionBlock::GetOffsetOfArgumentRegisters() + m_idxGenReg * 8;
+	    m_idxGenReg += 1;
+	    return argOfs;
+	}
+    }
+
+    int argOfs = TransitionBlock::GetOffsetOfArgs() + m_ofsStack;
+    m_ofsStack += ALIGN_UP(argSize, TARGET_POINTER_SIZE);
     return argOfs;
 #else
     PORTABILITY_ASSERT("ArgIteratorTemplate::GetNextOffset");

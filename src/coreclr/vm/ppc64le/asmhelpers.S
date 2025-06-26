@@ -10,7 +10,6 @@
 # </NOTE>
 NESTED_ENTRY ProfileEnterNaked, _TEXT, NoHandler
 # NOT YET IMPLEMENTED
-.long 0x11
 NESTED_END ProfileEnterNaked, _TEXT
 
 # EXTERN_C void ProfileLeaveNaked(FunctionIDOrClientID functionIDOrClientID, size_t profiledRsp);
@@ -19,7 +18,6 @@ NESTED_END ProfileEnterNaked, _TEXT
 # </NOTE>
 NESTED_ENTRY ProfileLeaveNaked, _TEXT, NoHandler
 # NOT YET IMPLEMENTED
-.long 0x12
 NESTED_END ProfileLeaveNaked, _TEXT
 
 # EXTERN_C void ProfileTailcallNaked(FunctionIDOrClientID functionIDOrClientID, size_t profiledRsp);
@@ -28,7 +26,6 @@ NESTED_END ProfileLeaveNaked, _TEXT
 # </NOTE>
 NESTED_ENTRY ProfileTailcallNaked, _TEXT, NoHandler
 # NOT YET IMPLEMENTED
-.long 0x13
 NESTED_END ProfileTailcallNaked, _TEXT
 
 

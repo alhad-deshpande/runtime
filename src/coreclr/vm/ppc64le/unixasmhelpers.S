@@ -33,7 +33,6 @@ NESTED_END NDirectImportThunk, _TEXT
 //
 NESTED_ENTRY OnHijackTripThread, _TEXT, NoHandler
 // NOT YET IMPLEMENTED
-.long 0x81
 NESTED_END OnHijackTripThread, _TEXT
 
 #endif // FEATURE_HIJACK
