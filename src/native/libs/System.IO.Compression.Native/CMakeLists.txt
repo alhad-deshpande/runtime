@@ -7,11 +7,25 @@ if (NOT CLR_CMAKE_USE_SYSTEM_ZLIB)
 endif()
 
 if (CLR_CMAKE_USE_SYSTEM_BROTLI)
+    find_library(BROTLIDEC brotlidec REQUIRED)
+    find_library(BROTLIENC brotlienc REQUIRED)
+    list(APPEND ${BROTLI_LIBRARIES} ${BROTLIDEC} ${BROTLIENC})
+
     if (CLR_CMAKE_HOST_FREEBSD)
         set(CMAKE_REQUIRED_INCLUDES ${CROSS_ROOTFS}/usr/local/include)
     endif()
 else()
     include(${CLR_SRC_NATIVE_DIR}/external/brotli.cmake)
+endif()
+
+if (STATIC_LIBS_ONLY)
+    # For every vendored library that we're actually vendoring (and not referencing the system one)
+    # mark it as "no interprocedural optimization" so that it's compatible with our NativeAOT shipping story.
+    foreach(VENDORED_LIB IN LISTS BROTLI_LIBRARIES ITEMS zlib)
+        if (TARGET ${VENDORED_LIB})
+            set_target_properties(${VENDORED_LIB} PROPERTIES INTERPROCEDURAL_OPTIMIZATION OFF)
+        endif()
+    endforeach()
 endif()
 
 configure_file(
@@ -196,3 +210,13 @@ else ()
 endif ()
 
 install (TARGETS System.IO.Compression.Native-Static DESTINATION ${STATIC_LIB_DESTINATION} COMPONENT libs)
+
+if(CLR_CMAKE_HOST_ANDROID)
+    install (TARGETS System.IO.Compression.Native-Static DESTINATION sharedFramework COMPONENT runtime)
+
+    foreach(BROTLI_LIB ${BROTLI_LIBRARIES})
+        if (TARGET "${BROTLI_LIB}")
+            install (TARGETS ${BROTLI_LIB} DESTINATION sharedFramework COMPONENT runtime)
+        endif()
+    endforeach()
+endif()

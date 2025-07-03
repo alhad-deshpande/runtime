@@ -286,7 +286,7 @@ namespace System.Runtime.CompilerServices
         }
 
         [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern unsafe bool ContentEquals(object o1, object o2);
+        private static extern bool ContentEquals(object o1, object o2);
 
         [Obsolete("OffsetToStringData has been deprecated. Use string.GetPinnableReference() instead.")]
         public static int OffsetToStringData
@@ -385,7 +385,8 @@ namespace System.Runtime.CompilerServices
             throw new InvalidOperationException();
         }
 #endif
-
+        [DebuggerHidden]
+        [DebuggerStepThrough]
         internal static ref byte GetRawData(this object obj) =>
             ref Unsafe.As<RawData>(obj).Data;
 
@@ -414,7 +415,7 @@ namespace System.Runtime.CompilerServices
 
         // Returns pointer to the multi-dimensional array bounds.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static unsafe ref int GetMultiDimensionalArrayBounds(Array array)
+        internal static ref int GetMultiDimensionalArrayBounds(this Array array)
         {
             Debug.Assert(GetMultiDimensionalArrayRank(array) > 0);
             // See comment on RawArrayData for details
@@ -422,7 +423,7 @@ namespace System.Runtime.CompilerServices
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static unsafe int GetMultiDimensionalArrayRank(Array array)
+        internal static unsafe int GetMultiDimensionalArrayRank(this Array array)
         {
             int rank = GetMethodTable(array)->MultiDimensionalArrayRank;
             GC.KeepAlive(array); // Keep MethodTable alive
@@ -445,8 +446,8 @@ namespace System.Runtime.CompilerServices
         /// <param name="data">A reference to the data to box.</param>
         /// <returns>A boxed instance of the value at <paramref name="data"/>.</returns>
         /// <remarks>This method includes proper handling for nullable value types as well.</remarks>
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        internal static extern unsafe object? Box(MethodTable* methodTable, ref byte data);
+        internal static unsafe object? Box(MethodTable* methodTable, ref byte data) =>
+            methodTable->IsNullable ? CastHelpers.Box_Nullable(methodTable, ref data) : CastHelpers.Box(methodTable, ref data);
 
         // Given an object reference, returns its MethodTable*.
         //
@@ -553,7 +554,7 @@ namespace System.Runtime.CompilerServices
         /// <exception cref="ArgumentNullException">The specified type handle is <c>null</c>.</exception>
         /// <exception cref="ArgumentException">The specified type cannot have a boxed instance of itself created.</exception>
         /// <exception cref="NotSupportedException">The passed in type is a by-ref-like type.</exception>
-        public static unsafe object? Box(ref byte target, RuntimeTypeHandle type)
+        public static object? Box(ref byte target, RuntimeTypeHandle type)
         {
             if (type.IsNullHandle())
                 ThrowHelper.ThrowArgumentNullException(ExceptionArgument.type);
@@ -574,7 +575,7 @@ namespace System.Runtime.CompilerServices
         /// <remarks>
         /// This API returns the same value as <see cref="Unsafe.SizeOf{T}"/> for the type that <paramref name="type"/> represents.
         /// </remarks>
-        public static unsafe int SizeOf(RuntimeTypeHandle type)
+        public static int SizeOf(RuntimeTypeHandle type)
         {
             if (type.IsNullHandle())
                 ThrowHelper.ThrowArgumentNullException(ExceptionArgument.type);
@@ -625,6 +626,8 @@ namespace System.Runtime.CompilerServices
         public IntPtr CodeData;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        [DebuggerHidden]
+        [DebuggerStepThrough]
         private MethodDescChunk* GetMethodDescChunk() => (MethodDescChunk*)(((byte*)Unsafe.AsPointer<MethodDesc>(ref this)) - (sizeof(MethodDescChunk) + ChunkIndex * sizeof(IntPtr)));
 
         public MethodTable* MethodTable => GetMethodDescChunk()->MethodTable;
@@ -819,6 +822,16 @@ namespace System.Runtime.CompilerServices
 
         public bool HasDefaultConstructor => (Flags & (enum_flag_HasComponentSize | enum_flag_HasDefaultCtor)) == enum_flag_HasDefaultCtor;
 
+        public bool IsSzArray
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get
+            {
+                Debug.Assert(IsArray);
+                return BaseSize == (uint)(3 * sizeof(IntPtr));
+            }
+        }
+
         public bool IsMultiDimensionalArray
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -930,6 +943,25 @@ namespace System.Runtime.CompilerServices
             Debug.Assert((BaseSize - (nuint)(2 * sizeof(IntPtr)) == GetNumInstanceFieldBytes()));
             return BaseSize - (uint)(2 * sizeof(IntPtr));
         }
+
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        public extern IntPtr GetLoaderAllocatorHandle();
+    }
+
+    // Subset of src\vm\typedesc.h
+    [StructLayout(LayoutKind.Sequential)]
+    internal unsafe struct TypeDesc
+    {
+        private uint _typeAndFlags;
+        private nint _exposedClassObject;
+
+        public RuntimeType? ExposedClassObject
+        {
+            get
+            {
+                return *(RuntimeType*)Unsafe.AsPointer(ref _exposedClassObject);
+            }
+        }
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -943,19 +975,21 @@ namespace System.Runtime.CompilerServices
         /// Given a statics pointer in the DynamicStaticsInfo, get the actual statics pointer.
         /// If the class it initialized, this mask is not necessary
         /// </summary>
+        [DebuggerHidden]
+        [DebuggerStepThrough]
         internal static ref byte MaskStaticsPointer(ref byte staticsPtr)
         {
             fixed (byte* p = &staticsPtr)
             {
-                 return ref Unsafe.AsRef<byte>((byte*)((nuint)p & ~(nuint)DynamicStaticsInfo.ISCLASSNOTINITED));
+                return ref Unsafe.AsRef<byte>((byte*)((nuint)p & ~(nuint)DynamicStaticsInfo.ISCLASSNOTINITED));
             }
         }
 
-        internal unsafe MethodTable* _methodTable;
+        internal MethodTable* _methodTable;
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    internal unsafe ref struct GenericsStaticsInfo
+    internal ref struct GenericsStaticsInfo
     {
         // Pointer to field descs for statics
         internal IntPtr _pFieldDescs;
@@ -963,7 +997,7 @@ namespace System.Runtime.CompilerServices
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    internal unsafe ref struct ThreadStaticsInfo
+    internal ref struct ThreadStaticsInfo
     {
         internal int _nonGCTlsIndex;
         internal int _gcTlsIndex;
@@ -1033,12 +1067,16 @@ namespace System.Runtime.CompilerServices
         public bool IsClassInitedAndActive => (Volatile.Read(ref Flags) & (enum_flag_Initialized | enum_flag_EnsuredInstanceActive)) == (enum_flag_Initialized | enum_flag_EnsuredInstanceActive);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        [DebuggerHidden]
+        [DebuggerStepThrough]
         public ref DynamicStaticsInfo GetDynamicStaticsInfo()
         {
             return ref Unsafe.Subtract(ref Unsafe.As<MethodTableAuxiliaryData, DynamicStaticsInfo>(ref this), 1);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        [DebuggerHidden]
+        [DebuggerStepThrough]
         public ref ThreadStaticsInfo GetThreadStaticsInfo()
         {
             return ref Unsafe.Subtract(ref Unsafe.As<MethodTableAuxiliaryData, ThreadStaticsInfo>(ref this), 1);
@@ -1090,6 +1128,18 @@ namespace System.Runtime.CompilerServices
             return (MethodTable*)m_asTAddr;
         }
 
+        /// <summary>
+        /// Gets the <see cref="TypeDesc"/> pointer wrapped by the current instance.
+        /// </summary>
+        /// <remarks>This is only safe to call if <see cref="IsTypeDesc"/> returned <see langword="true"/>.</remarks>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public TypeDesc* AsTypeDesc()
+        {
+            Debug.Assert(IsTypeDesc);
+
+            return (TypeDesc*)((nint)m_asTAddr & ~2); // Drop the second lowest bit.
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static TypeHandle TypeHandleOf<T>()
         {
@@ -1098,28 +1148,64 @@ namespace System.Runtime.CompilerServices
 
         public static bool AreSameType(TypeHandle left, TypeHandle right) => left.m_asTAddr == right.m_asTAddr;
 
+        public int GetCorElementType() => GetCorElementType(m_asTAddr);
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool CanCastTo(TypeHandle destTH)
         {
-            if (m_asTAddr == destTH.m_asTAddr)
-                return true;
+            return TryCanCastTo(this, destTH) switch
+            {
+                CastResult.CanCast => true,
+                CastResult.CannotCast => false,
 
-            if (!IsTypeDesc && destTH.IsTypeDesc)
-                return false;
-
-            CastResult result = CastCache.TryGet(CastHelpers.s_table!, (nuint)m_asTAddr, (nuint)destTH.m_asTAddr);
-
-            if (result != CastResult.MaybeCast)
-                return result == CastResult.CanCast;
-
-            return CanCastTo_NoCacheLookup(m_asTAddr, destTH.m_asTAddr);
+                // Regular casting does not allow T to be cast to Nullable<T>.
+                // See TypeHandle::CanCastTo()
+                _ => CanCastToWorker(this, destTH, nullableCast: false)
+            };
         }
 
-        public int GetCorElementType() => GetCorElementType(m_asTAddr);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool CanCastToForReflection(TypeHandle srcTH, TypeHandle destTH)
+        {
+            return TryCanCastTo(srcTH, destTH) switch
+            {
+                CastResult.CanCast => true,
+                CastResult.CannotCast => false,
+
+                // Reflection allows T to be cast to Nullable<T>.
+                // See ObjIsInstanceOfCore()
+                _ => CanCastToWorker(srcTH, destTH, nullableCast: true)
+            };
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static CastResult TryCanCastTo(TypeHandle srcTH, TypeHandle destTH)
+        {
+            // See TypeHandle::CanCastToCached() for duplicate quick checks.
+            if (srcTH.m_asTAddr == destTH.m_asTAddr)
+                return CastResult.CanCast;
+
+            if (!srcTH.IsTypeDesc && destTH.IsTypeDesc)
+                return CastResult.CannotCast;
+
+            return CastCache.TryGet(CastHelpers.s_table!, (nuint)srcTH.m_asTAddr, (nuint)destTH.m_asTAddr);
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static bool CanCastToWorker(TypeHandle srcTH, TypeHandle destTH, bool nullableCast)
+        {
+            if (!srcTH.IsTypeDesc
+                && !destTH.IsTypeDesc
+                && CastHelpers.IsNullableForType(destTH.AsMethodTable(), srcTH.AsMethodTable()))
+            {
+                return nullableCast;
+            }
+
+            return CanCastTo_NoCacheLookup(srcTH.m_asTAddr, destTH.m_asTAddr) != Interop.BOOL.FALSE;
+        }
 
         [LibraryImport(RuntimeHelpers.QCall, EntryPoint = "TypeHandle_CanCastTo_NoCacheLookup")]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        private static partial bool CanCastTo_NoCacheLookup(void* fromTypeHnd, void* toTypeHnd);
+        private static partial Interop.BOOL CanCastTo_NoCacheLookup(void* fromTypeHnd, void* toTypeHnd);
 
         [SuppressGCTransition]
         [LibraryImport(RuntimeHelpers.QCall, EntryPoint = "TypeHandle_GetCorElementType")]

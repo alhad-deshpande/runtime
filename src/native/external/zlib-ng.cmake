@@ -15,6 +15,10 @@ set(Z_PREFIX ON)
 set(WITH_RVV OFF)
 # We don't support ARMv6 and the check works incorrectly when compiling for ARMv7 w/ Thumb instruction set
 set(WITH_ARMV6 OFF)
+# The checks for NEON_AVAILABLE and NEON_HAS_LD4 work incorrectly when compiling for arm32.
+if(CLR_CMAKE_TARGET_ARCH_ARM AND CLR_CMAKE_TARGET_LINUX)
+    set(WITH_NEON OFF)
+endif()
 
 if (CLR_CMAKE_TARGET_BROWSER OR CLR_CMAKE_TARGET_WASI)
   # 'aligned_alloc' is not available in browser/wasi, yet it is set by zlib-ng/CMakeLists.txt.
@@ -25,6 +29,13 @@ if (CLR_CMAKE_TARGET_BROWSER OR CLR_CMAKE_TARGET_WASI)
       add_compile_options(-pthread)
       add_linker_flag(-pthread)
   endif()
+endif()
+
+if (MSVC)
+  #zlib-ng sets /utf-8 which clashes with /source-charset:utf-8 that we set centrally
+  get_directory_property(dirCompileOptions COMPILE_OPTIONS)
+  string(REPLACE "/source-charset:utf-8" "" dirCompileOptions "${dirCompileOptions}")
+  set_directory_properties(PROPERTIES COMPILE_OPTIONS "${dirCompileOptions}")
 endif()
 
 set(BUILD_SHARED_LIBS OFF) # Shared libraries aren't supported in wasm

@@ -19,21 +19,21 @@ namespace Wasm.Build.Tests;
 public abstract class BlazorWasmTestBase : WasmTemplateTestsBase
 {
     protected readonly WasmSdkBasedProjectProvider _provider;
-    private readonly string _blazorExtraBuildArgs = "-p:BlazorEnableCompression=false /warnaserror";
+    private readonly string _blazorExtraMSBuildArgs = "/warnaserror";
     protected readonly PublishOptions _defaultBlazorPublishOptions;
     private readonly BuildOptions _defaultBlazorBuildOptions;
-    
+
     protected BlazorWasmTestBase(ITestOutputHelper output, SharedBuildPerTestClassFixture buildContext)
                 : base(output, buildContext, new WasmSdkBasedProjectProvider(output, DefaultTargetFrameworkForBlazor))
     {
         _provider = GetProvider<WasmSdkBasedProjectProvider>();
-        _defaultBlazorPublishOptions = _defaultPublishOptions with { ExtraMSBuildArgs = _blazorExtraBuildArgs };
-        _defaultBlazorBuildOptions = _defaultBuildOptions with { ExtraMSBuildArgs = _blazorExtraBuildArgs };
+        _defaultBlazorPublishOptions = _defaultPublishOptions with { ExtraMSBuildArgs = _blazorExtraMSBuildArgs };
+        _defaultBlazorBuildOptions = _defaultBuildOptions with { ExtraMSBuildArgs = _blazorExtraMSBuildArgs };
     }
 
     private Dictionary<string, string> blazorHomePageReplacements = new Dictionary<string, string>
         {
-            { 
+            {
                 "Welcome to your new app.",
                 """
                 Welcome to your new app.
@@ -67,8 +67,9 @@ public abstract class BlazorWasmTestBase : WasmTemplateTestsBase
     protected void UpdateHomePage() =>
         UpdateFile(Path.Combine("Pages", "Home.razor"), blazorHomePageReplacements);
 
-    public void InitBlazorWasmProjectDir(string id, string targetFramework = DefaultTargetFrameworkForBlazor)
+    public void InitBlazorWasmProjectDir(string id, string? targetFramework = null)
     {
+        targetFramework ??= DefaultTargetFrameworkForBlazor;
         InitPaths(id);
         if (Directory.Exists(_projectDir))
             Directory.Delete(_projectDir, recursive: true);
@@ -101,12 +102,12 @@ public abstract class BlazorWasmTestBase : WasmTemplateTestsBase
         BlazorBuild(info, config, _defaultBlazorBuildOptions, isNativeBuild);
 
     protected (string projectDir, string buildOutput) BlazorBuild(
-        ProjectInfo info, Configuration config, MSBuildOptions buildOptions, bool? isNativeBuild = null)
+        ProjectInfo info, Configuration config, BuildOptions buildOptions, bool? isNativeBuild = null)
     {
         try
         {
-            if (buildOptions != _defaultBlazorPublishOptions)
-                buildOptions = buildOptions with { ExtraMSBuildArgs = $"{buildOptions.ExtraMSBuildArgs} {_blazorExtraBuildArgs}" };
+            if (buildOptions != _defaultBlazorBuildOptions)
+                buildOptions = buildOptions with { ExtraMSBuildArgs = $"{_blazorExtraMSBuildArgs} {buildOptions.ExtraMSBuildArgs}" };
             (string projectDir, string buildOutput) = BuildProject(
                 info,
                 config,
@@ -126,7 +127,7 @@ public abstract class BlazorWasmTestBase : WasmTemplateTestsBase
             throw;
         }
     }
-    
+
     protected (string projectDir, string buildOutput) BlazorPublish(ProjectInfo info, Configuration config, bool? isNativeBuild = null) =>
         BlazorPublish(info, config, _defaultBlazorPublishOptions, isNativeBuild);
 
@@ -136,7 +137,7 @@ public abstract class BlazorWasmTestBase : WasmTemplateTestsBase
         try
         {
             if (publishOptions != _defaultBlazorPublishOptions)
-                publishOptions = publishOptions with { ExtraMSBuildArgs = $"{publishOptions.ExtraMSBuildArgs} {_blazorExtraBuildArgs}" };
+                publishOptions = publishOptions with { ExtraMSBuildArgs = $"{_blazorExtraMSBuildArgs} {publishOptions.ExtraMSBuildArgs}" };
             (string projectDir, string buildOutput) = PublishProject(
                 info,
                 config,
@@ -220,6 +221,6 @@ public abstract class BlazorWasmTestBase : WasmTemplateTestsBase
         return serverEnvironment;
     }
 
-    public string GetBlazorBinFrameworkDir(Configuration config, bool forPublish, string framework = DefaultTargetFrameworkForBlazor, string? projectDir = null)
-        => _provider.GetBinFrameworkDir(config: config, forPublish: forPublish, framework: framework, projectDir: projectDir);
+    public string GetBlazorBinFrameworkDir(Configuration config, bool forPublish, string? framework = null, string? projectDir = null)
+        => _provider.GetBinFrameworkDir(config: config, forPublish: forPublish, framework: framework ?? DefaultTargetFrameworkForBlazor, projectDir: projectDir);
 }

@@ -150,7 +150,6 @@
 #include "comcallablewrapper.h"
 #include "../dlls/mscorrc/resource.h"
 #include "util.hpp"
-#include "shimload.h"
 #include "posterror.h"
 #include "virtualcallstub.h"
 #include "strongnameinternal.h"
@@ -163,6 +162,11 @@
 #include "pgo.h"
 #include "pendingload.h"
 #include "cdacplatformmetadata.hpp"
+#include "minipal/time.h"
+
+#ifdef FEATURE_INTERPRETER
+#include "callstubgenerator.h"
+#endif
 
 #ifndef TARGET_UNIX
 #include "dwreport.h"
@@ -184,10 +188,6 @@
 #include "proftoeeinterfaceimpl.h"
 #include "profilinghelper.h"
 #endif // PROFILING_SUPPORTED
-
-#ifdef FEATURE_INTERPRETER
-#include "interpreter.h"
-#endif // FEATURE_INTERPRETER
 
 #ifdef FEATURE_PERFMAP
 #include "perfmap.h"
@@ -376,13 +376,6 @@ static BOOL WINAPI DbgCtrlCHandler(DWORD dwCtrlType)
     else
 #endif // DEBUGGING_SUPPORTED
     {
-        if (dwCtrlType == CTRL_CLOSE_EVENT || dwCtrlType == CTRL_SHUTDOWN_EVENT)
-        {
-            // Initiate shutdown so the ProcessExit handlers run
-            ForceEEShutdown(SCA_ReturnWhenShutdownComplete);
-        }
-
-        g_fInControlC = true;     // only for weakening assertions in checked build.
         return FALSE;             // keep looking for a real handler.
     }
 }
@@ -495,10 +488,10 @@ void InitGSCookie()
     void * pf = &__security_check_cookie;
     pf = NULL;
 
-    GSCookie val = (GSCookie)(__security_cookie ^ GetTickCount());
+    GSCookie val = (GSCookie)(__security_cookie ^ minipal_lowres_ticks());
 #else // !TARGET_UNIX
     // REVIEW: Need something better for PAL...
-    GSCookie val = (GSCookie)GetTickCount();
+    GSCookie val = (GSCookie)minipal_lowres_ticks();
 #endif // !TARGET_UNIX
 
 #ifdef _DEBUG
@@ -663,7 +656,16 @@ void EEStartupHelper()
 
         IfFailGo(ExecutableAllocator::StaticInitialize(FatalErrorHandler));
 
+        if (g_pConfig != NULL)
+        {
+            IfFailGoLog(g_pConfig->sync());
+        }
+
         Thread::StaticInitialize();
+
+#ifdef FEATURE_INTERPRETER
+        InitCallStubGenerator();
+#endif // FEATURE_INTERPRETER
 
         JITInlineTrackingMap::StaticInitialize();
         MethodDescBackpatchInfoTracker::StaticInitialize();
@@ -733,17 +735,13 @@ void EEStartupHelper()
 
         InitGSCookie();
 
-        Frame::Init();
-
-
-
-
 #ifdef LOGGING
         InitializeLogging();
 #endif
 
 #ifdef FEATURE_PERFMAP
         PerfMap::Initialize();
+        InitThreadManagerPerfMapData();
 #endif
 
 #ifdef FEATURE_PGO
@@ -756,11 +754,6 @@ void EEStartupHelper()
         IfFailGoLog(EnsureRtlFunctions());
 #endif // !TARGET_UNIX
         InitEventStore();
-
-        if (g_pConfig != NULL)
-        {
-            IfFailGoLog(g_pConfig->sync());
-        }
 
         // Fire the runtime information ETW event
         ETW::InfoLog::RuntimeInformation(ETW::InfoLog::InfoStructs::Normal);
@@ -775,7 +768,7 @@ void EEStartupHelper()
         }
 
 #ifdef ENABLE_STARTUP_DELAY
-        PREFIX_ASSUME(NULL != g_pConfig);
+        _ASSERTE(NULL != g_pConfig);
         if (g_pConfig->StartupDelayMS())
         {
             ClrSleepEx(g_pConfig->StartupDelayMS(), FALSE);
@@ -788,7 +781,7 @@ void EEStartupHelper()
             Disassembler::StaticInitialize();
             if (!Disassembler::IsAvailable())
             {
-                fprintf(stderr, "External disassembler is not available.\n");
+                minipal_log_print_error("External disassembler is not available.\n");
                 IfFailGo(E_FAIL);
             }
         }
@@ -797,10 +790,6 @@ void EEStartupHelper()
         // Monitors, Crsts, and SimpleRWLocks all use the same spin heuristics
         // Cache the (potentially user-overridden) values now so they are accessible from asm routines
         InitializeSpinConstants();
-
-#ifdef FEATURE_INTERPRETER
-        Interpreter::Initialize();
-#endif // FEATURE_INTERPRETER
 
         StubManager::InitializeStubManagers();
 
@@ -858,31 +847,18 @@ void EEStartupHelper()
 
 #ifdef PROFILING_SUPPORTED
         // Initialize the profiling services.
+        // This must happen before Thread::HasStarted() that fires profiler notifications is called on the finalizer thread.
         hr = ProfilingAPIUtility::InitializeProfiling();
 
         _ASSERTE(SUCCEEDED(hr));
         IfFailGo(hr);
 #endif // PROFILING_SUPPORTED
 
-        InitializeExceptionHandling();
-
-        //
-        // Install our global exception filter
-        //
-        if (!InstallUnhandledExceptionFilter())
-        {
-            IfFailGo(E_FAIL);
-        }
-
-        // throws on error
-        SetupThread();
-
-#ifdef DEBUGGING_SUPPORTED
-        // Notify debugger once the first thread is created to finish initialization.
-        if (g_pDebugInterface != NULL)
-        {
-            g_pDebugInterface->StartupPhase2(GetThread());
-        }
+#ifdef TARGET_WINDOWS
+        // Create the finalizer thread on windows earlier, as we will need to wait for
+        // the completion of its initialization part that initializes COM as that has to be done
+        // before the first Thread is attached. Thus we want to give the thread a bit more time.
+        FinalizerThread::FinalizerThreadCreate();
 #endif
 
         InitPreStubManager();
@@ -895,17 +871,15 @@ void EEStartupHelper()
 
         // Before setting up the execution manager initialize the first part
         // of the JIT helpers.
-        InitJITHelpers1();
-        InitJITHelpers2();
-
-        SyncBlockCache::Attach();
+        InitJITAllocationHelpers();
+        InitJITWriteBarrierHelpers();
 
         // Set up the sync block
         SyncBlockCache::Start();
 
         // This isn't done as part of InitializeGarbageCollector() above because it
         // requires write barriers to have been set up on x86, which happens as part
-        // of InitJITHelpers1.
+        // of InitJITWriteBarrierHelpers.
         hr = g_pGCHeap->Initialize();
         if (FAILED(hr))
         {
@@ -914,6 +888,48 @@ void EEStartupHelper()
 
         IfFailGo(hr);
 
+        InitializeExceptionHandling();
+
+        //
+        // Install our global exception filter
+        //
+        if (!InstallUnhandledExceptionFilter())
+        {
+            IfFailGo(E_FAIL);
+        }
+
+#ifdef TARGET_WINDOWS
+        // g_pGCHeap->Initialize() above could take nontrivial time, so by now the finalizer thread
+        // should have initialized FLS slot for thread cleanup notifications.
+        // And ensured that COM is initialized (must happen before allocating FLS slot).
+        // Make sure that this was done before we start creating Thread objects
+        // Ex: The call to SetupThread below will create and attach a Thread object.
+        //     Event pipe might also do that.
+        FinalizerThread::WaitForFinalizerThreadStart();
+#endif
+
+        // throws on error
+        _ASSERTE(GetThreadNULLOk() == NULL);
+        SetupThread();
+
+#ifdef DEBUGGING_SUPPORTED
+        // Notify debugger once the first thread is created to finish initialization.
+        if (g_pDebugInterface != NULL)
+        {
+            g_pDebugInterface->StartupPhase2(GetThread());
+        }
+#endif
+
+#ifndef TARGET_WINDOWS
+        // This isn't done as part of InitializeGarbageCollector() above because
+        // debugger must be initialized before creating EE thread objects
+        FinalizerThread::FinalizerThreadCreate();
+#else
+        // On windows the finalizer thread is already partially created and is waiting
+        // right before doing HasStarted(). We will release it now.
+        FinalizerThread::EnableFinalization();
+#endif
+
 #ifdef FEATURE_PERFTRACING
         // Finish setting up rest of EventPipe - specifically enable SampleProfiler if it was requested at startup.
         // SampleProfiler needs to cooperate with the GC which hasn't fully finished setting up in the first part of the
@@ -921,10 +937,6 @@ void EEStartupHelper()
         EventPipeAdapter::FinishInitialize();
 #endif // FEATURE_PERFTRACING
         GenAnalysis::Initialize();
-
-        // This isn't done as part of InitializeGarbageCollector() above because thread
-        // creation requires AppDomains to have been set up.
-        FinalizerThread::FinalizerThreadCreate();
 
         // Now we really have fully initialized the garbage collector
         SetGarbageCollectorFullyInitialized();
@@ -1005,8 +1017,9 @@ ErrExit: ;
     EX_CATCH
     {
         hr = GET_EXCEPTION()->GetHR();
+        RethrowTerminalExceptionsWithInitCheck();
     }
-    EX_END_CATCH(RethrowTerminalExceptionsWithInitCheck)
+    EX_END_CATCH
 
     if (!g_fEEStarted) {
         if (g_fEEInit)
@@ -1163,7 +1176,7 @@ void STDMETHODCALLTYPE EEShutDownHelper(BOOL fIsDllUnloading)
     EX_CATCH
     {
     }
-    EX_END_CATCH(SwallowAllExceptions);
+    EX_END_CATCH
 #endif
 
     if (!fIsDllUnloading)
@@ -1223,8 +1236,6 @@ void STDMETHODCALLTYPE EEShutDownHelper(BOOL fIsDllUnloading)
 
         if (!IsAtProcessExit() && !g_fFastExitProcess)
         {
-            g_fEEShutDown |= ShutDown_Finalize1;
-
             // Wait for the finalizer thread to deliver process exit event
             GCX_PREEMP();
             FinalizerThread::RaiseShutdownEvents();
@@ -1250,9 +1261,6 @@ void STDMETHODCALLTYPE EEShutDownHelper(BOOL fIsDllUnloading)
             {
                 g_pDebugInterface->LockDebuggerForShutdown();
             }
-
-            // This call will convert the ThreadStoreLock into "shutdown" mode, just like the debugger lock above.
-            g_fEEShutDown |= ShutDown_Finalize2;
         }
 
 #ifdef FEATURE_EVENT_TRACE
@@ -1270,10 +1278,6 @@ void STDMETHODCALLTYPE EEShutDownHelper(BOOL fIsDllUnloading)
 
         ceeInf.JitProcessShutdownWork();  // Do anything JIT-related that needs to happen at shutdown.
 
-#ifdef FEATURE_INTERPRETER
-        // This will check a flag and do nothing if not enabled.
-        Interpreter::PrintPostMortemData();
-#endif // FEATURE_INTERPRETER
         VirtualCallStubManager::LogFinalStats();
 
 #ifdef PROFILING_SUPPORTED
@@ -1299,15 +1303,10 @@ void STDMETHODCALLTYPE EEShutDownHelper(BOOL fIsDllUnloading)
                 (&g_profControlBlock)->Shutdown();
                 END_PROFILER_CALLBACK();
             }
-
-            g_fEEShutDown |= ShutDown_Profiler;
         }
 #endif // PROFILING_SUPPORTED
 
 
-#ifdef _DEBUG
-        g_fEEShutDown |= ShutDown_SyncBlock;
-#endif
         {
             // From here on out we might call stuff that violates mode requirements, but we ignore these
             // because we are shutting down.
@@ -1395,7 +1394,7 @@ part2:
     EX_CATCH
     {
     }
-    EX_END_CATCH(SwallowAllExceptions);
+    EX_END_CATCH
 
     ClrFlsClearThreadType(ThreadType_Shutdown);
     if (!IsAtProcessExit())
@@ -1403,71 +1402,6 @@ part2:
         g_pEEShutDownEvent->Set();
     }
 }
-
-
-#ifdef FEATURE_COMINTEROP
-
-BOOL IsThreadInSTA()
-{
-    CONTRACTL
-    {
-        NOTHROW;
-        GC_TRIGGERS;
-        MODE_ANY;
-    }
-    CONTRACTL_END;
-
-    // If ole32.dll is not loaded
-    if (GetModuleHandle(W("ole32.dll")) == NULL)
-    {
-        return FALSE;
-    }
-
-    BOOL fInSTA = TRUE;
-    // To be conservative, check if finalizer thread is around
-    EX_TRY
-    {
-        Thread *pFinalizerThread = FinalizerThread::GetFinalizerThread();
-        if (!pFinalizerThread || pFinalizerThread->Join(0, FALSE) != WAIT_TIMEOUT)
-        {
-            fInSTA = FALSE;
-        }
-    }
-    EX_CATCH
-    {
-    }
-    EX_END_CATCH(SwallowAllExceptions);
-
-    if (!fInSTA)
-    {
-        return FALSE;
-    }
-
-    THDTYPE type;
-    HRESULT hr = S_OK;
-
-    hr = GetCurrentThreadTypeNT5(&type);
-    if (hr == S_OK)
-    {
-        fInSTA = (type == THDTYPE_PROCESSMESSAGES) ? TRUE : FALSE;
-
-        // If we get back THDTYPE_PROCESSMESSAGES, we are guaranteed to
-        // be an STA thread. If not, we are an MTA thread, however
-        // we can't know if the thread has been explicitly set to MTA
-        // (via a call to CoInitializeEx) or if it has been implicitly
-        // made MTA (if it hasn't been CoInitializeEx'd but CoInitialize
-        // has already been called on some other thread in the process.
-    }
-    else
-    {
-        // CoInitialize hasn't been called in the process yet so assume the current thread
-        // is MTA.
-        fInSTA = FALSE;
-    }
-
-    return fInSTA;
-}
-#endif
 
 // #EEShutDown
 //
@@ -1561,23 +1495,6 @@ BOOL IsRuntimeActive()
     return (g_fEEStarted);
 }
 
-//*****************************************************************************
-BOOL ExecuteDLL_ReturnOrThrow(HRESULT hr, BOOL fFromThunk)
-{
-    CONTRACTL {
-        if (fFromThunk) THROWS; else NOTHROW;
-        WRAPPER(GC_TRIGGERS);
-        MODE_ANY;
-    } CONTRACTL_END;
-
-    // If we have a failure result, and we're called from a thunk,
-    // then we need to throw an exception to communicate the error.
-    if (FAILED(hr) && fFromThunk)
-    {
-        COMPlusThrowHR(hr);
-    }
-    return SUCCEEDED(hr);
-}
 
 //
 // Initialize the Garbage Collector
@@ -1742,20 +1659,27 @@ static void RuntimeThreadShutdown(void* thread)
 // Index for the fiber local storage of the attached thread pointer
 static uint32_t g_flsIndex = FLS_OUT_OF_INDEXES;
 
+#define FLS_STATE_CLEAR 0
+#define FLS_STATE_ARMED 1
+#define FLS_STATE_INVOKED 2
+
+static PLATFORM_THREAD_LOCAL byte t_flsState;
+
 // This is called when each *fiber* is destroyed. When the home fiber of a thread is destroyed,
 // it means that the thread itself is destroyed.
 // Since we receive that notification outside of the Loader Lock, it allows us to safely acquire
 // the ThreadStore lock in the RuntimeThreadShutdown.
 static void __stdcall FiberDetachCallback(void* lpFlsData)
 {
-    ASSERT(g_flsIndex != FLS_OUT_OF_INDEXES);
-    ASSERT(lpFlsData == FlsGetValue(g_flsIndex));
+    _ASSERTE(g_flsIndex != FLS_OUT_OF_INDEXES);
+    _ASSERTE(lpFlsData);
 
-    if (lpFlsData != NULL)
+    if (t_flsState == FLS_STATE_ARMED)
     {
-        // The current fiber is the home fiber of a thread, so the thread is shutting down
         RuntimeThreadShutdown(lpFlsData);
     }
+
+    t_flsState = FLS_STATE_INVOKED;
 }
 
 void InitFlsSlot()
@@ -1775,16 +1699,19 @@ void InitFlsSlot()
 //  thread        - thread to attach
 static void OsAttachThread(void* thread)
 {
-    void* threadFromCurrentFiber = FlsGetValue(g_flsIndex);
+    _ASSERTE(g_flsIndex != FLS_OUT_OF_INDEXES);
 
-    if (threadFromCurrentFiber != NULL)
+    if (t_flsState == FLS_STATE_INVOKED)
     {
-        _ASSERTE_ALL_BUILDS(!"Multiple threads encountered from a single fiber");
+        _ASSERTE_ALL_BUILDS(!"Attempt to execute managed code after the .NET runtime thread state has been destroyed.");
     }
+
+    t_flsState = FLS_STATE_ARMED;
 
     // Associate the current fiber with the current thread.  This makes the current fiber the thread's "home"
     // fiber.  This fiber is the only fiber allowed to execute managed code on this thread.  When this fiber
     // is destroyed, we consider the thread to be destroyed.
+    _ASSERTE(thread != NULL);
     FlsSetValue(g_flsIndex, thread);
 }
 
@@ -1792,8 +1719,6 @@ static void OsAttachThread(void* thread)
 // It fails fast if some other thread value was attached to the current fiber.
 // Parameters:
 //  thread        - thread to detach
-// Return:
-//  true if the thread was detached, false if there was no attached thread
 void OsDetachThread(void* thread)
 {
     ASSERT(g_flsIndex != FLS_OUT_OF_INDEXES);
@@ -1801,8 +1726,10 @@ void OsDetachThread(void* thread)
 
     if (threadFromCurrentFiber == NULL)
     {
-        // we've seen this thread, but not this fiber.  It must be a "foreign" fiber that was
-        // borrowing this thread.
+        // Thread is not attached.
+        // This could come from DestroyThread called when refcount reaches 0
+        // and the thread may have already been detached or never attached.
+        // We leave t_flsState as-is to keep track whether our callback has been called.
         return;
     }
 
@@ -1811,7 +1738,9 @@ void OsDetachThread(void* thread)
         _ASSERTE_ALL_BUILDS(!"Detaching a thread from the wrong fiber");
     }
 
-    FlsSetValue(g_flsIndex, NULL);
+    // Leave the existing FLS value, to keep the callback "armed" so that we could observe the termination callback.
+    // After that we will not allow to attach as we will no longer be able to clean up.
+    t_flsState = FLS_STATE_CLEAR;
 }
 
 void EnsureTlsDestructionMonitor()
@@ -1851,7 +1780,7 @@ void EnsureTlsDestructionMonitor()
 
 #ifdef DEBUGGING_SUPPORTED
 //
-// InitializeDebugger initialized the Runtime-side COM+ Debugging Services
+// InitializeDebugger initialized the Runtime-side CLR Debugging Services
 //
 static void InitializeDebugger(void)
 {
@@ -1934,7 +1863,7 @@ static void InitializeDebugger(void)
 
 
 //
-// TerminateDebugger shuts down the Runtime-side COM+ Debugging Services
+// TerminateDebugger shuts down the Runtime-side CLR Debugging Services
 // InitializeDebugger will call this if it fails.
 // This may be called even if the debugger is partially initialized.
 // This can be called multiple times.
@@ -2077,7 +2006,7 @@ static HRESULT GetThreadUICultureNames(__inout StringArrayList* pCultureNames)
     {
         hr=E_OUTOFMEMORY;
     }
-    EX_END_CATCH(SwallowAllExceptions);
+    EX_END_CATCH
 
     return hr;
 }

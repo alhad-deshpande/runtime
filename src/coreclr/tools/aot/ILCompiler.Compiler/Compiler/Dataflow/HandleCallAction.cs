@@ -455,7 +455,7 @@ namespace ILLink.Shared.TrimAnalysis
 
                                 if (annotation != default)
                                 {
-                                    _reflectionMarker.Dependencies.Add(_reflectionMarker.Factory.ObjectGetTypeFlowDependencies(closestMetadataType), "GetType called on this type");
+                                    _reflectionMarker.Dependencies.Add(_reflectionMarker.Factory.ObjectGetTypeCalled(closestMetadataType), "GetType called on this type");
                                 }
 
                                 // Return a value which is "unknown type" with annotation. For now we'll use the return value node
@@ -488,6 +488,36 @@ namespace ILLink.Shared.TrimAnalysis
                     _diagnosticContext.AddDiagnostic(DiagnosticId.AvoidAssemblyGetFilesInSingleFile, calledMethod.GetDisplayName());
                     break;
 
+                case IntrinsicId.TypeMapping_GetOrCreateExternalTypeMapping:
+                {
+                    if (calledMethod.Method.Instantiation[0].ContainsSignatureVariables(treatGenericParameterLikeSignatureVariable: true))
+                    {
+                        // We only support GetOrCreateExternalTypeMapping for a fully specified type.
+                        _diagnosticContext.AddDiagnostic(DiagnosticId.TypeMapGroupTypeCannotBeStaticallyDetermined,
+                            calledMethod.Method.Instantiation[0].GetDisplayName());
+                    }
+                    else
+                    {
+                        TypeDesc typeMapGroup = calledMethod.Method.Instantiation[0];
+                        _reflectionMarker.Dependencies.Add(_reflectionMarker.Factory.ExternalTypeMapRequest(typeMapGroup), "TypeMapping.GetOrCreateExternalTypeMapping called on type");
+                    }
+                    break;
+                }
+                case IntrinsicId.TypeMapping_GetOrCreateProxyTypeMapping:
+                {
+                    if (calledMethod.Method.Instantiation[0].ContainsSignatureVariables(treatGenericParameterLikeSignatureVariable: true))
+                    {
+                        // We only support GetOrCreateProxyTypeMapping for a fully specified type.
+                        _diagnosticContext.AddDiagnostic(DiagnosticId.TypeMapGroupTypeCannotBeStaticallyDetermined,
+                            calledMethod.Method.Instantiation[0].GetDisplayName());
+                    }
+                    else
+                    {
+                        TypeDesc typeMapGroup = calledMethod.Method.Instantiation[0];
+                        _reflectionMarker.Dependencies.Add(_reflectionMarker.Factory.ProxyTypeMapRequest(typeMapGroup), "TypeMapping.GetOrCreateProxyTypeMapping called on type");
+                    }
+                    break;
+                }
                 default:
                     return false;
             }
@@ -711,7 +741,9 @@ namespace ILLink.Shared.TrimAnalysis
             public IEnumerable<DependencyNodeCore<NodeFactory>.DependencyListEntry> InstantiateDependencies(NodeFactory factory, Instantiation typeInstantiation, Instantiation methodInstantiation)
             {
                 var list = new DependencyList();
-                RootingHelpers.TryGetDependenciesForReflectedMethod(ref list, factory, _method.InstantiateSignature(typeInstantiation, methodInstantiation), "MakeGenericMethod");
+                MethodDesc instantiatedMethod = _method.InstantiateSignature(typeInstantiation, methodInstantiation);
+                if (instantiatedMethod.CheckConstraints(new InstantiationContext(typeInstantiation, methodInstantiation)))
+                    RootingHelpers.TryGetDependenciesForReflectedMethod(ref list, factory, instantiatedMethod, "MakeGenericMethod");
                 return list;
             }
         }
@@ -725,7 +757,9 @@ namespace ILLink.Shared.TrimAnalysis
             public IEnumerable<DependencyNodeCore<NodeFactory>.DependencyListEntry> InstantiateDependencies(NodeFactory factory, Instantiation typeInstantiation, Instantiation methodInstantiation)
             {
                 var list = new DependencyList();
-                RootingHelpers.TryGetDependenciesForReflectedType(ref list, factory, _type.InstantiateSignature(typeInstantiation, methodInstantiation), "MakeGenericType");
+                TypeDesc instantiatedType = _type.InstantiateSignature(typeInstantiation, methodInstantiation);
+                if (instantiatedType.CheckConstraints(new InstantiationContext(typeInstantiation, methodInstantiation)))
+                    RootingHelpers.TryGetDependenciesForReflectedType(ref list, factory, instantiatedType, "MakeGenericType");
                 return list;
             }
         }

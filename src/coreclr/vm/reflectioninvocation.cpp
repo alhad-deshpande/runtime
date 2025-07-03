@@ -254,14 +254,6 @@ public:
         LIMITED_METHOD_CONTRACT;
         return (*m_ppNativeSig)->NumFixedArgs();
     }
-
-#ifdef FEATURE_INTERPRETER
-    BYTE CallConv()
-    {
-        LIMITED_METHOD_CONTRACT;
-        return IMAGE_CEE_CS_CALLCONV_DEFAULT;
-    }
-#endif // FEATURE_INTERPRETER
 };
 
 class ArgIteratorForMethodInvoke : public ArgIteratorTemplate<ArgIteratorBaseForMethodInvoke>
@@ -424,7 +416,7 @@ extern "C" void QCALLTYPE RuntimeMethodHandle_InvokeMethod(
 
     GCStress<cfg_any>::MaybeTrigger();
 
-    FrameWithCookie<ProtectValueClassFrame> *pProtectValueClassFrame = NULL;
+    ProtectValueClassFrame *pProtectValueClassFrame = NULL;
     ValueClassInfo *pValueClasses = NULL;
 
     // if we have the magic Value Class return, we need to allocate that class
@@ -500,6 +492,9 @@ extern "C" void QCALLTYPE RuntimeMethodHandle_InvokeMethod(
     // If an exception occurs a gc may happen but we are going to dump the stack anyway and we do
     // not need to protect anything.
 
+    // Allocate a local buffer for the return buffer if necessary
+    PVOID pLocalRetBuf = nullptr;
+
     {
     BEGINFORBIDGC();
 #ifdef _DEBUG
@@ -509,8 +504,19 @@ extern "C" void QCALLTYPE RuntimeMethodHandle_InvokeMethod(
     // Take care of any return arguments
     if (fHasRetBuffArg)
     {
-        PVOID pRetBuff = gc.retVal->GetData();
-        *((LPVOID*) (pTransitionBlock + argit.GetRetBuffArgOffset())) = pRetBuff;
+        _ASSERT(hasValueTypeReturn);
+        PTR_MethodTable pMT = retTH.GetMethodTable();
+        size_t localRetBufSize = retTH.GetSize();
+
+        // Allocate a local buffer. The invoked method will write the return value to this
+        // buffer which will be copied to gc.retVal later.
+        pLocalRetBuf = _alloca(localRetBufSize);
+        ZeroMemory(pLocalRetBuf, localRetBufSize);
+        *((LPVOID*) (pTransitionBlock + argit.GetRetBuffArgOffset())) = pLocalRetBuf;
+        if (pMT->ContainsGCPointers())
+        {
+            pValueClasses = new (_alloca(sizeof(ValueClassInfo))) ValueClassInfo(pLocalRetBuf, pMT, pValueClasses);
+        }
     }
 
     // copy args
@@ -573,12 +579,25 @@ extern "C" void QCALLTYPE RuntimeMethodHandle_InvokeMethod(
 
     if (pValueClasses != NULL)
     {
-        pProtectValueClassFrame = new (_alloca (sizeof (FrameWithCookie<ProtectValueClassFrame>)))
-            FrameWithCookie<ProtectValueClassFrame>(pThread, pValueClasses);
+        pProtectValueClassFrame = new (_alloca (sizeof (ProtectValueClassFrame)))
+            ProtectValueClassFrame(pThread, pValueClasses);
     }
 
     // Call the method
     CallDescrWorkerWithHandler(&callDescrData);
+
+    if (fHasRetBuffArg)
+    {
+        // Copy the return value from the return buffer to the object
+        if (retTH.GetMethodTable()->ContainsGCPointers())
+        {
+            memmoveGCRefs(gc.retVal->GetData(), pLocalRetBuf, retTH.GetSize());
+        }
+        else
+        {
+            memcpyNoGCRefs(gc.retVal->GetData(), pLocalRetBuf, retTH.GetSize());
+        }
+    }
 
     // It is still illegal to do a GC here.  The return type might have/contain GC pointers.
     if (fConstructor)
@@ -1096,6 +1115,35 @@ FCIMPL1(void*, RuntimeFieldHandle::GetStaticFieldAddress, ReflectFieldObject *pF
 }
 FCIMPLEND
 
+// Returns the address of the EnC instance field in the object (This is an interior
+// pointer and the caller has to use it appropriately) or an EnC static field.
+extern "C" void* QCALLTYPE RuntimeFieldHandle_GetEnCFieldAddr(QCall::ObjectHandleOnStack target, FieldDesc* pFD)
+{
+    CONTRACTL
+    {
+        QCALL_CHECK;
+        PRECONDITION(pFD != NULL);
+    }
+    CONTRACTL_END;
+
+    void* ret = NULL;
+
+    BEGIN_QCALL;
+
+    GCX_COOP();
+
+    // Only handling EnC
+    _ASSERTE(pFD->IsEnCNew());
+
+    // If the field is static, or if the object is non-null, get the address of the field.
+    if (pFD->IsStatic() || target.Get() != NULL)
+        ret = pFD->GetAddress(OBJECTREFToObject(target.Get()));
+
+    END_QCALL;
+
+    return ret;
+}
+
 extern "C" BOOL QCALLTYPE RuntimeFieldHandle_GetRVAFieldInfo(FieldDesc* pField, void** address, UINT* size)
 {
     QCALL_CONTRACT;
@@ -1106,10 +1154,8 @@ extern "C" BOOL QCALLTYPE RuntimeFieldHandle_GetRVAFieldInfo(FieldDesc* pField, 
 
     if (pField != NULL && pField->IsRVA())
     {
-        Module* pModule = pField->GetModule();
-        *address = pModule->GetRvaField(pField->GetOffset());
+        *address = pField->GetStaticAddressHandle(NULL);
         *size = pField->LoadSize();
-
         ret = TRUE;
     }
 
@@ -1444,7 +1490,7 @@ void RuntimeTypeHandle::ValidateTypeAbleToBeInstantiated(
     }
 
     MethodTable* pMT = typeHandle.AsMethodTable();
-    PREFIX_ASSUME(pMT != NULL);
+    _ASSERTE(pMT != NULL);
 
     // Don't allow creating instances of delegates
     if (pMT->IsDelegate())
@@ -1543,7 +1589,7 @@ extern "C" void QCALLTYPE RuntimeTypeHandle_GetActivationInfo(
     RuntimeTypeHandle::ValidateTypeAbleToBeInstantiated(typeHandle, false /* fGetUninitializedObject */);
 
     MethodTable* pMT = typeHandle.AsMethodTable();
-    PREFIX_ASSUME(pMT != NULL);
+    _ASSERTE(pMT != NULL);
 
 #ifdef FEATURE_COMINTEROP
     // COM allocation can involve the __ComObject base type (with attached CLSID) or a
