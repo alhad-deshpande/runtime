@@ -150,59 +150,59 @@ LOCAL_LABEL(ReturnsInt):
 
 LOCAL_LABEL(Epilog):
 
-	ld %r3, 32(%r1)
-	ld %r4, CallDescrData__numStackSlots(%r3)
-	addic %r5, %r4, 96 
+	ld %r4, 32(%r1)
+	ld %r5, CallDescrData__numStackSlots(%r4)
+	addic %r6, %r5, 96 
 
     // Store all non volatile general purpose registers
-	ld %r14, 0(%r5)
-	ld %r15, 8(%r5)
-	ld %r16, 16(%r5)
-	ld %r17, 24(%r5)
-	ld %r18, 32(%r5)
-	ld %r19, 40(%r5)
-	ld %r20, 48(%r5)
-	ld %r21, 56(%r5)
-	ld %r22, 64(%r5)
-	ld %r23, 72(%r5)
-	ld %r24, 80(%r5)
-	ld %r25, 88(%r5)
-	ld %r26, 96(%r5)
-	ld %r27, 104(%r5)
-	ld %r28, 112(%r5)
-	ld %r29, 120(%r5)
-	ld %r30, 128(%r5)
-	ld %r31, 136(%r5)
+	ld %r14, 0(%r6)
+	ld %r15, 8(%r6)
+	ld %r16, 16(%r6)
+	ld %r17, 24(%r6)
+	ld %r18, 32(%r6)
+	ld %r19, 40(%r6)
+	ld %r20, 48(%r6)
+	ld %r21, 56(%r6)
+	ld %r22, 64(%r6)
+	ld %r23, 72(%r6)
+	ld %r24, 80(%r6)
+	ld %r25, 88(%r6)
+	ld %r26, 96(%r6)
+	ld %r27, 104(%r6)
+	ld %r28, 112(%r6)
+	ld %r29, 120(%r6)
+	ld %r30, 128(%r6)
+	ld %r31, 136(%r6)
 
 	// Store all non volatile floating point registers
-	lfd %f14, 144(%r5)
-	lfd %f15, 152(%r5)
-	lfd %f16, 160(%r5)
-	lfd %f17, 168(%r5)
-	lfd %f18, 176(%r5)
-	lfd %f19, 188(%r5)
-	lfd %f20, 192(%r5)
-	lfd %f21, 200(%r5)
-	lfd %f22, 208(%r5)
-	lfd %f23, 216(%r5)
-	lfd %f24, 224(%r5)
-	lfd %f25, 232(%r5)
-	lfd %f26, 240(%r5)
-	lfd %f27, 248(%r5)
-	lfd %f28, 256(%r5)
-	lfd %f29, 264(%r5)
-	lfd %f30, 272(%r5)
-	lfd %f31, 280(%r5) 
+	lfd %f14, 144(%r6)
+	lfd %f15, 152(%r6)
+	lfd %f16, 160(%r6)
+	lfd %f17, 168(%r6)
+	lfd %f18, 176(%r6)
+	lfd %f19, 188(%r6)
+	lfd %f20, 192(%r6)
+	lfd %f21, 200(%r6)
+	lfd %f22, 208(%r6)
+	lfd %f23, 216(%r6)
+	lfd %f24, 224(%r6)
+	lfd %f25, 232(%r6)
+	lfd %f26, 240(%r6)
+	lfd %f27, 248(%r6)
+	lfd %f28, 256(%r6)
+	lfd %f29, 264(%r6)
+	lfd %f30, 272(%r6)
+	lfd %f31, 280(%r6) 
 
 	
-	addic %r6, %r5, 288
-	addic %r7, %r6, 16
+	addic %r7, %r6, 288
+	addic %r8, %r7, 16
 
-	add %r8, %r1, %r7 
-	ld      %r0, 0(%r8)
+	add %r9, %r1, %r8 
+	ld      %r0, 0(%r9)
 	mtlr    %r0
 
-	add   %r1, %r1, %r6
+	add   %r1, %r1, %r7
     blr
 
 PATCH_LABEL CallDescrWorkerInternalReturnAddressOffset
