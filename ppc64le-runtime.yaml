@@ -37,3 +37,4 @@ jobs:
       - name: Run the script for test
         run: |
           docker exec github-api bash -c "/runtime.sh --test 2>&1 | tee /tmp/runtime-test.log; exit \${PIPESTATUS[0]}"
+          #
