@@ -130,7 +130,7 @@ LOCAL_LABEL(Epilog):
 	beq LOCAL_LABEL(NO_STACK_PADDING_EPILOG)
 	addic %r5, %r5, 1
 
-LOCAL_LABEL(NO_STACK_PADDING_EPILOG)
+LOCAL_LABEL(NO_STACK_PADDING_EPILOG):
 	mulli %r5, %r5, 8
 	addic %r6, %r5, 96 	
 	addic %r7, %r6, 16
