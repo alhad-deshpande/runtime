@@ -12,20 +12,21 @@ NESTED_ENTRY CallDescrWorkerInternal, _TEXT, NoHandler
 	
 	// Save pCallDescrData in %r11
     mr %r11, %r3 
-    ld %r0, -CallDescrData__numStackSlots(%r11)
+    lwz %r0, -CallDescData__numStackSlots(%r11)
 	
 	// minimum stack frame 32 + default paramaters 64 +  r14-r31 and f14-f31 non volatile regs 288
-	addic %r0, %r0, -384 
-    stdux %r1, %r1, %r0
+	mulli %r4, %r0, 8
+	addic %r4, %r4, -384 
+    stdux %r1, %r1, %r4
 	std %r3, 32(%r1)
 
-	cmpdi %r0, 0
-    beq LOCAL_LABEL(NoStackArguments)
-
-    // If there are stack arguments, copy the arguments in.
+	// If there are stack arguments, copy the arguments in.
     ld %r4, CallDescrData__pSrc(%r11)  // Source address
     li %r5, 0                          // Source offset
-    li %r6, 96                        // Destination offset on stack
+	li %r6, 96                        // Destination offset on stack
+	cmpdi %r0, 0
+    beq LOCAL_LABEL(NoStackArguments)
+    
 LOCAL_LABEL(StackCopyLoop):
     
 	add %r7, %r4, %r5
