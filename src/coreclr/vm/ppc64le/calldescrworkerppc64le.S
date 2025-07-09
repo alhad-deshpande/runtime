@@ -12,7 +12,7 @@ NESTED_ENTRY CallDescrWorkerInternal, _TEXT, NoHandler
 	
 	// Save pCallDescrData in %r11
     mr %r11, %r3 
-    lwz %r0, -CallDescData__numStackSlots(%r11)
+    lwz %r0, -CallDescrData__numStackSlots(%r11)
 	
 	// minimum stack frame 32 + default paramaters 64 +  r14-r31 and f14-f31 non volatile regs 288
 	mulli %r4, %r0, 8
@@ -153,6 +153,7 @@ LOCAL_LABEL(Epilog):
 
 	ld %r4, 32(%r1)
 	ld %r5, CallDescrData__numStackSlots(%r4)
+	mulli %r5, %r5, 8
 	addic %r6, %r5, 96 
 
     // Store all non volatile general purpose registers
