@@ -185,16 +185,22 @@ struct TransitionBlock
             INT64 gp;
         };
     };
-    TADDR padding; // Keep size of TransitionBlock as multiple of 16-byte. Simplifies code in PROLOG_WITH_TRANSITION_BLOCK
     ArgumentRegisters       m_argumentRegisters;
 #elif defined(TARGET_POWERPC64)
-    //TADDR                   m_backchain;
-    //TADDR                   m_reserved;
-    ArgumentRegisters       m_argumentRegisters;
-    CalleeSavedRegisters    m_calleeSavedRegisters;
-    TADDR                   m_ReturnAddress;
-    //TADDR                   m_StackPointer;
-    //FloatArgumentRegisters  m_floatArgumentRegisters;
+    TADDR                   m_backchain;	//8
+    DWORD                   m_crSaveWord;	//4
+    DWORD                   m_reserved;		//4
+    TADDR		    m_ReturnAddress;	//8
+    TADDR		    m_tocPtr;		//8 = r2
+    TADDR                   m_StackPointer;	//8 = r1
+    ArgumentRegisters       m_argumentRegisters;// 8*8 = 64 r3 - r10
+    TADDR                   m_methodDescPtr;	//8 = r11
+    TADDR                   m_countRegister;	//8 = r12
+    TADDR                   m_RegservedRegister;//8 = r13
+    CalleeSavedRegisters    m_calleeSavedRegisters; 	// r14-r31 8*18 = 144
+    FloatArgumentRegisters  m_floatArgumentRegisters; //f1-f13 8*13 = 104  == total 376
+    TADDR                   padding;		//8				384 
+
 #else
     PORTABILITY_ASSERT("TransitionBlock");
 #endif
@@ -226,7 +232,11 @@ struct TransitionBlock
     }
 #endif
 
+#ifdef TARGET_POWERPC64
+    static short GetOffsetOfArgs()
+#else
     static BYTE GetOffsetOfArgs()
+#endif
     {
         LIMITED_METHOD_CONTRACT;
 
