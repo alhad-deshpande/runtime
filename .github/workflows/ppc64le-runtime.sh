@@ -7,7 +7,7 @@
   set -uxo pipefail
   apt update && apt upgrade -y && apt-get install sudo software-properties-common -y
 
-  REPO=https://github.com/alhad-deshpande/runtime.git
+  REPO=https://github.com/dotnet/runtime.git
   REF=main
 
   PORTABLE_BUILD=false
