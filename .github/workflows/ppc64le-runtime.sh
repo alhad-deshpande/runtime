@@ -138,8 +138,8 @@
       fi
 
       common_args+=(--runtimeconfiguration Release --librariesConfiguration "$CONFIGURATION")
-      common_args+=(/p:PrimaryRuntimeFlavor=Mono --warnAsError false --subset clr+mono+libs+host+packs+libs.tests)
-      common_args+=(/p:UsingToolMicrosoftNetCompilers=false  /p:DotNetBuildSourceOnly=true /p:DotNetBuildTests=true --cmakeargs -DCLR_CMAKE_USE_SYSTEM_BROTLI=true --cmakeargs -DCLR_CMAKE_USE_SYSTEM_ZLIB=true /p:BaseOS=linux-ppc64le)
+      common_args+=(/p:PrimaryRuntimeFlavor=Mono --warnAsError false --subset clr+mono+libs+host+packs+libs.tests /p:NoWarn=NU1905;NU1900 /p:SelfContained=false)
+      common_args+=(/p:UsingToolMicrosoftNetCompilers=false /p:DotNetBuildSourceOnly=true /p:DotNetBuildTests=true --cmakeargs -DCLR_CMAKE_USE_SYSTEM_BROTLI=true --cmakeargs -DCLR_CMAKE_USE_SYSTEM_ZLIB=true /p:BaseOS=linux-ppc64le)
 
       BUILD_EXIT_CODE=0
       OPENSSL_ENABLE_SHA1_SIGNATURES=1 ./build.sh ${common_args[@]+"${common_args[@]}"} ${build_args[@]+"${build_args[@]}"} || BUILD_EXIT_CODE=$?
