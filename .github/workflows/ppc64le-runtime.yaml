@@ -14,11 +14,16 @@ jobs:
         run: |
           docker stop github-api && docker rm github-api
           docker run -dit --privileged -v /sys/fs/cgroup:/sys/fs/cgroup:ro --name github-api ubuntu:22.04
-          #ls -la && ls -la ../ && ls -la runtime && docker ps -a
+      - name: Copy script
+        run: |
           docker cp .github/workflows/ppc64le-runtime.sh github-api:/runtime.sh
           docker exec github-api chmod +x /runtime.sh
           #docker cp $(pwd)../.github/workflows/ppc64le-runtime.sh github-api:/runtime.sh
+      - name: Build
+        run: |
           docker exec github-api bash -c "/runtime.sh --ref release/9.0 --build 2>&1 | tee /tmp/runtime-build.log; exit \${PIPESTATUS[0]}"
+      - name: Test
+        run: |
           docker exec github-api bash -c "/runtime.sh --ref release/9.0 --test 2>&1 | tee /tmp/runtime-test.log; exit \${PIPESTATUS[0]}"
   # copy-script:
   #   runs-on: ubuntu-24.04-ppc64le
