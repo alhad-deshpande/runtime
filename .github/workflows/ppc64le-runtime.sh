@@ -142,7 +142,7 @@
       common_args+=(/p:UsingToolMicrosoftNetCompilers=false /p:DotNetBuildSourceOnly=true /p:DotNetBuildTests=true --cmakeargs -DCLR_CMAKE_USE_SYSTEM_BROTLI=true --cmakeargs -DCLR_CMAKE_USE_SYSTEM_ZLIB=true /p:BaseOS=linux-ppc64le)
 
       BUILD_EXIT_CODE=0
-      OPENSSL_ENABLE_SHA1_SIGNATURES=1 ./build.sh /p:WarningsNotAsErrors=NU1905;NU1900 ${common_args[@]+"${common_args[@]}"} ${build_args[@]+"${build_args[@]}"} || BUILD_EXIT_CODE=$?
+      OPENSSL_ENABLE_SHA1_SIGNATURES=1 ./build.sh /p:WarningsNotAsErrors="NU1905;NU1900" ${common_args[@]+"${common_args[@]}"} ${build_args[@]+"${build_args[@]}"} || BUILD_EXIT_CODE=$?
       EXIT_CODE=$BUILD_EXIT_CODE
       if [ "$EXIT_CODE" -ne 0 ]; then
         exit 1
