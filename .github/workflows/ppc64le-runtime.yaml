@@ -18,7 +18,6 @@ jobs:
         run: |
           docker cp .github/workflows/ppc64le-runtime.sh github-api:/runtime.sh
           docker exec github-api chmod +x /runtime.sh
-          #docker cp $(pwd)../.github/workflows/ppc64le-runtime.sh github-api:/runtime.sh
       - name: Build
         run: |
           docker exec github-api bash -c "/runtime.sh --ref release/9.0 --build 2>&1 | tee /tmp/runtime-build.log; exit \${PIPESTATUS[0]}"
