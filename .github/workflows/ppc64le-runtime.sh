@@ -127,7 +127,7 @@
         sed -i -E '/"sdk": \{/!b;n;s/"version": "[^"]+"/"version": "'"$sdk_version"'"/' global.json
         sed -i -E '/"tools": \{/!b;n;s/"dotnet": "[^"]+"/"dotnet": "'"$sdk_version"'"/' global.json
       fi
-	find . -type f -name "*.csproj" -exec sed -i '/<PropertyGroup>/a\
+	find . -type f -name "*proj" -exec sed -i '/<PropertyGroup>/a\
 	<WarningsNotAsErrors>NU1905;NU1900</WarningsNotAsErrors>\
 	<SelfContained>false</SelfContained>' {} +
 
