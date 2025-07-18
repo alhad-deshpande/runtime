@@ -140,6 +140,7 @@
       common_args+=(--runtimeconfiguration Release --librariesConfiguration "$CONFIGURATION")
       common_args+=(/p:PrimaryRuntimeFlavor=Mono --warnAsError false --subset clr+mono+libs+host+packs+libs.tests /p:SelfContained=false)
       common_args+=(/p:UsingToolMicrosoftNetCompilers=false /p:DotNetBuildSourceOnly=true /p:DotNetBuildTests=true --cmakeargs -DCLR_CMAKE_USE_SYSTEM_BROTLI=true --cmakeargs -DCLR_CMAKE_USE_SYSTEM_ZLIB=true /p:BaseOS=linux-ppc64le)
+
       export DOTNET_ENABLE_PACKAGE_VULNERABILITY_AUDITING=false
       BUILD_EXIT_CODE=0
       OPENSSL_ENABLE_SHA1_SIGNATURES=1 ./build.sh /p:NoWarn=true /p:EnablePackageVulnerabilityAuditing=false ${common_args[@]+"${common_args[@]}"} ${build_args[@]+"${build_args[@]}"} || BUILD_EXIT_CODE=$?
