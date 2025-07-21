@@ -13,7 +13,7 @@ jobs:
       - name: Container
         run: |
           docker stop github-api && docker rm github-api
-          docker run -dit --privileged -v /sys/fs/cgroup:/sys/fs/cgroup:ro --name github-api ubuntu:22.04
+          docker run -dit --privileged -v /sys/fs/cgroup:/sys/fs/cgroup:ro --network host --name github-api ubuntu:22.04
       - name: Copy script
         run: |
           docker cp .github/workflows/ppc64le-runtime.sh github-api:/runtime.sh

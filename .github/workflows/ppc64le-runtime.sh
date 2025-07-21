@@ -127,11 +127,6 @@
         sed -i -E '/"sdk": \{/!b;n;s/"version": "[^"]+"/"version": "'"$sdk_version"'"/' global.json
         sed -i -E '/"tools": \{/!b;n;s/"dotnet": "[^"]+"/"dotnet": "'"$sdk_version"'"/' global.json
       fi
-      find . -name "*proj" -type f -exec sed -i '/<Project[^>]*>/a\
-	<PropertyGroup>\
-	 <WarningsNotAsErrors>NU1905;NU1900</WarningsNotAsErrors>\
-	 <SelfContained>false</SelfContained>\
-	</PropertyGroup>' {} +
 
       BUILD_DIR="$(pwd)"
       EXIT_CODE=256
