@@ -117,8 +117,8 @@ struct StubPrecode
     static const int Type = 0x17;
     static const SIZE_T CodeSize = 24;
 #elif defined(TARGET_POWERPC64)
-    static const int Type = 0x60;    //coinciding with P in ascii
-    static const SIZE_T CodeSize = 48;
+    static const int Type = 0x6C;    //coinciding with P in ascii
+    static const SIZE_T CodeSize = 32;
 #endif // TARGET_AMD64
 
     BYTE m_code[CodeSize];
@@ -260,9 +260,9 @@ struct FixupPrecode
     static const SIZE_T CodeSize = 32;
     static const int FixupCodeOffset = 10;
 #elif defined(TARGET_POWERPC64)
-    static const int Type = 0x80;	//TODO Vikas
-    static const SIZE_T CodeSize = 80;
-    static const int FixupCodeOffset = 10;
+    static const int Type = 0x8C;	//TODO Vikas
+    static const SIZE_T CodeSize = 48;
+    static const int FixupCodeOffset = 16;
 #endif // TARGET_AMD64
 
     BYTE m_code[CodeSize];
