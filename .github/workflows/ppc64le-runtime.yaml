@@ -24,28 +24,3 @@ jobs:
       - name: Test
         run: |
           docker exec github-api bash -c "/runtime.sh --ref release/9.0 --test 2>&1 | tee /tmp/runtime-test.log; exit \${PIPESTATUS[0]}"
-  # copy-script:
-  #   runs-on: ubuntu-24.04-ppc64le
-  #   needs: container-create
-  #   steps:
-  #     - name: Checkout code
-  #       uses: actions/checkout@v4
-  #     - name: Copy script into container
-  #       run: |
-  #         docker cp $(pwd)/.github/workflows/ppc64le-runtime.sh github-api:/runtime.sh
-  # runtime-build:
-  #   runs-on: ubuntu-24.04-ppc64le
-  #   needs: copy-script
-  #   steps:
-  #     - name: Run script inside container
-  #       run: docker exec github-api chmod +x /runtime.sh
-  #     - name: Run the script for build
-  #       run: |
-  #         docker exec github-api bash -c "/runtime.sh --build 2>&1 | tee /tmp/runtime-build.log; exit \${PIPESTATUS[0]}"
-  # runtime-test:
-  #   runs-on: ubuntu-24.04-ppc64le
-  #   needs: runtime-build
-  #   steps:
-  #     - name: Run the script for test
-  #       run: |
-  #         docker exec github-api bash -c "/runtime.sh --test 2>&1 | tee /tmp/runtime-test.log; exit \${PIPESTATUS[0]}"
