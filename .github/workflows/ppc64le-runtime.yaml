@@ -24,3 +24,4 @@ jobs:
       - name: Test
         run: |
           docker exec github-api bash -c "/runtime.sh --ref release/9.0 --test 2>&1 | tee /tmp/runtime-test.log; exit \${PIPESTATUS[0]}"
+
