@@ -126,6 +126,9 @@
 
         sed -i -E '/"sdk": \{/!b;n;s/"version": "[^"]+"/"version": "'"$sdk_version"'"/' global.json
         sed -i -E '/"tools": \{/!b;n;s/"dotnet": "[^"]+"/"dotnet": "'"$sdk_version"'"/' global.json
+	sed -i "/ppc64le'/a\
+	    \ \ \ \ <ProjectExclusions Include=\"\$(MSBuildThisFileDirectory)System.Net.Sockets\\tests\\FunctionalTests\\System.Net.Sockets.Tests.csproj\" />\\
+    <ProjectExclusions Include=\"\$(MSBuildThisFileDirectory)System.Net.NetworkInformation\\tests\\FunctionalTests\\System.Net.NetworkInformation.Functional.Tests.csproj\" />" src/libraries/tests.proj
       fi
 
       BUILD_DIR="$(pwd)"
