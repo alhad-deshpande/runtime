@@ -192,14 +192,13 @@ struct TransitionBlock
     DWORD                   m_reserved;		//4
     TADDR		    m_ReturnAddress;	//8
     TADDR		    m_tocPtr;		//8 = r2
-    TADDR                   m_StackPointer;	//8 = r1
     ArgumentRegisters       m_argumentRegisters;// 8*8 = 64 r3 - r10
     TADDR                   m_methodDescPtr;	//8 = r11
     TADDR                   m_countRegister;	//8 = r12
-    TADDR                   m_RegservedRegister;//8 = r13
     CalleeSavedRegisters    m_calleeSavedRegisters; 	// r14-r31 8*18 = 144
-    FloatArgumentRegisters  m_floatArgumentRegisters; //f1-f13 8*13 = 104  == total 376
-    TADDR                   padding;		//8				384 
+    FloatArgumentRegisters  m_floatArgumentRegisters; //f1-f13 8*13 = 104 
+    FloatCalleeSavedRegisters    m_floatCalleeSaveRegisters;		//8*18 = 144
+    TADDR		    padding;
 
 #else
     PORTABILITY_ASSERT("TransitionBlock");

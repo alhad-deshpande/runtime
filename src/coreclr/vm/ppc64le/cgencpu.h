@@ -162,6 +162,13 @@ struct FloatArgumentRegisters {
      DWORD64 d[NUM_FLOAT_ARGUMENT_REGISTERS];   // f1-f13
 };
 
+#define NUM_FLOAT_CALLEE_SAVED__REGISTERS 18	
+
+typedef DPTR(struct FloatCalleeSavedRegisters) PTR_FloatCalleeSavedRegisters;
+struct FloatCalleeSavedRegisters {
+     DWORD64 d[NUM_FLOAT_CALLEE_SAVED__REGISTERS];   // f14-f31
+};
+
 #if 0 //only s390x and amd64 has declared this function?
 void UpdateRegDisplayFromCalleeSavedRegisters(REGDISPLAY * pRD, CalleeSavedRegisters * pRegs);
 #endif

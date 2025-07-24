@@ -7,6 +7,7 @@
 // Mark start of the code region that we patch at runtime
 LEAF_ENTRY JIT_PatchedCodeStart, _TEXT
     blr
+    nop
 LEAF_END JIT_PatchedCodeStart, _TEXT
 
 // There is an even more optimized version of these helpers possible which takes
@@ -39,6 +40,7 @@ LEAF_END_MARKED JIT_WriteBarrier, _TEXT
 // Mark start of the code region that we patch at runtime
 LEAF_ENTRY JIT_PatchedCodeLast, _TEXT
     blr
+    nop
 LEAF_END JIT_PatchedCodeLast, _TEXT
 
 // JIT_ByRefWriteBarrier has weird semantics, see usage in StubLinkerX86.cpp

@@ -8,7 +8,7 @@
 STUB_PAGE_SIZE = 65536
 
 #define DATA_SLOT(stub, field) (STUB_PAGE_SIZE + stub##Data__##field)
-#define DATA_SLOT_FIXUPTHUNK(stub, field) (STUB_PAGE_SIZE + stub##Data__##field - 16)
+#define DATA_SLOT_FIXUPTHUNK(stub, field) (STUB_PAGE_SIZE - 16 + stub##Data__##field)
 
 
 LEAF_ENTRY StubPrecodeCode, _TEXT

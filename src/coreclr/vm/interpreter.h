@@ -1021,6 +1021,8 @@ private:
         static const int MaxNumFPRegArgSlots = 8;
 #elif defined(HOST_RISCV64)
         static const int MaxNumFPRegArgSlots = 8;
+#elif defined(HOST_POWERPC64)
+        static const int MaxNumFPRegArgSlots = 13;
 #endif
 
         ~ArgState()
