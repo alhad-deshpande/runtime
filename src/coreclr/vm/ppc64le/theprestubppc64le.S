@@ -18,8 +18,8 @@ NESTED_ENTRY ThePreStub, _TEXT, NoHandler
 	std %r8, 72(%r1)
 	std %r9, 80(%r1)
 	std %r10, 88(%r1)
-	std %r11, 96(%r1)
-	std %r12, 104(%r1)
+	//std %r11, 96(%r1)
+	//std %r12, 104(%r1)
 	std %r14, 112(%r1)
 	std %r15, 120(%r1)
 	std %r16, 128(%r1)
@@ -71,7 +71,7 @@ NESTED_ENTRY ThePreStub, _TEXT, NoHandler
 	stfd %f30, 488(%r1)
 	stfd %f31, 496(%r1)
 
-	mr %r3, %r1			//load pTransitionBlock structure address in r3 (parameter registers)
+	addi %r3, %r1, 32		//load pTransitionBlock structure address in r3 (parameter registers)
 	mr %r4, METHODDESC_REGISTER	//load METHODDESC_REGISTER(r11)  in r4 (parameter registers)
 
 	bl C_FUNC(PreStubWorker)	//call function PreStubWorker
@@ -86,7 +86,7 @@ NESTED_ENTRY ThePreStub, _TEXT, NoHandler
 	ld %r8, 72(%r1)
 	ld %r9, 80(%r1)
 	ld %r10, 88(%r1)
-	ld %r11, 96(%r1)
+	//ld %r11, 96(%r1)
 	//ld %r12, 104(%r1)	// The return value is saved in r12 and we need to jump this address
 	ld %r14, 112(%r1)
 	ld %r15, 120(%r1)
@@ -139,7 +139,10 @@ NESTED_ENTRY ThePreStub, _TEXT, NoHandler
 	lfd %f30, 488(%r1)
 	lfd %f31, 496(%r1)
 
-	addi %r1,%r1,512
+	addi %r1, %r1, 512
+	ld %r0, 16(%r1) 
+	mtlr %r0
+
 	mtctr %r12
 	bctr
 

@@ -187,11 +187,6 @@ struct TransitionBlock
     };
     ArgumentRegisters       m_argumentRegisters;
 #elif defined(TARGET_POWERPC64)
-    TADDR                   m_backchain;	//8
-    DWORD                   m_crSaveWord;	//4
-    DWORD                   m_reserved;		//4
-    TADDR		    m_ReturnAddress;	//8
-    TADDR		    m_tocPtr;		//8 = r2
     ArgumentRegisters       m_argumentRegisters;// 8*8 = 64 r3 - r10
     TADDR                   m_methodDescPtr;	//8 = r11
     TADDR                   m_countRegister;	//8 = r12
@@ -199,6 +194,11 @@ struct TransitionBlock
     FloatArgumentRegisters  m_floatArgumentRegisters; //f1-f13 8*13 = 104 
     FloatCalleeSavedRegisters    m_floatCalleeSaveRegisters;		//8*18 = 144
     TADDR		    padding;
+    TADDR                   m_backchain;	//8
+    DWORD                   m_crSaveWord;	//4
+    DWORD                   m_reserved;		//4
+    TADDR		    m_ReturnAddress;	//8
+    TADDR		    m_tocPtr;		//8 = r2
 
 #else
     PORTABILITY_ASSERT("TransitionBlock");
