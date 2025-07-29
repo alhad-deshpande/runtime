@@ -28,7 +28,7 @@
   RUNTIME_FAIL_AVG=0
   RUNTIME_SKIPPED_TESTCASES=0
   RUNTIME_SKIP_AVG=0
-
+  LIB_BUILD_EXIT_CODE=0
   common_args=()
   build_args=()
   test_args=()
