@@ -150,7 +150,7 @@
       common_args+=(/p:DotNetBuildFromSource=true)
       fi
 
-      common_args+=(--runtimeconfiguration Release --librariesConfiguration "$CONFIGURATION")
+      common_args+=(--runtimeconfiguration Debug --librariesConfiguration "$CONFIGURATION")
       common_args+=(/p:PrimaryRuntimeFlavor=Mono --warnAsError false --subset clr+mono+libs+host+packs+libs.tests)
       common_args+=(/p:UsingToolMicrosoftNetCompilers=false  /p:DotNetBuildSourceOnly=true /p:DotNetBuildTests=true --cmakeargs -DCLR_CMAKE_USE_SYSTEM_BROTLI=true --cmakeargs -DCLR_CMAKE_USE_SYSTEM_ZLIB=true /p:BaseOS=linux-ppc64le)
 
