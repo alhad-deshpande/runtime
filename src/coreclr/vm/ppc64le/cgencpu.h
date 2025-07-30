@@ -255,6 +255,7 @@ inline TADDR GetFP(const CONTEXT * context)
 
 
 extern "C" TADDR GetCurrentSP();
+extern "C" void InterpreterStubThunk();
 
 //**********************************************************************
 // Jump thunks

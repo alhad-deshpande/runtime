@@ -7,6 +7,7 @@
 NESTED_ENTRY ThePreStub, _TEXT, NoHandler
 	mflr %r0
 	std %r0, 16(%r1)
+	std %r2, 24(%r1)
 	stdu %r1, -512(%r1)
 // Store GPR r3 to r10 and r14 to r31. (base from stack pointer r1)
 
@@ -141,6 +142,7 @@ NESTED_ENTRY ThePreStub, _TEXT, NoHandler
 
 	addi %r1, %r1, 512
 	ld %r0, 16(%r1) 
+	ld %r2, 24(%r1)
 	mtlr %r0
 
 	mtctr %r12
