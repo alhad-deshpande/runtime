@@ -10,6 +10,8 @@
 //         )
 LEAF_ENTRY HelperMethodFrameRestoreState, _TEXT
 // NOT YET IMPLEMENTED
+	bl abort
+	nop
 LEAF_END HelperMethodFrameRestoreState, _TEXT
 
 //////////////////////////////////////////////////////////////////////////
@@ -24,6 +26,8 @@ LEAF_END HelperMethodFrameRestoreState, _TEXT
 // EXTERN_C VOID __stdcall NDirectImportThunk()
 NESTED_ENTRY NDirectImportThunk, _TEXT, NoHandler
 // NOT YET IMPLEMENTED
+	bl abort
+	nop
 NESTED_END NDirectImportThunk, _TEXT
 
 #ifdef FEATURE_HIJACK
@@ -33,21 +37,29 @@ NESTED_END NDirectImportThunk, _TEXT
 //
 NESTED_ENTRY OnHijackTripThread, _TEXT, NoHandler
 // NOT YET IMPLEMENTED
+	bl abort
+	nop
 NESTED_END OnHijackTripThread, _TEXT
 
 #endif // FEATURE_HIJACK
 
 LEAF_ENTRY SinglecastDelegateInvokeStub, _TEXT
 // NOT YET IMPLEMENTED
+	bl abort
+	nop
 LEAF_END SinglecastDelegateInvokeStub, _TEXT
 
 #ifdef FEATURE_TIERED_COMPILATION
 NESTED_ENTRY OnCallCountThresholdReachedStub, _TEXT, NoHandler
 // NOT YET IMPLEMENTED
+	bl abort
+	nop
 NESTED_END OnCallCountThresholdReachedStub, _TEXT
 
 #endif // FEATURE_TIERED_COMPILATION
 
 NESTED_ENTRY InterpreterStubThunk, _TEXT, NoHandler
 // NOT YET IMPLEMENTED
+	bl abort
+	nop
 NESTED_END InterpreterStubThunk, _TEXT

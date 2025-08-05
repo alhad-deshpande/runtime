@@ -123,6 +123,7 @@ void StubLinkerCPU::EmitBranchRegister(IntReg R2)
 
 void StubLinkerCPU::EmitLoadRegister(IntReg R1, IntReg R2)
 {
+    _ASSERTE(!"NYI POWERPC64 EmitLoadRegister");
 }
 
 void StubLinkerCPU::EmitLoadHalfwordImmediate(IntReg R1, int I2)
@@ -187,61 +188,48 @@ void StubLinkerCPU::EmitStoreMultiple(IntReg R1, IntReg R3, int D2, IntReg B2)
 
 void StubLinkerCPU::EmitLoadImmediate(IntReg target, UINT64 constant)
 {
+    _ASSERTE(!"NYI POWERPC64 EmitLoadImmediate");
 }
 
 void StubLinkerCPU::EmitSaveIncomingArguments(unsigned int cIntRegArgs, unsigned int cFloatRegArgs)
 {
+    _ASSERTE(!"NYI POWERPC64 EmitSaveIncomingArguments");
 }
-
-#if 0
-void StubLinkerCPU::EmitProlog(unsigned short cIntRegArgs, unsigned short cVecRegArgs, unsigned short cCalleeSavedRegs, unsigned short cbStackSpace)
-{
-}
-
-void StubLinkerCPU::EmitLoadIncomingSaveArea(IntReg target)
-{
-}
-#endif
-
 void StubLinkerCPU::EmitCallLabel(CodeLabel *target, BOOL fTailCall, BOOL fIndirect)
 {
-    _ASSERTE(!"NYI EmitCallLabel");
+    _ASSERTE(!"NYI POWERPC64 EmitCallLabel");
 }
 
 VOID StubLinkerCPU::EmitComputedInstantiatingMethodStub(MethodDesc* pSharedMD, struct ShuffleEntry *pShuffleEntryArray, void* extraArg)
 {
+    _ASSERTE(!"NYI POWERPC64 EmitComputedInstantiatingMethodStub");
 }
 
 VOID StubLinkerCPU::EmitShuffleThunk(ShuffleEntry *pShuffleEntryArray)
 {
     // TODO TARGET_POWERPC64
-    _ASSERTE(!"NYI");
+    _ASSERTE(!"NYI POWERPC64");
 }
 
 void StubLinkerCPU::EmitMovReg(IntReg R1, IntReg R2)
 {
-    _ASSERTE(!"NYI EmitMovReg");
+    _ASSERTE(!"NYI POWERPC64 EmitMovReg");
 }
 
 void StubLinkerCPU::EmitMovConstant(IntReg R1, int I2)
 {
-    _ASSERTE(!"NYI EmitMovConstant");
+    _ASSERTE(!"NYI POWERPC64 EmitMovConstant");
 }
 
 void StubLinkerCPU::EmitAddImm(IntReg R1, IntReg R2, unsigned int I3)
 {
-    _ASSERTE(!"NYI EmitAddImm");
+    _ASSERTE(!"NYI POWERPC64 EmitAddImm");
 }
 
 unsigned int StubLinkerCPU::GetSavedRegArgsOffset()
 {
-    _ASSERTE(!"NYI GetSavedRegArgsOffset");
+    _ASSERTE(!"NYI POWERPC64 GetSavedRegArgsOffset");
     return 0;
-}
-
-void StubLinkerCPU::EmitEpilog()
-{
-    _ASSERTE(!"NYI EmitEpilog");
 }
 
 #endif // !DACCESS_COMPILE

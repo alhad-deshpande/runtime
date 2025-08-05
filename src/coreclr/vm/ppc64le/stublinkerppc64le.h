@@ -78,7 +78,6 @@ private:
      unsigned int GetSavedRegArgsOffset();
      void EmitLoad(IntReg R1, int D2, IntReg X2, IntReg B2);
      void EmitLoad(IntReg R1, int D2, IntReg B2);
-     void EmitEpilog();
 };
 
 #endif  // STUBLINKERPPC64LE_H_
