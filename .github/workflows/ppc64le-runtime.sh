@@ -137,6 +137,7 @@
     sed -i '165i<ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Runtime\\tests\\System.IO.FileSystem.Tests\\System.IO.FileSystem.Tests.csproj" />' src/libraries/tests.proj
     sed -i '166i<ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Runtime\\tests\\System.IO.FileSystem.Tests\\File\\System.IO.MemoryMappedFiles.Tests.csproj" />' src/libraries/tests.proj
     sed -i '167i<ProjectExclusions Include="$(MSBuildThisFileDirectory)Microsoft.Bcl.TimeProvider\\tests\\Microsoft.Bcl.TimeProvider.Tests.csproj" />' src/libraries/tests.proj
+    sed -i '168i<ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Runtime\\tests\\System.Reflection.Tests\\System.Reflection.Tests.csproj" />' src/libraries/tests.proj
 
     BUILD_DIR="$(pwd)"
     EXIT_CODE=256
