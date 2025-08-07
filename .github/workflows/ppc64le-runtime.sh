@@ -42,57 +42,56 @@ get_linux_platform_name()
 
 export linux_platform=$(get_linux_platform_name)
 
-while [ $# -ne 0 ]
-do
-  name="$1"
-  case "$name" in
-    --ref)
-      shift
-      REF="$1"
-      ;;
-    --build)
-      shift
-      BUILD="true"
-      ;;
-    --test)
-      shift
-      TEST="true"
-      ;;
-    --configuration)
-      shift
-      CONFIGURATION="$1"
-      ;;
-    --portablebuild)
-      shift
-      PORTABLE_BUILD="$1"
-      ;;
-    --outerloop)
-      test_args+=(/p:OuterLoop=true)
-      ;;
-    --sdk-path)
-      shift
-      SDK_PATH="$1"
-      ;;
-    --sdk_version)
-      shift
-      SDK_VERSION="$1"
-      ;;
-    --patch-file)
-      shift
-      PATCH_PATH="$1"
-      ;;
-    *)
-      echo "Unknown argument \`$name\`"
-      exit 1
-      ;;
-  esac
-  shift
-done
+  while [ $# -ne 0 ]
+  do
+    name="$1"
+    case "$name" in
+      --ref)
+        shift
+        REF="$1"
+        ;;
+      --build)
+        shift
+        BUILD="true"
+        ;;
+      --test)
+        shift
+        TEST="true"
+        ;;
+      --configuration)
+        shift
+        CONFIGURATION="$1"
+        ;;
+      --portablebuild)
+        shift
+        PORTABLE_BUILD="$1"
+        ;;
+      --outerloop)
+        test_args+=(/p:OuterLoop=true)
+        ;;
+      --sdk-path)
+        shift
+        SDK_PATH="$1"
+        ;;
+      --sdk_version)
+        shift
+        SDK_VERSION="$1"
+        ;;
+      --patch-file)
+        shift
+        PATCH_PATH="$1"
+        ;;
+      *)
+        echo "Unknown argument \`$name\`"
+        exit 1
+        ;;
+    esac
+    shift
+  done
 
 if [[ $(uname -m) = "ppc64le" ]]; then
   sudo add-apt-repository -y ppa:dotnet/backports
   sudo apt-get update
-  # sdk_version=$(dotnet --list-sdks | cut -d' ' -f1)
 fi
 
 sudo apt -y install bc automake clang cmake findutils git tzdata \
