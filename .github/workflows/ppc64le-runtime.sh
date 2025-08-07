@@ -91,13 +91,13 @@
 
   if [[ $(uname -m) = "ppc64le" ]]; then
     sudo add-apt-repository -y ppa:dotnet/backports
-    sudo apt-get update
+    sudo apt-get update && sudo apt-get upgrade -y
   fi
 
-    sudo apt -y install bc automake clang cmake findutils git tztool \
-                hostname libtool libkrb5-dev \
-                llvm make python3  liblttng-ust-dev \
-                tar wget jq lld build-essential zlib1g-dev libssl-dev libbrotli-dev
+  sudo apt-get -y install bc automake clang cmake findutils git tztool \
+                  hostname libtool libkrb5-dev \
+                  llvm make python3  liblttng-ust-dev \
+                  tar wget jq lld build-essential zlib1g-dev libssl-dev libbrotli-dev
 
   mkdir dotnet-sdk-$(uname -m)
   pushd dotnet-sdk-$(uname -m)
