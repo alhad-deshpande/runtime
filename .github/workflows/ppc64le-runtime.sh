@@ -83,6 +83,7 @@ export linux_platform=$(get_linux_platform_name)
         ;;
       *)
         echo "Unknown argument \`$name\`"
+        echo "in here"
         exit 1
         ;;
     esac
