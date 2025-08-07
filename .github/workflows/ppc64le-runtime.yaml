@@ -20,8 +20,8 @@ jobs:
           docker exec github-api chmod +x /runtime.sh
       - name: Build
         run: |
-          docker exec github-api bash -c "/runtime.sh --ref release/9.0 --build 2>&1 | tee /tmp/runtime-build.log; exit \${PIPESTATUS[0]}"
+          docker exec github-api bash -c "/runtime.sh --build 2>&1 | tee /tmp/runtime-build.log; exit \${PIPESTATUS[0]}"
       - name: Test
         run: |
-          docker exec github-api bash -c "/runtime.sh --ref release/9.0 --test 2>&1 | tee /tmp/runtime-test.log; exit \${PIPESTATUS[0]}"
+          docker exec github-api bash -c "/runtime.sh --test 2>&1 | tee /tmp/runtime-test.log; exit \${PIPESTATUS[0]}"
 
