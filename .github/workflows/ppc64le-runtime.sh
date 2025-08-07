@@ -94,7 +94,7 @@
     sudo apt-get update && sudo apt-get upgrade -y
   fi
 
-  sudo apt-get -y install bc automake clang cmake findutils git tztool \
+  sudo apt-get -y install bc automake clang cmake findutils git tzdata \
                   hostname libtool libkrb5-dev \
                   llvm make python3  liblttng-ust-dev \
                   tar wget jq lld build-essential zlib1g-dev libssl-dev libbrotli-dev
