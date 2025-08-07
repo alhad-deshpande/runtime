@@ -90,11 +90,13 @@
   done
 
   if [[ $(uname -m) = "ppc64le" ]]; then
-    sudo add-apt-repository -y ppa:dotnet/backports
-    sudo apt-get update && sudo apt-get upgrade -y
+    add-apt-repository -y ppa:dotnet/backports
+    apt-get update && sudo apt-get upgrade -y
   fi
+  
+  apt-get update && DEBIAN_FRONTEND="noninteractive" TZ="Asia/Kolkata" apt-get install -y tzdata
 
-  sudo apt-get -y install bc automake clang cmake findutils git \
+  apt-get -y install bc automake clang cmake findutils git \
                   hostname libtool libkrb5-dev \
                   llvm make python3  liblttng-ust-dev \
                   tar wget jq lld build-essential zlib1g-dev libssl-dev libbrotli-dev
@@ -108,13 +110,6 @@
   export PATH=$DOTNET_ROOT:$PATH
   export sdk_version=$(dotnet --list-sdks | cut -d' ' -f1)
   popd
-
-  export DEBIAN_FRONTEND=noninteractive
-
-  echo "tzdata tzdata/Areas select Asia" | sudo debconf-set-selections
-  echo "tzdata tzdata/Zones/Asia select Kolkata" | sudo debconf-set-selections
-
-  sudo apt-get install tzdata -y
 
   runtime-build()
   {
