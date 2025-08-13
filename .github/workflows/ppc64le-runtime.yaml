@@ -1,11 +1,35 @@
 name: Runtime-build-test
 
 on:
-  push:
-    branches:
-      - ppc64le_gha
+  issue_comment:
+    types: [created, edited]
+
+permissions:
+  issues: write
+
 jobs:
+  CheckPoint:
+    runs-on: ubuntu-latest
+    if: |
+      github.event.comment.body != '' &&
+      contains(toJson(github.event.comment.body), '@Dotnet_ppc64le')
+    steps:
+      - name: Check if comment contains @Dotnet_ppc64le
+        id: check_comment
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const comment = context.payload.comment.body || "";
+            const shouldRun = comment.includes("@Dotnet_ppc64le");
+            core.setOutput("should_run", shouldRun);
+      - name: Stop if comment check fails
+        run: |
+          echo "Skipping job because @Dotnet_ppc64le not found in comment."
+          exit 0
+
   runtime-build-test:
+    need: CheckPoint
     runs-on: ubuntu-24.04-ppc64le
     steps:
       - name: Checkout code
@@ -24,4 +48,3 @@ jobs:
       - name: Test
         run: |
           docker exec github-api bash -c "/runtime.sh --test 2>&1 | tee /tmp/runtime-test.log; exit \${PIPESTATUS[0]}"
-
