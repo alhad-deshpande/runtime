@@ -7,7 +7,7 @@
   set -uxo pipefail
   apt update && apt upgrade -y && apt-get install sudo software-properties-common -y
 
-  REPO=https://github.com/dotnet/runtime.git
+  REPO=https://github.com/alhad-deshpande/runtime.git
   REF=main
 
   PORTABLE_BUILD=false
@@ -58,10 +58,6 @@
         shift
         TEST="true"
         ;;
-      --sdk_version)
-        shift
-        SDK_VERSION="$1"
-        ;;
       --patch-file)
         shift
         PATCH_PATH="$1"
@@ -86,16 +82,6 @@
                   llvm make python3  liblttng-ust-dev \
                   tar wget jq lld build-essential zlib1g-dev libssl-dev libbrotli-dev
 
-  mkdir dotnet-sdk-$(uname -m)
-  pushd dotnet-sdk-$(uname -m)
-  wget https://github.com/IBM/dotnet-s390x/releases/download/v$SDK_VERSION/dotnet-sdk-$SDK_VERSION-linux-ppc64le.tar.gz
-  mkdir .dotnet
-  tar xvf dotnet-sdk-*linux-$(uname -m).tar.gz -C .dotnet
-  export DOTNET_ROOT=$(pwd)/.dotnet
-  export PATH=$DOTNET_ROOT:$PATH
-  export sdk_version=$(dotnet --list-sdks | cut -d' ' -f1)
-  popd
-
   runtime-build()
   {
     git clone "$REPO"
@@ -105,18 +91,32 @@
     echo "$REPO is at $COMMIT"
     # git apply $PATCH_PATH
 
-    sed -i -E '/"sdk": \{/!b;n;s/"version": "[^"]+"/"version": "'"$sdk_version"'"/' global.json
-    sed -i -E '/"tools": \{/!b;n;s/"dotnet": "[^"]+"/"dotnet": "'"$sdk_version"'"/' global.json
+    GLOBAL_JSON_PATH="global.json"
+    SDK_VERSION=$(jq -r '.sdk.version' "$GLOBAL_JSON_PATH")
+
+    cd ../
+    mkdir dotnet-sdk-$(uname -m)
+    pushd dotnet-sdk-$(uname -m)
+    wget https://github.com/IBM/dotnet-s390x/releases/download/v$SDK_VERSION/dotnet-sdk-$SDK_VERSION-linux-ppc64le.tar.gz
+    mkdir .dotnet
+    tar xvf dotnet-sdk-*linux-$(uname -m).tar.gz -C .dotnet
+    export DOTNET_ROOT=$(pwd)/.dotnet
+    export PATH=$DOTNET_ROOT:$PATH
+    export sdk_version=$(dotnet --list-sdks | cut -d' ' -f1)
+    popd
+    cd "$(basename "$REPO" .git)"
+
+    sed -i '157i<ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Diagnostics.Process\\tests\\System.Diagnostics.Process.Tests.csproj" />' src/libraries/tests.proj
+    sed -i '158i<ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Net.Ping\\tests\\FunctionalTests\\System.Net.Ping.Functional.Tests.csproj" />' src/libraries/tests.proj
+    sed -i '159i<ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Runtime\\tests\\System.IO.FileSystem.Tests\\System.IO.FileSystem.Tests.csproj" />' src/libraries/tests.proj
+
     # sed -i '156i<ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Net.NetworkInformation\\tests\\FunctionalTests\\System.Net.NetworkInformation.Functional.Tests.csproj" />' src/libraries/tests.proj
     # sed -i '157i<ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Formats.Tar\\tests\\System.Formats.Tar.Tests.csproj" />' src/libraries/tests.proj
     # sed -i '158i<ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Runtime\\tests\\System.IO.Tests\\System.IO.Tests.csproj" />' src/libraries/tests.proj
     # sed -i '159i<ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Threading\\tests\\System.Threading.Tests.csproj" />' src/libraries/tests.proj
-    sed -i '160i<ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Diagnostics.Process\\tests\\System.Diagnostics.Process.Tests.csproj" />' src/libraries/tests.proj
-    sed -i '161i<ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Net.Ping\\tests\\FunctionalTests\\System.Net.Ping.Functional.Tests.csproj" />' src/libraries/tests.proj
     # sed -i '162i<ProjectExclusions Include="$(MSBuildThisFileDirectory)Common\\tests\\Common.Tests.csproj" />' src/libraries/tests.proj
     # sed -i '163i<ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Runtime\\tests\\System.Runtime.Tests\\System.Runtime.Tests.csproj" />' src/libraries/tests.proj
     # sed -i '164i<ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Threading.ThreadPool\\tests\\System.Threading.ThreadPool.Tests.csproj" />' src/libraries/tests.proj
-    sed -i '165i<ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Runtime\\tests\\System.IO.FileSystem.Tests\\System.IO.FileSystem.Tests.csproj" />' src/libraries/tests.proj
     # sed -i '166i<ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Runtime\\tests\\System.IO.FileSystem.Tests\\File\\System.IO.MemoryMappedFiles.Tests.csproj" />' src/libraries/tests.proj
     # sed -i '167i<ProjectExclusions Include="$(MSBuildThisFileDirectory)Microsoft.Bcl.TimeProvider\\tests\\Microsoft.Bcl.TimeProvider.Tests.csproj" />' src/libraries/tests.proj
     # sed -i '168i<ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Runtime\\tests\\System.Reflection.Tests\\System.Reflection.Tests.csproj" />' src/libraries/tests.proj
