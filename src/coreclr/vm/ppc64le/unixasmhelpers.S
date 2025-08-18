@@ -59,7 +59,71 @@ NESTED_END OnCallCountThresholdReachedStub, _TEXT
 #endif // FEATURE_TIERED_COMPILATION
 
 NESTED_ENTRY InterpreterStubThunk, _TEXT, NoHandler
-// NOT YET IMPLEMENTED
-	bl abort
-	nop
+	mflr %r0
+	std %r0, 16(%r1)
+	std %r2, 24(%r1)
+	stdu %r1, -240(%r1)
+	
+	std %r3, 32(%r1)
+	std %r4, 40(%r1)
+	std %r5, 48(%r1)
+	std %r6, 56(%r1)
+	std %r7, 64(%r1)
+	std %r8, 72(%r1)
+	std %r9, 80(%r1)
+	std %r10, 88(%r1)
+	std %r14, 96(%r1)
+	std %r15, 104(%r1)
+	std %r16, 112(%r1)
+	std %r17, 120(%r1)
+	std %r18, 128(%r1)
+	std %r19, 136(%r1)
+	std %r20, 144(%r1)
+	std %r21, 152(%r1)
+	std %r22, 160(%r1)
+	std %r23, 168(%r1)
+	std %r24, 176(%r1)
+	std %r25, 184(%r1)
+	std %r26, 192(%r1)
+	std %r27, 200(%r1)
+	std %r28, 208(%r1)
+	std %r29, 216(%r1)
+	std %r30, 224(%r1)
+	std %r31, 232(%r1)
+
+	mtctr %r12
+	bctrl
+
+	ld %r3, 32(%r1)
+	ld %r4, 40(%r1)
+	ld %r5, 48(%r1)
+	ld %r6, 56(%r1)
+	ld %r7, 64(%r1)
+	ld %r8, 72(%r1)
+	ld %r9, 80(%r1)
+	ld %r10, 88(%r1)
+	ld %r14, 96(%r1)
+	ld %r15, 104(%r1)
+	ld %r16, 112(%r1)
+	ld %r17, 120(%r1)
+	ld %r18, 128(%r1)
+	ld %r19, 136(%r1)
+	ld %r20, 144(%r1)
+	ld %r21, 152(%r1)
+	ld %r22, 160(%r1)
+	ld %r23, 168(%r1)
+	ld %r24, 176(%r1)
+	ld %r25, 184(%r1)
+	ld %r26, 192(%r1)
+	ld %r27, 200(%r1)
+	ld %r28, 208(%r1)
+	ld %r29, 216(%r1)
+	ld %r30, 224(%r1)
+	ld %r31, 232(%r1)
+
+	addi %r1, %r1, 240
+	ld %r0, 16(%r1) 
+	ld %r2, 24(%r1)
+	mtlr %r0
+	blr
 NESTED_END InterpreterStubThunk, _TEXT

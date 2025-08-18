@@ -804,8 +804,9 @@ CorJitResult Interpreter::GenerateInterpreterStub(CEEInfo* comp,
     if (!jmpCall)
     {
         const char* clsName;
-        const char* methName = getMethodName(comp, info->ftn, &clsName);
-        if (   !s_InterpretMeths.contains(methName, clsName, (CORINFO_SIG_INFO *)info->args.pSig)
+	const char* methName = getMethodName(comp, info->ftn, &clsName);
+#ifndef TARGET_POWERPC64
+	if (   !s_InterpretMeths.contains(methName, clsName, (CORINFO_SIG_INFO *)info->args.pSig)
             || s_InterpretMethsExclude.contains(methName, clsName, (CORINFO_SIG_INFO *)info->args.pSig))
         {
             TRACE_SKIPPED(clsName, methName, "not in set of methods to interpret");
@@ -819,7 +820,7 @@ CorJitResult Interpreter::GenerateInterpreterStub(CEEInfo* comp,
             TRACE_SKIPPED(clsName, methName, "hash not within range to interpret");
             return CORJIT_SKIPPED;
         }
-
+#endif
         MethodDesc* pMD = reinterpret_cast<MethodDesc*>(info->ftn);
 
 #if !INTERP_ILSTUBS
@@ -831,22 +832,25 @@ CorJitResult Interpreter::GenerateInterpreterStub(CEEInfo* comp,
         else
 #endif // !INTERP_ILSTUBS
 
+#ifndef TARGET_POWERPC64
         if (!s_InterpreterDoLoopMethods && MethodMayHaveLoop(info->ILCode, info->ILCodeSize))
         {
             TRACE_SKIPPED(clsName, methName, "has loop, not interpreting loop methods.");
             return CORJIT_SKIPPED;
         }
+#endif
 
         s_interpreterStubNum++;
 
 #if INTERP_TRACING
+#ifndef TARGET_POWERPC64
         if (s_interpreterStubNum < s_InterpreterStubMin.val(CLRConfig::INTERNAL_InterpreterStubMin)
                 || s_interpreterStubNum > s_InterpreterStubMax.val(CLRConfig::INTERNAL_InterpreterStubMax))
         {
             TRACE_SKIPPED(clsName, methName, "stub num not in range, not interpreting.");
             return CORJIT_SKIPPED;
         }
-
+#endif
         if (s_DumpInterpreterStubsFlag.val(CLRConfig::INTERNAL_DumpInterpreterStubs))
         {
             unsigned hash = comp->getMethodHash(info->ftn);
@@ -954,9 +958,7 @@ CorJitResult Interpreter::GenerateInterpreterStub(CEEInfo* comp,
         IntReg x8 = IntReg(8);
         IntReg x9 = IntReg(9);
 
-#elif defined(HOST_RISCV64)
-#elif defined(HOST_POWERPC64)
-	assert(!"Not yet implemenetd on PPC64LE yet");
+#elif defined(HOST_RISCV64) ||  defined(HOST_POWERPC64)
 #else
 #error unsupported platform
 #endif
@@ -1736,7 +1738,38 @@ CorJitResult Interpreter::GenerateInterpreterStub(CEEInfo* comp,
         sl.EmitEpilog();
 #elif defined(HOST_POWERPC64)
 	//TODO POWERPC64
-	assert(!"unimplemented on PPC64LE yet");
+	// Save incoming arguments to the register save area.
+	sl.EmitSaveIncomingArguments(argState.numRegArgs, argState.numFPRegArgSlots);
+
+#if INTERP_ILSTUBS
+        if (pMD->IsILStub())
+        {
+            // Third argument is stubcontext, in %r11 (METHODDESC_REGISTER)
+            sl.EmitLoadRegister(IntReg(5), IntReg(11));
+        }
+        else
+#endif
+        {
+            // For a non-ILStub method, push NULL as the third stubContext argument
+            sl.EmitLoadImmediate(IntReg(5), 0);
+        }
+	
+	// TODO Check registers value for ppc64le and update - vikas
+	// Second arg is pointer to the base of the ILArgs -- i.e., the incoming save are
+        sl.EmitLoadRegister(IntReg(4), IntReg(1));
+
+        // First arg is the pointer to the interpMethInfo structure
+        sl.EmitLoadImmediate(IntReg(3), reinterpret_cast<UINT64>(interpMethInfo));
+
+        // Place target method func into %r12
+        sl.EmitLoadImmediate(IntReg(12), reinterpret_cast<UINT64>(interpretMethodFunc));
+        //sl.EmitCallLabel(sl.NewExternalCodeLabel((LPVOID)interpretMethodFunc));
+
+        // Use an intermediate thunk to actually call the interpreter method.
+        // This is needed since we cannot generate unwind info with the stublinker.
+        sl.EmitCallLabel(sl.NewExternalCodeLabel((LPVOID)InterpreterStubThunk));
+
+	//assert(!"unimplemented on PPC64LE yet");
 #else
 #error unsupported platform
 #endif

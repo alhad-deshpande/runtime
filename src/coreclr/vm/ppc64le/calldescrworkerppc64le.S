@@ -53,7 +53,7 @@ LOCAL_LABEL(StackCopyLoop):
 
 LOCAL_LABEL(NoStackArguments):
 
-    // All argument registers are loaded regardless of the actual numberAdd commentMore actions
+    // All argument registers are loaded regardless of the actual number
     // of arguments.
     ld %r12, CallDescrData__pArgumentRegisters(%r11)
     ld %r3, 0(%r12)

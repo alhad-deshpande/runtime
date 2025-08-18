@@ -26,7 +26,7 @@
 class PPC64LECall : public InstructionFormat
 {
 public:
-	PPC64LECall (): InstructionFormat(InstructionFormat::k32)
+	PPC64LECall (): InstructionFormat(InstructionFormat::k64)
 	{
 	    LIMITED_METHOD_CONTRACT;
 	}
@@ -34,7 +34,7 @@ public:
 	{
             LIMITED_METHOD_CONTRACT;
 
-            _ASSERTE(refsize == InstructionFormat::k32);
+            _ASSERTE(refsize == InstructionFormat::k64);
 
             return 28;
 	}
@@ -42,47 +42,51 @@ public:
         {
 	    UINT64 target = (UINT64)(((INT64)pOutBufferRX) + fixedUpReference + GetSizeOfInstruction(refsize, variationCode));
 
-            // lis r12, <target>
-            pOutBufferRW[0] = 0x3D;
-            pOutBufferRW[1] = 0x80;
-            *((UINT64*)&pOutBufferRW[2]) = ((UINT64)(target) >> 48 & 0xffff);
+            // lis r0, <target>
+            *((UINT64*)&pOutBufferRW[0]) = ((UINT64)(target) >> 48 & 0xff);
+            *((UINT64*)&pOutBufferRW[1]) = ((UINT64)(target) >> 56 & 0xff);
+            pOutBufferRW[2] = 0x00;
+            pOutBufferRW[3] = 0x3C;
 
-            // ori r12, r12, <target>
-            pOutBufferRW[4] = 0x61;
-            pOutBufferRW[5] = 0x8C;
-            *((UINT64*)&pOutBufferRW[6]) = ((UINT64)(target) >> 32) & 0xffff;
+            // ori r0, r0, <target>
+            *((UINT64*)&pOutBufferRW[4]) = ((UINT64)(target) >> 32) & 0xff;
+            *((UINT64*)&pOutBufferRW[5]) = ((UINT64)(target) >> 40) & 0xff;
+            pOutBufferRW[6] = 0x00;
+            pOutBufferRW[7] = 0x60;
 
-            // sldi r12, r12, 32
-            pOutBufferRW[8] = 0x79;
-            pOutBufferRW[9] = 0x8C;
-            pOutBufferRW[10] = 0x07;
-            pOutBufferRW[11] = 0xC6;
+            // sldi r0, r0, 32
+            pOutBufferRW[8] = 0xC6;
+            pOutBufferRW[9] = 0x07;
+            pOutBufferRW[10] = 0x00;
+            pOutBufferRW[11] = 0x78;
 
-            // oris r12, r12, <target>
-            pOutBufferRW[12] = 0x65;
-            pOutBufferRW[13] = 0x8C;
-            *((UINT64*)&pOutBufferRW[14]) = ((UINT64)(target) >> 16) & 0xffff;
+            // oris r0, r0, <target>
+            *((UINT64*)&pOutBufferRW[12]) = ((UINT64)(target) >> 16) & 0xff;
+            *((UINT64*)&pOutBufferRW[13]) = ((UINT64)(target) >> 24) & 0xff;
+            pOutBufferRW[14] = 0x00;
+            pOutBufferRW[15] = 0x64;
 
-            // ori r12, r12, <target>
-            pOutBufferRW[16] = 0x61;
-            pOutBufferRW[17] = 0x8C;
-            *((UINT64*)&pOutBufferRW[18]) = (UINT64)(target) & 0xffff;
+            // ori r0, r0, <target>
+            *((UINT64*)&pOutBufferRW[16]) = ((UINT64)(target) >> 0) & 0xff;
+            *((UINT64*)&pOutBufferRW[17]) = ((UINT64)(target) >> 8) & 0xff;
+            pOutBufferRW[18] = 0x00;
+            pOutBufferRW[19] = 0x60;
 
-            // mtctr r12
-            pOutBufferRW[20] = 0x7D;
-            pOutBufferRW[21] = 0x89;
-            pOutBufferRW[22] = 0x03;
-            pOutBufferRW[23] = 0xA6;
+            // mtlr r0
+            pOutBufferRW[20] = 0xA6;
+            pOutBufferRW[21] = 0x03;
+            pOutBufferRW[22] = 0x08;
+            pOutBufferRW[23] = 0x7C;
 
-            // bcctr
-            pOutBufferRW[24] = 0x4E;
-            pOutBufferRW[25] = 0x80;
-            pOutBufferRW[26] = 0x04;
-            pOutBufferRW[27] = 0x20;
+            // blrl.....// change instruction hex
+            pOutBufferRW[24] = 0x21;
+            pOutBufferRW[25] = 0x00;
+            pOutBufferRW[26] = 0x80;
+            pOutBufferRW[27] = 0x4E;
 	}
 	/*virtual BOOL CanReach(UINT refsize, UINT variationCode, BOOL fExternal, INT_PTR offset)
 	{
-            _ASSERTE(refsize == InstructionFormat::k32);
+            _ASSERTE(refsize == InstructionFormat::k64);
 
 	    if (fExternal)
 		return false;
@@ -123,7 +127,7 @@ void StubLinkerCPU::EmitBranchRegister(IntReg R2)
 
 void StubLinkerCPU::EmitLoadRegister(IntReg R1, IntReg R2)
 {
-    _ASSERTE(!"NYI POWERPC64 EmitLoadRegister");
+    EmitMoveRegister(R2,R1,R2);
 }
 
 void StubLinkerCPU::EmitLoadHalfwordImmediate(IntReg R1, int I2)
@@ -186,18 +190,88 @@ void StubLinkerCPU::EmitStoreMultiple(IntReg R1, IntReg R3, int D2, IntReg B2)
 {
 }
 
-void StubLinkerCPU::EmitLoadImmediate(IntReg target, UINT64 constant)
+void StubLinkerCPU::EmitLoadImmediate(IntReg RA, UINT64 Imm)
 {
-    _ASSERTE(!"NYI POWERPC64 EmitLoadImmediate");
+    if (((Imm >> 15) == 0) || ((Imm >> 15) == -1))
+    {
+	Emit32 ((DWORD)((14 << 26) | (RA << 21) | (0 << 16) | (Imm & 0xffff))); // li %r, Imm
+    }
+    else if (((Imm >> 31) == 0) || ((Imm >> 31) == -1))
+    {
+	Emit32((DWORD)((15 << 26) | (RA << 21) | (0 << 16)  | ((Imm >> 16) & 0xffff)));	// lis %r, Imm
+	Emit32((DWORD)((24 << 26) | (RA << 21) | (RA << 16)  | (Imm & 0xffff)));	// ori %r, %r, Imm
+    } 
+    else if (((Imm >> 47) == 0) || ((Imm >> 47) == -1))
+    {
+	Emit32 ((DWORD)((14 << 26) | (RA << 21) | (0 << 16) | ((Imm >> 32) & 0xffff)));
+	Emit32((DWORD)((30 << 26) | (RA << 21) | (RA << 16) | ((32 & 0x1F) << 11) | (((((31) & 0x1F) << 1) | (((31) >> 5) & 0x1)) << 5) | (1 << 2) | ((((32) >> 5) & 0x1) << 1) | 0));
+	Emit32((DWORD)((25 << 26) | (RA << 21) | (RA << 16)  | (((Imm >> 16) & 0xffff) & 0xffff)));
+	Emit32((DWORD)((24 << 26) | (RA << 21) | (RA << 16)  | ((Imm & 0xffff) & 0xffff)));
+	
+    } 
+    else 
+    {
+	Emit32((DWORD)((15 << 26) | (RA << 21) | (0 << 16)  | ((Imm >> 48) & 0xffff)));
+	Emit32((DWORD)((24 << 26) | (RA << 21) | (RA << 16)  | ((Imm >> 32) & 0xffff)));	// ori %r, %r, Imm
+	Emit32((DWORD)((30 << 26) | (RA << 21) | (RA << 16) | ((Imm & 0x1F) << 11) | ((((63 - Imm) & 0x1F) << 1) | (((63 - Imm) >> 5) & 0x1)) | (1 << 2) | (((Imm >> 5) & 0x1) << 1) | 0 ));
+	Emit32((DWORD)((25 << 26) | (RA << 21) | (RA << 16)  | (((Imm >> 16) & 0xffff) & 0xffff)));
+	Emit32((DWORD)((24 << 26) | (RA << 21) | (RA << 16)  | ((Imm & 0xffff))));
+    }
 }
 
 void StubLinkerCPU::EmitSaveIncomingArguments(unsigned int cIntRegArgs, unsigned int cFloatRegArgs)
 {
-    _ASSERTE(!"NYI POWERPC64 EmitSaveIncomingArguments");
+    _ASSERTE(cIntRegArgs <= 8);
+    _ASSERTE(cFloatRegArgs <= 13);
+
+    // Store integer argument registers
+    int disp = 32;
+    for (int i=3; i<=cIntRegArgs+3; i++)
+    {
+    	EmitStoreDoubleWord(i, 1, disp);
+	disp = disp + 8;
+    }
+
+    // Store call-saved registers
+    for (int i=14; i<=31; i++)
+    {
+    	EmitStoreDoubleWord(i, 1, disp);
+	disp = disp + 8;
+    }
+
+    // Store floating-point argument registers
+    for (int i=1; i<=cFloatRegArgs+1; i++)
+    {
+    	EmitStoreFloatingPointDouble(i, 1, disp);
+	disp = disp + 8;
+    }
 }
-void StubLinkerCPU::EmitCallLabel(CodeLabel *target, BOOL fTailCall, BOOL fIndirect)
+// std %r3, 32(%r1)
+void StubLinkerCPU::EmitStoreDoubleWord(IntReg RS, IntReg RA, int DS)
 {
-    _ASSERTE(!"NYI POWERPC64 EmitCallLabel");
+    STANDARD_VM_CONTRACT;
+    Emit32((DWORD)((62 << 26) | ((RS) << 21) | ((RA) << 16) | DS));
+}
+
+// stfd %f1, 256(%r1)
+void StubLinkerCPU::EmitStoreFloatingPointDouble(VecReg RS, IntReg RA, int DS)
+{
+    STANDARD_VM_CONTRACT;
+    Emit32((DWORD)((54 << 26) | ((RS) << 21) | ((RA) << 16) | DS));
+}
+
+// mr %r3, %r11
+void StubLinkerCPU::EmitMoveRegister(IntReg RS, IntReg RA, IntReg RB)
+{
+    STANDARD_VM_CONTRACT;
+
+    Emit32((DWORD)((31 << 26) | ((RS) << 21) | ((RA) << 16) | ((RB) << 11) | 888));
+}
+
+void StubLinkerCPU::EmitCallLabel(CodeLabel *target)
+{
+    EmitLabelRef(target, reinterpret_cast<PPC64LECall&>(gPPC64LECall), 0);
+    //_ASSERTE(!"NYI POWERPC64 EmitCallLabel");
 }
 
 VOID StubLinkerCPU::EmitComputedInstantiatingMethodStub(MethodDesc* pSharedMD, struct ShuffleEntry *pShuffleEntryArray, void* extraArg)

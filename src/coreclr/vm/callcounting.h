@@ -102,7 +102,7 @@ public:
 #elif defined(TARGET_RISCV64)
     static const SIZE_T CodeSize = 40;
 #elif defined(TARGET_POWERPC64)
-    static const SIZE_T CodeSize = 40;
+    static const SIZE_T CodeSize = 64;
 #endif
 
 private:

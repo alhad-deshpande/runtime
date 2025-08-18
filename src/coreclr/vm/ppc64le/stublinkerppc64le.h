@@ -8,7 +8,7 @@
 // StubLinker with extensions for generating PPC64LE code.
 //----------------------------------------------------------------------
  
-#define INSTRFMT_K64SMALL  // is this for small endian?
+#define INSTRFMT_K64SMALL
 #define INSTRFMT_K64
 #include "stublink.h"
  
@@ -59,14 +59,16 @@ private:
      void EmitStoreFloat(VecReg R1, int D2, IntReg B2);
      void EmitLoadMultiple(IntReg R1, IntReg R3, int D2, IntReg B2);
      void EmitStoreMultiple(IntReg R1, IntReg R3, int D2, IntReg B2);
- 
+
+    //ppc64le:
+    void EmitStoreDoubleWord(IntReg RS, IntReg RA, int DS);
+    void EmitStoreFloatingPointDouble(VecReg RS, IntReg RA, int DS);
  public:
      static void Init();
  
      void EmitLoadRegister(IntReg target, IntReg source);
-     void EmitLoadImmediate(IntReg target, UINT64 constant);
  
-     void EmitCallLabel(CodeLabel *target, BOOL fTailCall, BOOL fIndirect);
+     void EmitCallLabel(CodeLabel *target);
  
      void EmitSaveIncomingArguments(unsigned int cIntRegArgs, unsigned int cFloatRegArgs);
  
@@ -78,6 +80,9 @@ private:
      unsigned int GetSavedRegArgsOffset();
      void EmitLoad(IntReg R1, int D2, IntReg X2, IntReg B2);
      void EmitLoad(IntReg R1, int D2, IntReg B2);
+    // ppc64le
+     void EmitMoveRegister(IntReg RS, IntReg RA, IntReg RB);
+     void EmitLoadImmediate(IntReg target, UINT64 constant);
 };
 
 #endif  // STUBLINKERPPC64LE_H_
