@@ -49,8 +49,13 @@ jobs:
         run: |
           docker stop github-api && docker rm github-api
           docker run -dit --privileged -v /sys/fs/cgroup:/sys/fs/cgroup:ro --network host --name github-api ubuntu:22.04
+      - name: Copy script
+        run: |
           docker cp /root/ashutosh/api/runtime-runner/.github/workflows/runtime.sh github-api:/runtime.sh
           docker exec github-api chmod +x /runtime.sh
+      - name: Build
+        run: |
           docker exec github-api bash -c "/runtime.sh --ref ${{ steps.get_pr.outputs.sha }} --build --sdk_version 10.0.100-preview.6.25315.102 2>&1 | tee /tmp/runtime-build.log; exit \${PIPESTATUS[0]}"
+      - name: test
+        run: |
           docker exec github-api bash -c "/runtime.sh --ref ${{ steps.get_pr.outputs.sha }} --test --sdk_version 10.0.100-preview.6.25315.102 2>&1 | tee /tmp/runtime-test.log; exit \${PIPESTATUS[0]}"
-

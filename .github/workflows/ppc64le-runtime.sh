@@ -103,7 +103,7 @@
 
   mkdir dotnet-sdk-$(uname -m)
   pushd dotnet-sdk-$(uname -m)
-  wget https://github.com/IBM/dotnet-s390x/releases/download/v10.0.100-preview.6.25315.102/dotnet-sdk-10.0.100-preview.6.25315.102-linux-ppc64le.tar.gz
+  wget https://github.com/IBM/dotnet-s390x/releases/download/v$SDK_VERSION/dotnet-sdk-$SDK_VERSION-linux-ppc64le.tar.gz
   mkdir .dotnet
   tar xvf dotnet-sdk-*linux-$(uname -m).tar.gz -C .dotnet
   export DOTNET_ROOT=$(pwd)/.dotnet
