@@ -1,4 +1,4 @@
-name: Runtime-Build-Test
+name: Trigger ppc64le build on GHA
 
 on:
   issue_comment:
@@ -8,9 +8,9 @@ permissions:
   issues: write
 
 jobs:
-  CheckPoint:
+  ppc64le-trigger:
     runs-on: ubuntu-latest
-    if: contains(github.event.comment.body, '@Dotnet_ppc64le build') || contains(github.event.comment.body, '@Dotnet_ppc64le cancel')
+    if: contains(github.event.comment.body, '@Dotnet-ppc64le build') || contains(github.event.comment.body, '@Dotnet-ppc64le cancel')
     outputs:
       command: ${{ steps.check_comment.outputs.command }}
     steps:
@@ -23,17 +23,17 @@ jobs:
             const comment = context.payload.comment.body || "";
             let command = "";
 
-            if (comment.includes("@Dotnet_ppc64le cancel")) {
+            if (comment.includes("@Dotnet-ppc64le cancel")) {
               command = "cancel";
-            } else if (comment.includes("@Dotnet_ppc64le build")) {
+            } else if (comment.includes("@Dotnet-ppc64le build")) {
               command = "build";
             }
 
             core.setOutput("command", command);
 
-  runtime-build-test:
-    needs: CheckPoint
-    if: needs.CheckPoint.outputs.command == 'build'
+  ppc64le-runtime-build-test:
+    needs: ppc64le-trigger
+    if: needs.ppc64le-trigger.outputs.command == 'build'
     runs-on: ubuntu-24.04-ppc64le-p10
     steps:
       - name: Get PR SHA
@@ -69,9 +69,9 @@ jobs:
         run: |
           docker exec github-api bash -c "/runtime.sh --ref ${{ steps.get_pr.outputs.sha }} --test 2>&1 | tee /tmp/runtime-test.log; exit \${PIPESTATUS[0]}"
 
-  cancel-job:
-    needs: CheckPoint
-    if: needs.CheckPoint.outputs.command == 'cancel'
+  ppc64le-cancel:
+    needs: ppc64le-trigger
+    if: needs.ppc64le-trigger.outputs.command == 'cancel'
     runs-on: ubuntu-24.04-ppc64le-p10
     steps:
       - name: Print cancel message
