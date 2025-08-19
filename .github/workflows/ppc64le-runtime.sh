@@ -102,7 +102,6 @@
     tar xvf dotnet-sdk-*linux-$(uname -m).tar.gz -C .dotnet
     export DOTNET_ROOT=$(pwd)/.dotnet
     export PATH=$DOTNET_ROOT:$PATH
-    export sdk_version=$(dotnet --list-sdks | cut -d' ' -f1)
     popd
     cd "$(basename "$REPO" .git)"
 
@@ -132,10 +131,9 @@
     common_args+=(/p:UsingToolMicrosoftNetCompilers=false  /p:DotNetBuildSourceOnly=true /p:DotNetBuildTests=true --cmakeargs -DCLR_CMAKE_USE_SYSTEM_BROTLI=true --cmakeargs -DCLR_CMAKE_USE_SYSTEM_ZLIB=true /p:BaseOS=linux-ppc64le)
 
     BUILD_EXIT_CODE=0
-    OPENSSL_ENABLE_SHA1_SIGNATURES=1 
-    
+    OPENSSL_ENABLE_SHA1_SIGNATURES=1
     ./build.sh ${common_args[@]+"${common_args[@]}"} ${build_args[@]+"${build_args[@]}"} || BUILD_EXIT_CODE=$?
-    
+
     EXIT_CODE=$BUILD_EXIT_CODE
     if [ "$EXIT_CODE" -ne 0 ]; then
       exit 1
@@ -153,6 +151,14 @@
 
     TEST_EXIT_CODE=0
     cd "$(basename "$REPO" .git)"
+
+    cd ../
+    pushd dotnet-sdk-$(uname -m)
+    export DOTNET_ROOT=$(pwd)/.dotnet
+    export PATH=$DOTNET_ROOT:$PATH
+    popd
+    cd "$(basename "$REPO" .git)"
+
     ./build.sh --subset libs.tests --test /p:WithoutCategories=IgnoreForCI ${common_args[@]+"${common_args[@]}"} ${test_args[@]+"${test_args[@]}"} || LIB_BUILD_EXIT_CODE=$?
 
     cd /runtime/artifacts/bin
