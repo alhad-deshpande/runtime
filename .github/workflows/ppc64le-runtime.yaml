@@ -18,7 +18,6 @@ jobs:
         id: check_comment
         uses: actions/github-script@v6
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const comment = context.payload.comment.body || "";
             let command = "";
@@ -41,7 +40,6 @@ jobs:
         if: github.event.issue.pull_request
         uses: actions/github-script@v6
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const prUrl = context.payload.issue.pull_request.url;
             const pr = await github.request(prUrl);
