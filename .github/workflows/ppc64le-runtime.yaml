@@ -7,6 +7,10 @@ on:
 permissions:
   issues: write
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
 jobs:
   ppc64le-trigger:
     runs-on: ubuntu-latest
