@@ -60,9 +60,11 @@ private:
      void EmitLoadMultiple(IntReg R1, IntReg R3, int D2, IntReg B2);
      void EmitStoreMultiple(IntReg R1, IntReg R3, int D2, IntReg B2);
 
-    //ppc64le:
-    void EmitStoreDoubleWord(IntReg RS, IntReg RA, int DS);
-    void EmitStoreFloatingPointDouble(VecReg RS, IntReg RA, int DS);
+     //ppc64le:
+     void EmitStoreDoubleWord(IntReg RS, IntReg RA, int DS);
+     void EmitStoreFloatingPointDouble(VecReg RS, IntReg RA, int DS);
+     void EmitLoadDoubleWord(IntReg RS, IntReg RA, int DS);
+     void EmitLoadFloatingPointDouble(VecReg RS, IntReg RA, int DS);
  public:
      static void Init();
  
@@ -70,7 +72,7 @@ private:
  
      void EmitCallLabel(CodeLabel *target);
  
-     void EmitSaveIncomingArguments(unsigned int cIntRegArgs, unsigned int cFloatRegArgs);
+     void EmitSaveArguments(unsigned int cIntRegArgs, unsigned int cFloatRegArgs);
  
      void EmitComputedInstantiatingMethodStub(MethodDesc* pSharedMD, struct ShuffleEntry *pShuffleEntryArray, void* extraArg);
      void EmitShuffleThunk(struct ShuffleEntry *pShuffleEntryArray);
@@ -80,9 +82,10 @@ private:
      unsigned int GetSavedRegArgsOffset();
      void EmitLoad(IntReg R1, int D2, IntReg X2, IntReg B2);
      void EmitLoad(IntReg R1, int D2, IntReg B2);
-    // ppc64le
+     // ppc64le
      void EmitMoveRegister(IntReg RS, IntReg RA, IntReg RB);
      void EmitLoadImmediate(IntReg target, UINT64 constant);
+     void EmitRestoreArguments(IntReg R0, IntReg R1);
 };
 
 #endif  // STUBLINKERPPC64LE_H_

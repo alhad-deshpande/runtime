@@ -9,9 +9,57 @@
 //         MachState *pState
 //         )
 LEAF_ENTRY HelperMethodFrameRestoreState, _TEXT
-// NOT YET IMPLEMENTED
-	bl abort
-	nop
+	// Check if the MachState is valid
+	ld %r0, OFFSETOF__MachState___pRetAddr(%r3)
+	cmpdi %r0, 0
+	beq SkipRestore
+
+//
+// If a preserved register were pushed onto the stack between
+// the managed caller and the H_M_F, m_pReg will point to its
+// location on the stack and it would have been updated on the
+// stack by the GC already and it will be popped back into the
+// appropriate register when the appropriate epilog is run.
+//
+// Otherwise, the register is preserved across all the code
+// in this HCALL or FCALL, so we need to update those registers
+// here because the GC will have updated our copies in the
+// frame.
+//
+// So, if m_pReg points into the MachState, we need to update
+// the register here.  That's what this macro does.
+//
+
+#define RestoreReg(reg, regnum) \
+	addi %r5, %r3, (OFFSETOF__MachState__m_Capture + 8 * regnum); \
+	ld %r6, (OFFSETOF__MachState__m_Ptrs + 8 * regnum)(%r3); \
+	cmpd %r5, %r6; \
+	bne 0f;	\
+	ld reg, 0(%r0); \
+0:
+	RestoreReg(%r14, 0)
+	RestoreReg(%r15, 1)
+	RestoreReg(%r16, 2)
+	RestoreReg(%r17, 3)
+	RestoreReg(%r18, 4)
+	RestoreReg(%r19, 5)
+	RestoreReg(%r20, 6)
+	RestoreReg(%r21, 7)
+	RestoreReg(%r22, 8)
+	RestoreReg(%r23, 9)
+	RestoreReg(%r24, 10)
+	RestoreReg(%r25, 11)
+	RestoreReg(%r26, 12)
+	RestoreReg(%r27, 13)
+	RestoreReg(%r28, 14)
+	RestoreReg(%r29, 15)
+	RestoreReg(%r30, 16)
+	RestoreReg(%r31, 17)
+
+SkipRestore:
+	li %r3, 0
+	blr
+
 LEAF_END HelperMethodFrameRestoreState, _TEXT
 
 //////////////////////////////////////////////////////////////////////////

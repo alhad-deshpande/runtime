@@ -78,7 +78,7 @@ public:
             pOutBufferRW[22] = 0x08;
             pOutBufferRW[23] = 0x7C;
 
-            // blrl.....// change instruction hex
+            // blrl
             pOutBufferRW[24] = 0x21;
             pOutBufferRW[25] = 0x00;
             pOutBufferRW[26] = 0x80;
@@ -219,14 +219,29 @@ void StubLinkerCPU::EmitLoadImmediate(IntReg RA, UINT64 Imm)
     }
 }
 
-void StubLinkerCPU::EmitSaveIncomingArguments(unsigned int cIntRegArgs, unsigned int cFloatRegArgs)
+void StubLinkerCPU::EmitSaveArguments(unsigned int cIntRegArgs, unsigned int cFloatRegArgs)
 {
     _ASSERTE(cIntRegArgs <= 8);
     _ASSERTE(cFloatRegArgs <= 13);
 
+//Prolog:    
+	//#define ppc_mfspr(c,D,spr) ppc_emit32 (c, (31 << 26) | ((D) << 21) | ((spr) << 11) | (339 << 1))
+	//#define  ppc_mflr(c,D)     ppc_mfspr  (c, D, ppc_lr)
+    //mflr %r0
+    IntReg RA = IntReg(0);
+    Emit32((DWORD)((31 << 26) | ((RA) << 21) | (256 << 11) | (339 << 1)));
+
+    //std %r0, 16(%r1)
+    EmitStoreDoubleWord(0, 1, 16);
+
+    //#define ppc_stdu(c,S,ds,A)  ppc_emit32(c, (62 << 26) | ((S) << 21) | ((A) << 16) | ((guint32)(ds) & 0xfffc) | 1)
+    //stdu %r1, -496(%r1)
+    IntReg RS = IntReg(1);
+    Emit32((DWORD)((62 << 26) | ((RS) << 21) | ((RS) << 16) | (-496 & 0xfffc) | 1));
+
     // Store integer argument registers
     int disp = 32;
-    for (int i=3; i<=cIntRegArgs+3; i++)
+    for (int i=3; i<=10; i++)
     {
     	EmitStoreDoubleWord(i, 1, disp);
 	disp = disp + 8;
@@ -240,7 +255,7 @@ void StubLinkerCPU::EmitSaveIncomingArguments(unsigned int cIntRegArgs, unsigned
     }
 
     // Store floating-point argument registers
-    for (int i=1; i<=cFloatRegArgs+1; i++)
+    for (int i=1; i<=31; i++)
     {
     	EmitStoreFloatingPointDouble(i, 1, disp);
 	disp = disp + 8;
@@ -254,7 +269,7 @@ void StubLinkerCPU::EmitStoreDoubleWord(IntReg RS, IntReg RA, int DS)
 }
 
 // stfd %f1, 256(%r1)
-void StubLinkerCPU::EmitStoreFloatingPointDouble(VecReg RS, IntReg RA, int DS)
+void StubLinkerCPU::EmitLoadFloatingPointDouble(VecReg RS, IntReg RA, int DS)
 {
     STANDARD_VM_CONTRACT;
     Emit32((DWORD)((54 << 26) | ((RS) << 21) | ((RA) << 16) | DS));
@@ -266,6 +281,54 @@ void StubLinkerCPU::EmitMoveRegister(IntReg RS, IntReg RA, IntReg RB)
     STANDARD_VM_CONTRACT;
 
     Emit32((DWORD)((31 << 26) | ((RS) << 21) | ((RA) << 16) | ((RB) << 11) | 888));
+}
+
+// ld %r3, 32(%r1)
+void StubLinkerCPU::EmitLoadDoubleWord(IntReg RS, IntReg RA, int DS)
+{
+    STANDARD_VM_CONTRACT;
+    Emit32((DWORD)((58 << 26) | ((RS) << 21) | ((RA) << 16) | (DS & 0xfffc) | 0));		//ld %r0, 16(%r1)
+}
+
+// lfd %f1, 240(%r1)
+void StubLinkerCPU::EmitStoreFloatingPointDouble(VecReg RS, IntReg RA, int DS)
+{
+    STANDARD_VM_CONTRACT;
+    Emit32((DWORD)((50 << 26) | ((RS) << 21) | ((RA) << 16) | DS));
+}
+
+//EpiLog
+void StubLinkerCPU::EmitRestoreArguments(IntReg R0, IntReg R1)
+{
+    // Store integer argument registers
+    // ld r3 to r10
+    int disp = 32;
+    for (int i=3; i<=10; i++)
+    {
+    	EmitLoadDoubleWord(i, 1, disp);
+	disp = disp + 8;
+    }
+
+    // Store call-saved registers
+    // ld r14 to r31
+    for (int i=14; i<=31; i++)
+    {
+    	EmitLoadDoubleWord(i, 1, disp);
+	disp = disp + 8;
+    }
+
+    // Store floating-point argument registers
+    // lfd f1 to f31
+    for (int i=1; i<=31; i++)
+    {
+    	EmitLoadFloatingPointDouble(i, 1, disp);
+	disp = disp + 8;
+    }
+
+    Emit32((DWORD)((14 << 26) | (R1 << 21) | (R1 << 16) | 496));			//addi %r1, %r1, 496
+    EmitLoadDoubleWord(0, 1, 16);							//ld %r0, 16(%r1)
+    Emit32((DWORD)((31 << 26) | (R0 << 21) | (256 << 11) | (467 << 1)));		//mtlr %r0
+    Emit32((DWORD)(0x4e800020));							//blr
 }
 
 void StubLinkerCPU::EmitCallLabel(CodeLabel *target)

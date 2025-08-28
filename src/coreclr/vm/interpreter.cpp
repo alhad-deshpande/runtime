@@ -1739,7 +1739,7 @@ CorJitResult Interpreter::GenerateInterpreterStub(CEEInfo* comp,
 #elif defined(HOST_POWERPC64)
 	//TODO POWERPC64
 	// Save incoming arguments to the register save area.
-	sl.EmitSaveIncomingArguments(argState.numRegArgs, argState.numFPRegArgSlots);
+	sl.EmitSaveArguments(argState.numRegArgs, argState.numFPRegArgSlots);
 
 #if INTERP_ILSTUBS
         if (pMD->IsILStub())
@@ -1768,6 +1768,9 @@ CorJitResult Interpreter::GenerateInterpreterStub(CEEInfo* comp,
         // Use an intermediate thunk to actually call the interpreter method.
         // This is needed since we cannot generate unwind info with the stublinker.
         sl.EmitCallLabel(sl.NewExternalCodeLabel((LPVOID)InterpreterStubThunk));
+        
+	//Epilog
+	sl.EmitRestoreArguments(IntReg(0), IntReg(1));
 
 	//assert(!"unimplemented on PPC64LE yet");
 #else

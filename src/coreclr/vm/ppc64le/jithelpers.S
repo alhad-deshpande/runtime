@@ -25,6 +25,8 @@ LEAF_END JIT_PatchedCodeStart, _TEXT
 // void JIT_CheckedWriteBarrier(Object** dst, Object* src)
 LEAF_ENTRY JIT_CheckedWriteBarrier, _TEXT
 // NOT YET IMPLEMENTED
+	bl abort
+	nop
 LEAF_END_MARKED JIT_CheckedWriteBarrier, _TEXT
 
 // This is used by the mechanism to hold either the JIT_WriteBarrier_PreGrow
@@ -35,6 +37,8 @@ LEAF_END_MARKED JIT_CheckedWriteBarrier, _TEXT
 //.balign 16
 LEAF_ENTRY JIT_WriteBarrier, _TEXT
 // NOT YET IMPLEMENTED
+	bl abort
+	nop
 LEAF_END_MARKED JIT_WriteBarrier, _TEXT
 
 // Mark start of the code region that we patch at runtime
@@ -63,6 +67,8 @@ LEAF_END JIT_PatchedCodeLast, _TEXT
 //   RDI, RSI are incremented by SIZEOF(LPVOID)
 LEAF_ENTRY JIT_ByRefWriteBarrier, _TEXT
 // NOT YET IMPLEMENTED
+	bl abort
+	nop
 LEAF_END_MARKED JIT_ByRefWriteBarrier, _TEXT
 
 // ------------------------------------------------------------------
@@ -70,4 +76,6 @@ LEAF_END_MARKED JIT_ByRefWriteBarrier, _TEXT
 //.balign 16
 LEAF_ENTRY  JIT_WriteBarrier_Callable, _TEXT
 // NOT YET IMPLEMENTED
+	bl abort
+	nop
 LEAF_END JIT_WriteBarrier_Callable, _TEXT

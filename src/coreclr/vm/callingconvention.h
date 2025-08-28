@@ -259,7 +259,7 @@ struct TransitionBlock
     {
         LIMITED_METHOD_CONTRACT;
 
-#if defined(UNIX_AMD64_ABI)
+#if defined(UNIX_AMD64_ABI) || defined(TARGET_POWERPC64)
         return offset >= (int)sizeof(TransitionBlock);
 #else
         int ofsArgRegs = GetOffsetOfArgumentRegisters();
@@ -309,6 +309,9 @@ struct TransitionBlock
         LIMITED_METHOD_CONTRACT;
 #if defined(UNIX_AMD64_ABI)
         return (offset != TransitionBlock::StructInRegsOffset) && (offset < 0);
+#elif defined(TARGET_POWERPC64)
+        return offset >= offsetof(TransitionBlock, m_floatArgumentRegisters)
+               && offset < sizeof(TransitionBlock);
 #else
         return offset < 0;
 #endif
@@ -330,6 +333,9 @@ struct TransitionBlock
         {
             return argLocDescForStructInRegs->m_cFloatReg > 0;
         }
+    #elif defined(TARGET_POWERPC64)
+        return offset >= offsetof(TransitionBlock, m_floatArgumentRegisters)
+               && offset < sizeof(TransitionBlock);
     #endif
         return offset < 0;
     }
@@ -337,6 +343,9 @@ struct TransitionBlock
     static int GetOffsetOfFloatArgumentRegisters()
     {
         LIMITED_METHOD_CONTRACT;
+    #if defined(TARGET_POWERPC64)
+        return offsetof(TransitionBlock, m_floatArgumentRegisters);
+    #endif
         return -GetNegSpaceSize();
     }
 #endif // CALLDESCR_FPARGREGS
@@ -351,11 +360,13 @@ struct TransitionBlock
     {
         LIMITED_METHOD_CONTRACT;
         int negSpaceSize = 0;
+#ifndef TARGET_POWERPC64
 #ifdef CALLDESCR_FPARGREGS
         negSpaceSize += sizeof(FloatArgumentRegisters);
 #endif
 #ifdef TARGET_ARM
         negSpaceSize += TARGET_POINTER_SIZE; // padding to make FloatArgumentRegisters address 8-byte aligned
+#endif
 #endif
         return negSpaceSize;
     }
@@ -572,7 +583,7 @@ public:
 #elif defined(TARGET_RISCV64)
         return (size > ENREGISTERED_PARAMTYPE_MAXSIZE);
 #elif defined(TARGET_POWERPC64)
-        return (size > ENREGISTERED_PARAMTYPE_MAXSIZE);
+        return (size > ENREGISTERED_PARAMTYPE_MAXSIZE) || ((size & (size-1)) != 0);
 #else
         PORTABILITY_ASSERT("ArgIteratorTemplate::IsArgPassedByRef");
         return FALSE;
@@ -627,11 +638,18 @@ public:
             return ((m_argSize > ENREGISTERED_PARAMTYPE_MAXSIZE) && (!m_argTypeHandle.IsHFA() || this->IsVarArg()));
         }
         return FALSE;
-#elif defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64) || defined(TARGET_POWERPC64)
+#elif defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64)
         if (m_argType == ELEMENT_TYPE_VALUETYPE)
         {
             _ASSERTE(!m_argTypeHandle.IsNull());
             return (m_argSize > ENREGISTERED_PARAMTYPE_MAXSIZE);
+        }
+        return FALSE;
+#elif defined(TARGET_POWERPC64)
+        if (m_argType == ELEMENT_TYPE_VALUETYPE)
+        {
+            _ASSERTE(!m_argTypeHandle.IsNull());
+            return (m_argSize > ENREGISTERED_PARAMTYPE_MAXSIZE) || ((m_argSize & (m_argSize-1)) != 0);
         }
         return FALSE;
 #else
@@ -892,7 +910,7 @@ public:
     }
 #endif // TARGET_AMD64
 
-#if defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64) || defined(TARGET_POWERPC64)
+#if defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64)
     // Get layout information for the argument that the ArgIterator is currently visiting.
     // TODO-RISCV64: support SIMD.
     void GetArgLoc(int argOffset, ArgLocDesc *pLoc)
@@ -944,6 +962,37 @@ public:
     }
 
 #endif // TARGET_LOONGARCH64 || TARGET_RISCV64
+#if defined(TARGET_POWERPC64)
+    // Get layout information for the argument that the ArgIterator is currently visiting.
+    void GetArgLoc(int argOffset, ArgLocDesc* pLoc)
+    {
+        LIMITED_METHOD_CONTRACT;
+
+        pLoc->Init();
+
+        if (TransitionBlock::IsFloatArgumentRegisterOffset(argOffset))
+        {
+            // Dividing by 8 as size of each register in FloatArgumentRegisters is 8 bytes.
+            pLoc->m_idxFloatReg = (argOffset - TransitionBlock::GetOffsetOfFloatArgumentRegisters()) / 8;
+            pLoc->m_cFloatReg = 1;
+        }
+        else if (!TransitionBlock::IsStackArgumentOffset(argOffset))
+        {
+            pLoc->m_idxGenReg = TransitionBlock::GetArgumentIndexFromOffset(argOffset);
+            pLoc->m_cGenReg = 1;
+        }
+        else
+        {
+            pLoc->m_byteStackIndex = TransitionBlock::GetStackArgumentByteIndexFromOffset(argOffset);
+            int argSizeInBytes;
+            if (IsArgPassedByRef())
+                argSizeInBytes = TARGET_POINTER_SIZE;
+            else
+                argSizeInBytes = GetArgSize();
+            pLoc->m_byteStackSize = StackElemSize(argSizeInBytes);
+        }
+    }
+#endif // TARGET_POWERPC64
 protected:
     DWORD               m_dwFlags;              // Cached flags
     int                 m_nSizeOfArgStack;      // Cached value of SizeOfArgStack
@@ -1875,7 +1924,7 @@ int ArgIteratorTemplate<ARGITERATOR_BASE>::GetNextOffset()
 
     if (cFPRegs)
     {
-	if (m_idxFPReg < 4)
+	if (m_idxFPReg < 13)
 	{
 	    int argOfs = TransitionBlock::GetOffsetOfFloatArgumentRegisters() + m_idxFPReg * 8;
 	    m_idxFPReg += 1;
@@ -1884,7 +1933,7 @@ int ArgIteratorTemplate<ARGITERATOR_BASE>::GetNextOffset()
     }
     else
     {
-	if (m_idxGenReg < 5)
+	if (m_idxGenReg < 8)
 	{
 	    int argOfs = TransitionBlock::GetOffsetOfArgumentRegisters() + m_idxGenReg * 8;
 	    m_idxGenReg += 1;
@@ -2027,7 +2076,9 @@ void ArgIteratorTemplate<ARGITERATOR_BASE>::ComputeReturnFlags()
 #endif // UNIX_AMD64_ABI
         }
 #endif // ENREGISTERED_RETURNTYPE_INTEGER_MAXSIZE
-
+#if defined(TARGET_POWERPC64)
+            _ASSERTE_MSG(false, "Unsupported arch POWERPC64.");
+#endif
         // Value types are returned using return buffer by default
         flags |= RETURN_HAS_RET_BUFFER;
         break;
@@ -2220,7 +2271,7 @@ protected:
     FORCEINLINE CorElementType GetReturnType(TypeHandle * pthValueType)
     {
         WRAPPER_NO_CONTRACT;
-#ifdef ENREGISTERED_RETURNTYPE_INTEGER_MAXSIZE
+#if defined(ENREGISTERED_RETURNTYPE_INTEGER_MAXSIZE) || defined(TARGET_POWERPC64)
         return m_pSig->GetReturnTypeNormalized(pthValueType);
 #else
         return m_pSig->GetReturnTypeNormalized();
