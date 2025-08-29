@@ -79,7 +79,7 @@ jobs:
         if: github.event.issue.pull_request
         uses: actions/github-script@v6
         with:
-          github-token: ${{ secrets.GH_WORK }}
+          github-token: ${{ secrets.PPC64LE_GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
             const body = fs.readFileSync('Script-details', 'utf8');
