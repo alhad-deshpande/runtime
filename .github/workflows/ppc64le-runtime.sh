@@ -138,6 +138,7 @@
     if [ "$EXIT_CODE" -ne 0 ]; then
       exit 1
     else
+      echo "Runtime build successfully" >> /Script-details
       exit 0
     fi
   }
@@ -184,14 +185,15 @@
     RUNTIME_SKIP_AVG=$(echo "scale=4; ($RUNTIME_SKIPPED_TESTCASES / $RUNTIME_TOTAL_TESTCASES) * 100" | bc)
     RUNTIME_FAIL_AVG=$(echo "scale=4; ($RUNTIME_FAILED_TESTCASES / $RUNTIME_TOTAL_TESTCASES) * 100" | bc)
 
-    echo LIB test Result:
-    echo Total Test cases Run:$RUNTIME_TOTAL_TESTCASES
-    echo Test Passed:$RUNTIME_PASSED_TESTCASES
-    echo Test failed:$RUNTIME_FAILED_TESTCASES
-    echo Test skipped:$RUNTIME_SKIPPED_TESTCASES
-    echo $RUNTIME_PASS_AVG
-    echo $RUNTIME_SKIP_AVG
-    echo $RUNTIME_FAIL_AVG
+    echo "LIB Test Result" >> /Script-details
+    echo "----------------------"
+    echo "Total Test Cases Run : $RUNTIME_TOTAL_TESTCASES" >> /Script-details
+    echo "Test Passed          : $RUNTIME_PASSED_TESTCASES" >> /Script-details
+    echo "Test Failed          : $RUNTIME_FAILED_TESTCASES" >> /Script-details
+    echo "Test Skipped         : $RUNTIME_SKIPPED_TESTCASES" >> /Script-details
+    echo "Average Test Passed  : $RUNTIME_PASS_AVG" >> /Script-details
+    echo "Average Test Skipped : $RUNTIME_SKIP_AVG" >> /Script-details
+    echo "Average Test Failed  : $RUNTIME_FAIL_AVG" >> /Script-details
 
     if [ "$LIB_BUILD_EXIT_CODE" -ne 0  ]; then
       exit 1
