@@ -168,13 +168,13 @@
     do
       cd $(find -name ${dir}.dll | xargs dirname)
       ${CUR_DIR}/testhost/net*inux-Debug-*/dotnet --runtimeconfig ${dir}.runtimeconfig.json --depsfile ${dir}.deps.json xunit.console.dll ${dir}.dll -xml testResults.xml -nologo -notrait category=OuterLoop -notrait category=failing
-      if [ $? -ne 0 ]
+      if grep -q '<assembly .* failed="0"' testResults.xml;
       then
-        echo Test No $RUNTIME_TOTAL_TESTCASES - $dir failed..
-        ((RUNTIME_FAILED_TESTCASES++))
-      else
-        echo Test No $RUNTIME_TOTAL_TESTCASES - $dir passed..
+        echo "Test No $RUNTIME_TOTAL_TESTCASES - $dir passed.."
         ((RUNTIME_PASSED_TESTCASES++))
+      else
+        echo "Test No $RUNTIME_TOTAL_TESTCASES - $dir failed.."
+        ((RUNTIME_FAILED_TESTCASES++))
       fi
       ((RUNTIME_TOTAL_TESTCASES++))
       cd $CUR_DIR
