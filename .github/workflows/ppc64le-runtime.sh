@@ -167,7 +167,7 @@
     for dir in `ls . | grep Tests$ `
     do
       cd $(find -name ${dir}.dll | xargs dirname)
-      ${CUR_DIR}/testhost/net*inux-Debug-*/dotnet --runtimeconfig ${dir}.runtimeconfig.json --depsfile ${dir}.deps.json xunit.console.dll ${dir}.dll -xml testResults.xml -nologo -notrait category=OuterLoop -notrait category=failing
+      ${CUR_DIR}/testhost/net*inux-Debug-*/dotnet exec --runtimeconfig ${dir}.runtimeconfig.json --depsfile ${dir}.deps.json xunit.console.dll ${dir}.dll -xml testResults.xml -nologo -notrait category=OuterLoop -notrait category=failing
       if grep -q '<assembly .* failed="0"' testResults.xml;
       then
         echo "Test No $RUNTIME_TOTAL_TESTCASES - $dir passed.."
