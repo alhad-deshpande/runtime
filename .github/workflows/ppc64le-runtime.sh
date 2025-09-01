@@ -138,7 +138,7 @@
     if [ "$EXIT_CODE" -ne 0 ]; then
       exit 1
     else
-      echo "Runtime build successfully" >> /Script-details
+      echo "Runtime build successfully\n------------------" >> /Script-details
       exit 0
     fi
   }
