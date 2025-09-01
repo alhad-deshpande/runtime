@@ -167,7 +167,7 @@
     for dir in `ls . | grep Tests$ `
     do
       cd $(find -name ${dir}.dll | xargs dirname)
-      ${CUR_DIR}/testhost/net*inux-Debug-*/dotnet exec --runtimeconfig ${dir}.runtimeconfig.json --depsfile ${dir}.deps.json xunit.console.dll ${dir}.dll -xml testResults.xml -nologo -notrait category=OuterLoop -notrait category=failing
+      ${CUR_DIR}/testhost/net*inux-Debug-*/dotnet --runtimeconfig ${dir}.runtimeconfig.json --depsfile ${dir}.deps.json xunit.console.dll ${dir}.dll -xml testResults.xml -nologo -notrait category=OuterLoop -notrait category=failing
       if [ $? -ne 0 ]
       then
         echo Test No $RUNTIME_TOTAL_TESTCASES - $dir failed..
@@ -186,7 +186,7 @@
     RUNTIME_FAIL_AVG=$(echo "scale=4; ($RUNTIME_FAILED_TESTCASES / $RUNTIME_TOTAL_TESTCASES) * 100" | bc)
 
     echo "LIB Test Result" >> /Script-details
-    echo "----------------------"
+    echo "----------------------" >> /Script-details
     echo "Total Test Cases Run : $RUNTIME_TOTAL_TESTCASES" >> /Script-details
     echo "Test Passed          : $RUNTIME_PASSED_TESTCASES" >> /Script-details
     echo "Test Failed          : $RUNTIME_FAILED_TESTCASES" >> /Script-details
