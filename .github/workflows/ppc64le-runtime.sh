@@ -168,7 +168,7 @@
     do
       cd $(find -name ${dir}.dll | xargs dirname)
       ${CUR_DIR}/testhost/net*inux-Debug-*/dotnet exec --runtimeconfig ${dir}.runtimeconfig.json --depsfile ${dir}.deps.json xunit.console.dll ${dir}.dll -xml testResults.xml -nologo -notrait category=OuterLoop -notrait category=failing
-      if [ ! -f testResults.xml ]; then
+      if [ ! -f xunit.console.dll ]; then
         echo "Test No $RUNTIME_TOTAL_TESTCASES - $dir skipped (testResults.xml not found)"
         ((RUNTIME_SKIPPED_TESTCASES++))
       elif grep -q '<assembly .* failed="0"' testResults.xml;
