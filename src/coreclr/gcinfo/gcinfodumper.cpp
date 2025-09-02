@@ -265,7 +265,6 @@ BOOL GcInfoDumper::ReportPointerRecord (
 #undef vREG
 #undef REG
 #elif defined(TARGET_POWERPC64)
-	// TODO TAREGT_POWERPC64
 #undef REG
 #define REG(reg, field) { offsetof(T_CONTEXT, field) }
 	REG(r0, R0),
@@ -326,8 +325,7 @@ PORTABILITY_ASSERT("GcInfoDumper::ReportPointerRecord is not implemented on this
 #elif defined(TARGET_RISCV64)
     iSPRegister = (offsetof(T_CONTEXT, Sp) - offsetof(T_CONTEXT, R0)) / sizeof(ULONGLONG);
 #elif defined(TARGET_POWERPC64)
-    iSPRegister = 0; //TODO POWERPC64 
-    _ASSERTE("TARGET_POWERPC64: NYI");
+    iSPRegister = (offsetof(CONTEXT, R1) - offsetof(CONTEXT, R0)) / sizeof(ULONGLONG);
 #endif
 
 #if defined(TARGET_ARM) || defined(TARGET_ARM64) || defined(TARGET_RISCV64) || defined(TARGET_LOONGARCH64)
@@ -546,6 +544,9 @@ PORTABILITY_ASSERT("GcInfoDumper::ReportPointerRecord is not implemented on this
 
 #if defined(TARGET_ARM) || defined(TARGET_ARM64) || defined(TARGET_RISCV64) || defined(TARGET_LOONGARCH64)
         pContext = (BYTE*)pRD->pCurrentContextPointers;
+#elif defined(TARGET_POWERPC64)
+#pragma message("Unimplemented for POWERPC64 yet.")
+	assert(!"unimplemented on POWERPC64 yet");
 #else
         pContext = (BYTE*)pRD->pCallerContext;
 #endif
