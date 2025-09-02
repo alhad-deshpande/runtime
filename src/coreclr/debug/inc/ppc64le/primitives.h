@@ -95,26 +95,58 @@ inline CorDebugRegister ConvertRegNumToCorDebugRegister(ICorDebugInfo::RegNum re
 
 inline LPVOID CORDbgGetIP(DT_CONTEXT *context)
 {
-    LIMITED_METHOD_CONTRACT;
+    CONTRACTL
+    {
+        NOTHROW;
+        GC_NOTRIGGER;
+
+        PRECONDITION(CheckPointer(context));
+    }
+    CONTRACTL_END;
+
     return (LPVOID)(size_t)(context->Nip);// Link ??
 }
 
 inline void CORDbgSetIP(DT_CONTEXT *context, LPVOID ip)
 {
-    LIMITED_METHOD_CONTRACT;
-    context->Link = (DWORD64)ip; // Link?
-   // context->Nip = (DWORD64)ip; // Link?
+    CONTRACTL
+    {
+        NOTHROW;
+        GC_NOTRIGGER;
+
+        PRECONDITION(CheckPointer(context));
+    }
+    CONTRACTL_END;
+
+    //context->Link = (DWORD64)ip; // Link?
+    context->Nip = (DWORD64)ip; // Link?
 }
 
 inline LPVOID CORDbgGetSP(const DT_CONTEXT * context)
 {
-    LIMITED_METHOD_CONTRACT;
+    CONTRACTL
+    {
+        NOTHROW;
+        GC_NOTRIGGER;
+
+        PRECONDITION(CheckPointer(context));
+    }
+    CONTRACTL_END;
+
     return (LPVOID)(size_t)(context->Gpr[1]);
 }
 
 inline void CORDbgSetSP(DT_CONTEXT *context, LPVOID sp)
 {
-    LIMITED_METHOD_CONTRACT;
+    CONTRACTL
+    {
+        NOTHROW;
+        GC_NOTRIGGER;
+
+        PRECONDITION(CheckPointer(context));
+    }
+    CONTRACTL_END;
+
     context->Gpr[1] = (DWORD64)sp;
 }
 

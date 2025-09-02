@@ -52,4 +52,6 @@ C_FUNC(\Name\()_End):
 
 .macro PROLOG_SAVE_REG_PAIR_INDEXED reg1, reg2, ssize
 // TODO POWERPC64
+   bl abort
+   nop
 .endm

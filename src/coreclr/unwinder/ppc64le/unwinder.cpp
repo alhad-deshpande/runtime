@@ -49,6 +49,7 @@ UNWIND_INFO * DacGetUnwindInfo(TADDR taUnwindInfo)
 BOOL DacUnwindStackFrame(CONTEXT * pContext, KNONVOLATILE_CONTEXT_POINTERS* pContextPointers)
 {
     //TODO TARGER_POWERPC64
+    _ASSERTE("TARGET_POWERPC64: NYI");
     return FALSE;
 }
 

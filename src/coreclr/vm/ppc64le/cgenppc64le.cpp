@@ -324,17 +324,20 @@ void HijackFrame::UpdateRegDisplay(const PREGDISPLAY pRD, bool updateFloats)
 #ifndef DACCESS_COMPILE
 void UMEntryThunkCode::Encode(UMEntryThunkCode *pEntryThunkCodeRX, BYTE* pTargetCode, void* pvSecretParam)
 {
+    _ASSERTE("TARGET_POWERPC64: NYI");
     //TODO TARGET_POWERPC64
 }
 
 void UMEntryThunkCode::Poison()
 {
     //TODO TARGET_POWERPC64
+    _ASSERTE("TARGET_POWERPC64: NYI");
 }
 
 UMEntryThunk* UMEntryThunk::Decode(LPVOID pCallback)
 {
     //TODO TARGET_POWERPC64
+    _ASSERTE("TARGET_POWERPC64: NYI");
     LIMITED_METHOD_CONTRACT;
 
     _ASSERTE(offsetof(UMEntryThunkCode, m_code) == 0);

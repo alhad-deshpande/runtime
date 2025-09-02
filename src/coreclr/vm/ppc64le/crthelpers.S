@@ -29,6 +29,8 @@
 // Exceptions:
 //
 LEAF_ENTRY JIT_MemSet, _TEXT
+	bl abort
+	nop
 LEAF_END_MARKED JIT_MemSet, _TEXT
 
 // void JIT_MemCpy(void* dest, const void* src, size_t count)
@@ -49,4 +51,6 @@ LEAF_END_MARKED JIT_MemSet, _TEXT
 // Exceptions:
 //
 LEAF_ENTRY JIT_MemCpy, _TEXT
+	bl abort
+	nop
 LEAF_END_MARKED JIT_MemCpy, _TEXT

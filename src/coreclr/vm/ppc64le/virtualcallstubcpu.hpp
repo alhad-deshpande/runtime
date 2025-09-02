@@ -35,6 +35,7 @@ struct LookupHolder
 	void  Initialize(LookupHolder* pLookupHolderRX, PCODE resolveWorkerTarget, size_t dispatchToken)
 	{
             //TODO POWERPC64
+    	    _ASSERTE("TARGET_POWERPC64: NYI");
 	}
 
 	LookupStub*    stub()        { LIMITED_METHOD_CONTRACT; return &_stub; }
@@ -77,6 +78,7 @@ struct DispatchHolder
     void Initialize(DispatchHolder* pDispatchHolderRX, PCODE implTarget, PCODE failTarget, size_t expectedMT)
     {
         // TODO TARGET_POWERPC64
+        _ASSERTE("TARGET_POWERPC64: NYI");
 	
 	_stub._expectedMT = expectedMT;
 	_stub._implTarget = implTarget;
@@ -137,6 +139,7 @@ struct ResolveHolder
 	//
 	// On input to the fail stub:
 	// TODO TARGET_POWERPC64
+        _ASSERTE("TARGET_POWERPC64: NYI");
 	
 	// Fill in resolve stub
 	//

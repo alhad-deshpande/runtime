@@ -622,7 +622,10 @@ extern "C" void QCALLTYPE RuntimeMethodHandle_InvokeMethod(
             else
 #endif // defined(TARGET_RISCV64) || defined(TARGET_LOONGARCH64)
             {
-                CopyValueClass(gc.retVal->GetData(), &callDescrData.returnValue, gc.retVal->GetMethodTable());
+                //CopyValueClass(gc.retVal->GetData(), &callDescrData.returnValue, gc.retVal->GetMethodTable());
+		BYTE *retVal = (BYTE *)&callDescrData.returnValue;
+		MethodTable *pMT = gc.retVal->GetMethodTable();
+		CopyValueClass(gc.retVal->GetData(), retVal, pMT);
             }
         }
         // From here on out, it is OK to have GCs since the return object (which may have had

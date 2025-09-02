@@ -327,11 +327,12 @@ struct DECLSPEC_ALIGN(8) UMEntryThunkCode
     }
 };
 
-//void UMEntryThunkCode::Poison()
-//{
+/*void UMEntryThunkCode::Poison()
+{
     // TODO POWERPC64 removed this structure commit https://github.com/dotnet/runtime/commit/1f6b690378ba4adf9567746acb3d213ef0bc40bf
+    _ASSERTE("TARGET_POWERPC64: NYI");
     // Implemented for building coreclr --> vikas
-//}
+}*/
 struct HijackArgs
 {
     union
@@ -363,6 +364,7 @@ struct ThisPtrRetBufPrecode {
     void Init(MethodDesc* pMD, LoaderAllocator *pLoaderAllocator)
     {
 	//TODO TARGET_POWERPC64
+    	_ASSERTE("TARGET_POWERPC64: NYI");
     }
 
     TADDR GetMethodDesc()
