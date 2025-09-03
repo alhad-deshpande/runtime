@@ -166,18 +166,16 @@
     CUR_DIR=$(pwd)
     for dir in `ls . | grep Tests$ `
     do
-      cd $(find -name ${dir}.dll | xargs dirname)
-      ${CUR_DIR}/testhost/net*inux-Debug-*/dotnet exec --runtimeconfig ${dir}.runtimeconfig.json --depsfile ${dir}.deps.json xunit.console.dll ${dir}.dll -xml testResults.xml -nologo -notrait category=OuterLoop -notrait category=failing
-      if [ ! -f xunit.console.dll ]; then
-        echo "Test No $RUNTIME_TOTAL_TESTCASES - $dir skipped (testResults.xml not found)"
+      cd "$(find . -path "./${dir}/*/${dir}.dll" -exec dirname {} \;)"
+      if [ ! -f testResults.xml ]; then
+        echo Test No $RUNTIME_TOTAL_TESTCASES - $dir skipped.. \(testResults.xml not found\)
         ((RUNTIME_SKIPPED_TESTCASES++))
-      elif grep -q '<assembly .* failed="0"' testResults.xml;
-      then
-        echo "Test No $RUNTIME_TOTAL_TESTCASES - $dir passed.."
-        ((RUNTIME_PASSED_TESTCASES++))
-      else
-        echo "Test No $RUNTIME_TOTAL_TESTCASES - $dir failed.."
+      elif grep -Eo 'failed="[1-9][0-9]*"' testResults.xml >/dev/null; then
+        echo Test No $RUNTIME_TOTAL_TESTCASES - $dir failed..
         ((RUNTIME_FAILED_TESTCASES++))
+      else
+        echo Test No $RUNTIME_TOTAL_TESTCASES - $dir passed..
+        ((RUNTIME_PASSED_TESTCASES++))
       fi
       ((RUNTIME_TOTAL_TESTCASES++))
       cd $CUR_DIR
