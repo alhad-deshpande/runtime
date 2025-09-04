@@ -92,8 +92,8 @@ jobs:
               body
             });
 
-  ppc64le-cancel:
-    needs: ppc64le-trigger
+  ppc64le-result-status:
+    needs: ppc64le-runtime-build-test
     if: needs.ppc64le-trigger.outputs.command == 'cancel'
     runs-on: ubuntu-24.04-ppc64le-p10
     steps:
