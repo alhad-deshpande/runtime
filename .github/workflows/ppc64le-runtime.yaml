@@ -73,7 +73,7 @@ jobs:
           path: ./Script-details
 
   ppc64le-result-status:
-    needs: runtime-build-test
+    needs: ppc64le-runtime-build-test
     runs-on: ubuntu-latest
     steps:
       - name: Set failure flag
