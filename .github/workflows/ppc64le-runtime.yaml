@@ -29,7 +29,7 @@ jobs:
               command = "build";
             }
             core.setOutput("command", command);
-  
+
   ppc64le-runtime-build-test:
     needs: ppc64le-trigger
     if: needs.ppc64le-trigger.outputs.command == 'build'
@@ -71,7 +71,7 @@ jobs:
         with:
           name: Script-details
           path: ./Script-details
-  
+
   ppc64le-result-status:
     needs: runtime-build-test
     runs-on: ubuntu-latest
