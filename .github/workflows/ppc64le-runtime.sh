@@ -17,8 +17,6 @@
   export ARCH=$(arch)
   export SCRIPT_DIR=$(pwd)
   export CONFIGURATION=Debug
-  BUILD_MESSAGE="Build Message"
-  TEST_MESSAGE="Test has not run yet"
 
   NUM=0
   sdk_versions=0
@@ -138,9 +136,10 @@
 
     EXIT_CODE=$BUILD_EXIT_CODE
     if [ "$EXIT_CODE" -ne 0 ]; then
-      BUILD_MESSAGE="Runtime build is failed. "
+      exit 1
     else
-      BUILD_MESSAGE="Runtime build is successful. "
+      echo "Runtime build is successful. Below are the test results:" >> /Script-details
+      exit 0
     fi
   }
 
@@ -162,8 +161,6 @@
     cd "$(basename "$REPO" .git)"
 
     ./build.sh --subset libs.tests --test /p:WithoutCategories=IgnoreForCI ${common_args[@]+"${common_args[@]}"} ${test_args[@]+"${test_args[@]}"} || LIB_BUILD_EXIT_CODE=$?
-
-    TEST_MESSAGE="Below are the test results:"
 
     cd /runtime/artifacts/bin
     CUR_DIR=$(pwd)
@@ -189,26 +186,21 @@
     RUNTIME_SKIP_AVG=$(echo "scale=2; ($RUNTIME_SKIPPED_TESTCASES / $RUNTIME_TOTAL_TESTCASES) * 100" | bc)
     RUNTIME_FAIL_AVG=$(echo "scale=2; ($RUNTIME_FAILED_TESTCASES / $RUNTIME_TOTAL_TESTCASES) * 100" | bc)
 
-    # echo "LIB Test Result" >> /Script-details
-    # echo "----------------------" >> /Script-details
-    # echo "Total Test Cases : $RUNTIME_TOTAL_TESTCASES" >> /Script-details
-    # echo "Test Passed      : $RUNTIME_PASSED_TESTCASES ($RUNTIME_PASS_AVG%)" >> /Script-details
-    # echo "Test Failed      : $RUNTIME_FAILED_TESTCASES ($RUNTIME_FAIL_AVG%)" >> /Script-details
-    # echo "Test Skipped     : $RUNTIME_SKIPPED_TESTCASES ($RUNTIME_SKIP_AVG%)" >> /Script-details
-    # echo "Average Test Passed  : $RUNTIME_PASS_AVG" >> /Script-details
-    # echo "Average Test Skipped : $RUNTIME_SKIP_AVG" >> /Script-details
-    # echo "Average Test Failed  : $RUNTIME_FAIL_AVG" >> /Script-details
+    #echo "LIB Test Result" >> /Script-details
+    echo "----------------------" >> /Script-details
+    echo "Total Test Cases : $RUNTIME_TOTAL_TESTCASES" >> /Script-details
+    echo "Test Passed      : $RUNTIME_PASSED_TESTCASES ($RUNTIME_PASS_AVG%)" >> /Script-details
+    echo "Test Failed      : $RUNTIME_FAILED_TESTCASES ($RUNTIME_FAIL_AVG%)" >> /Script-details
+    echo "Test Skipped     : $RUNTIME_SKIPPED_TESTCASES ($RUNTIME_SKIP_AVG%)" >> /Script-details
+    #echo "Average Test Passed  : $RUNTIME_PASS_AVG" >> /Script-details
+    #echo "Average Test Skipped : $RUNTIME_SKIP_AVG" >> /Script-details
+    #echo "Average Test Failed  : $RUNTIME_FAIL_AVG" >> /Script-details
 
-    # if [ "$LIB_BUILD_EXIT_CODE" -ne 0  ]; then
-    #   exit 1
-    # else
-    #   exit 0
-    # fi
-  }
-
-  message()
-  {
-    echo -e "$BUILD_MESSAGE $TEST_MESSAGE\n----------------------\nTotal Test Cases : $RUNTIME_TOTAL_TESTCASES\nTest Passed : $RUNTIME_PASSED_TESTCASES ($RUNTIME_PASS_AVG%)\nTest Failed : $RUNTIME_FAILED_TESTCASES ($RUNTIME_FAIL_AVG%)\nTest Skipped : $RUNTIME_SKIPPED_TESTCASES ($RUNTIME_SKIP_AVG%)" >> /Script-details
+    if [ "$LIB_BUILD_EXIT_CODE" -ne 0  ]; then
+      exit 1
+    else
+      exit 0
+    fi
   }
 
 if [ "$BUILD" == "true" ]; then
@@ -218,5 +210,3 @@ fi
 if [ "$TEST" == "true" ]; then
   lib_test_build
 fi
-
-message
