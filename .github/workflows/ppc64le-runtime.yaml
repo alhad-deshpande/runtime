@@ -55,12 +55,12 @@ jobs:
         run: |
           docker cp .github/workflows/ppc64le-runtime.sh github-api:/runtime.sh
           docker exec github-api chmod +x /runtime.sh
-      - name: Build and Test
+      - name: Build
         run: |
           docker exec github-api bash -c "/runtime.sh --ref ${{ steps.get_pr.outputs.sha }} --build 2>&1 | tee /tmp/runtime-build.log; exit \${PIPESTATUS[0]}"
-      # - name: Test
-      #   run: |
-      #     docker exec github-api bash -c "/runtime.sh --ref ${{ steps.get_pr.outputs.sha }} --test 2>&1 | tee /tmp/runtime-test.log; exit \${PIPESTATUS[0]}"
+      - name: Test
+        run: |
+          docker exec github-api bash -c "/runtime.sh --ref ${{ steps.get_pr.outputs.sha }} --test 2>&1 | tee /tmp/runtime-test.log; exit \${PIPESTATUS[0]}"
       - name: Copy test result summary from container
         run: |
           rm -rf ./Script-details
