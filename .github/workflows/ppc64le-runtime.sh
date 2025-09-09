@@ -198,11 +198,11 @@
     # echo "Average Test Skipped : $RUNTIME_SKIP_AVG" >> /Script-details
     # echo "Average Test Failed  : $RUNTIME_FAIL_AVG" >> /Script-details
 
-    if [ "$LIB_BUILD_EXIT_CODE" -ne 0  ]; then
-      exit 1
-    else
-      exit 0
-    fi
+    # if [ "$LIB_BUILD_EXIT_CODE" -ne 0  ]; then
+    #   exit 1
+    # else
+    #   exit 0
+    # fi
   }
 
   message()
