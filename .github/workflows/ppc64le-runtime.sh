@@ -17,6 +17,7 @@
   export ARCH=$(arch)
   export SCRIPT_DIR=$(pwd)
   export CONFIGURATION=Debug
+  BUILD_MESSAGE="Build Message"
   TEST_MESSAGE="Test has not run yet"
 
   NUM=0
