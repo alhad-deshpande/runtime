@@ -139,7 +139,6 @@
       BUILD_MESSAGE="Runtime build is failed. "
     else
       BUILD_MESSAGE="Runtime build is successful. "
-      lib_test_build
     fi
   }
 
@@ -214,8 +213,8 @@ if [ "$BUILD" == "true" ]; then
   runtime-build
 fi
 
-# if [ "$TEST" == "true" ]; then
-#   lib_test_build
-# fi
+if [ "$TEST" == "true" ]; then
+  lib_test_build
+fi
 
 message
