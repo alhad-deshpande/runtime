@@ -17,6 +17,7 @@
   export ARCH=$(arch)
   export SCRIPT_DIR=$(pwd)
   export CONFIGURATION=Debug
+  TEST_MESSAGE="Test has not run yet"
 
   NUM=0
   sdk_versions=0
