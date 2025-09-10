@@ -116,7 +116,7 @@
     # sed -i '162i<ProjectExclusions Include="$(MSBuildThisFileDirectory)Common\\tests\\Common.Tests.csproj" />' src/libraries/tests.proj
     # sed -i '163i<ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Runtime\\tests\\System.Runtime.Tests\\System.Runtime.Tests.csproj" />' src/libraries/tests.proj
     sed -i '163i<ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Threading.ThreadPool\\tests\\System.Threading.ThreadPool.Tests.csproj" />' src/libraries/tests.proj
-    # sed -i '166i<ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Runtime\\tests\\System.IO.FileSystem.Tests\\File\\System.IO.MemoryMappedFiles.Tests.csproj" />' src/libraries/tests.proj
+    sed -i '164i<ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Runtime\\tests\\System.IO.FileSystem.Tests\\File\\System.IO.MemoryMappedFiles.Tests.csproj" />' src/libraries/tests.proj
     # sed -i '167i<ProjectExclusions Include="$(MSBuildThisFileDirectory)Microsoft.Bcl.TimeProvider\\tests\\Microsoft.Bcl.TimeProvider.Tests.csproj" />' src/libraries/tests.proj
     # sed -i '168i<ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Runtime\\tests\\System.Reflection.Tests\\System.Reflection.Tests.csproj" />' src/libraries/tests.proj
 
