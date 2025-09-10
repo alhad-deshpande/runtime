@@ -85,15 +85,15 @@ jobs:
         with:
           name: Script-details
           path: .
-      continue-on-error: true
-    - name: Check if Script-details file exists
-      id: script-check
-      run: |
-        if [[ -f "Script-details" ]]; then
-          echo "found=true" >> $GITHUB_OUTPUT
-        else
-          echo "found=false" >> $GITHUB_OUTPUT
-        fi
+        continue-on-error: true
+      - name: Check if Script-details file exists
+        id: script-check
+        run: |
+          if [[ -f "Script-details" ]]; then
+            echo "found=true" >> $GITHUB_OUTPUT
+          else
+            echo "found=false" >> $GITHUB_OUTPUT
+          fi
       - name: Comment test summary on PR
         if: github.event.issue.pull_request
         uses: actions/github-script@v6
