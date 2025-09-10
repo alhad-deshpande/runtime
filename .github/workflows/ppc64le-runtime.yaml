@@ -85,6 +85,15 @@ jobs:
         with:
           name: Script-details
           path: .
+      continue-on-error: true
+    - name: Check if Script-details file exists
+      id: script-check
+      run: |
+        if [[ -f "Script-details" ]]; then
+          echo "found=true" >> $GITHUB_OUTPUT
+        else
+          echo "found=false" >> $GITHUB_OUTPUT
+        fi
       - name: Comment test summary on PR
         if: github.event.issue.pull_request
         uses: actions/github-script@v6
@@ -101,7 +110,7 @@ jobs:
               body
             });
       - name: Comment failure message on PR
-        if: steps.check-status.outputs.status != 'success'
+        if: steps.check-status.outputs.status != 'success' || steps.script-check.outputs.found == 'false'
         uses: actions/github-script@v6
         with:
           github-token: ${{ secrets.PPC64LE_GITHUB_TOKEN }}
@@ -110,7 +119,7 @@ jobs:
             const repo = process.env.GITHUB_REPOSITORY;
             const jobUrl = `https://github.com/${repo}/actions/runs/${runId}`;
             const issue_number = context.issue.number;
-            const body = `The ppc64le runtime build and test job has failed. Below is the link.\n[link](${jobUrl})`;
+            const body = `The ppc64le runtime build and test job has failed. Below is the link.\n🔗[link](${jobUrl})`;
             await github.rest.issues.createComment({
               issue_number,
               owner: context.repo.owner,
