@@ -95,7 +95,7 @@ jobs:
             echo "found=false" >> $GITHUB_OUTPUT
           fi
       - name: Comment test summary on PR
-        if: github.event.issue.pull_request
+        if: github.event.issue.pull_request && steps.script-check.outputs.found == 'true'
         uses: actions/github-script@v6
         with:
           github-token: ${{ secrets.PPC64LE_GITHUB_TOKEN }}
