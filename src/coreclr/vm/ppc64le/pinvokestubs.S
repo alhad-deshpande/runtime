@@ -14,22 +14,32 @@
 //
 LEAF_ENTRY GenericPInvokeCalliHelper, _TEXT
 // NOT YET IMPLEMENTED
+    bl abort 
+    nop
 LEAF_END GenericPInvokeCalliHelper, _TEXT
 
 NESTED_ENTRY GenericPInvokeCalliGenILStub, _TEXT, NoHandler
 // NOT YET IMPLEMENTED
+    bl abort 
+    nop
 NESTED_END GenericPInvokeCalliGenILStub, _TEXT
 
 LEAF_ENTRY VarargPInvokeStub, _TEXT
 // NOT YET IMPLEMENTED
+    bl abort 
+    nop
 LEAF_END VarargPInvokeStub, _TEXT
 
 LEAF_ENTRY VarargPInvokeStub_RetBuffArg, _TEXT
 // NOT YET IMPLEMENTED
+    bl abort 
+    nop
 LEAF_END VarargPInvokeStub_RetBuffArg, _TEXT
 
 LEAF_ENTRY VarargPInvokeStubHelper, _TEXT
 // NOT YET IMPLEMENTED
+    bl abort 
+    nop
 LEAF_END VarargPInvokeStubHelper, _TEXT
 
 //
@@ -40,6 +50,8 @@ LEAF_END VarargPInvokeStubHelper, _TEXT
 //
 NESTED_ENTRY VarargPInvokeGenILStub, _TEXT, NoHandler
 // NOT YET IMPLEMENTED
+    bl abort 
+    nop
 NESTED_END VarargPInvokeGenILStub, _TEXT
 
 //
@@ -50,6 +62,8 @@ NESTED_END VarargPInvokeGenILStub, _TEXT
 //
 NESTED_ENTRY JIT_PInvokeBegin, _TEXT, NoHandler
 // NOT YET IMPLEMENTED
+    bl abort 
+    nop
 NESTED_END JIT_PInvokeBegin, _TEXT
 
 //
@@ -60,4 +74,6 @@ NESTED_END JIT_PInvokeBegin, _TEXT
 //
 LEAF_ENTRY JIT_PInvokeEnd, _TEXT
 // NOT YET IMPLEMENTED
+    bl abort 
+    nop
 LEAF_END JIT_PInvokeEnd, _TEXT

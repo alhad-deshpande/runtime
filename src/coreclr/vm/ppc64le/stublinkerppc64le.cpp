@@ -269,7 +269,7 @@ void StubLinkerCPU::EmitStoreDoubleWord(IntReg RS, IntReg RA, int DS)
 }
 
 // stfd %f1, 256(%r1)
-void StubLinkerCPU::EmitLoadFloatingPointDouble(VecReg RS, IntReg RA, int DS)
+void StubLinkerCPU::EmitStoreFloatingPointDouble(VecReg RS, IntReg RA, int DS)
 {
     STANDARD_VM_CONTRACT;
     Emit32((DWORD)((54 << 26) | ((RS) << 21) | ((RA) << 16) | DS));
@@ -291,7 +291,7 @@ void StubLinkerCPU::EmitLoadDoubleWord(IntReg RS, IntReg RA, int DS)
 }
 
 // lfd %f1, 240(%r1)
-void StubLinkerCPU::EmitStoreFloatingPointDouble(VecReg RS, IntReg RA, int DS)
+void StubLinkerCPU::EmitLoadFloatingPointDouble(VecReg RS, IntReg RA, int DS)
 {
     STANDARD_VM_CONTRACT;
     Emit32((DWORD)((50 << 26) | ((RS) << 21) | ((RA) << 16) | DS));

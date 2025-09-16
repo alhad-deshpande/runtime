@@ -8,7 +8,8 @@
 
 NESTED_ENTRY DelayLoad_MethodCall, _TEXT, NoHandler
 // NOT YET IMPLEMENTED
-
+    bl abort 
+    nop
 PATCH_LABEL ExternalMethodFixupPatchLabel
 
 NESTED_END DelayLoad_MethodCall, _TEXT
@@ -19,6 +20,8 @@ NESTED_END DelayLoad_MethodCall, _TEXT
 
 NESTED_ENTRY DelayLoad_Helper\suffix, _TEXT, NoHandler
 // NOT YET IMPLEMENTED
+    bl abort 
+    nop
 
 NESTED_END DelayLoad_Helper\suffix, _TEXT
 

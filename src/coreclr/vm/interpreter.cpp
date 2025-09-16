@@ -242,6 +242,10 @@ void InterpreterMethodInfo::InitArgInfo(CEEInfo* comp, CORINFO_METHOD_INFO* meth
     {
     case CORINFO_CALLCONV_DEFAULT:
     case CORINFO_CALLCONV_VARARG:
+#ifdef HOST_POWERPC64
+    case IMAGE_CEE_CS_CALLCONV_C:
+    case IMAGE_CEE_CS_CALLCONV_STDCALL:
+#endif
         {
             unsigned k = 0;
             ARG_SLOT* directOffset = NULL;
@@ -332,6 +336,8 @@ void InterpreterMethodInfo::InitArgInfo(CEEInfo* comp, CORINFO_METHOD_INFO* meth
                 directVarArgOffset = static_cast<short>(reinterpret_cast<intptr_t>(ArgSlotEndiannessFixup(directOffset, sizeof(void*))));
                 directOffset++;
             }
+#endif
+#if defined(HOST_AMD64) || defined (HOST_POWERPC64)
             if (GetFlag<Flag_hasGenericsContextArg>())
             {
                 directTypeParamOffset = static_cast<short>(reinterpret_cast<intptr_t>(ArgSlotEndiannessFixup(directOffset, sizeof(void*))));
@@ -410,11 +416,13 @@ void InterpreterMethodInfo::InitArgInfo(CEEInfo* comp, CORINFO_METHOD_INFO* meth
                 m_argDescs[k].m_typeStackNormal = m_argDescs[k].m_type;
                 m_argDescs[k].m_nativeOffset = argOffsets_[k];
                 m_argDescs[k].m_directOffset = directVarArgOffset;
+		_ASSERTE("NYI TARGET_POWERPC64 VARARG");
                 k++;
             }
         }
         break;
 
+#ifndef HOST_POWERPC64
     case IMAGE_CEE_CS_CALLCONV_C:
         NYI_INTERP("InterpreterMethodInfo::InitArgInfo -- IMAGE_CEE_CS_CALLCONV_C");
         break;
@@ -422,6 +430,7 @@ void InterpreterMethodInfo::InitArgInfo(CEEInfo* comp, CORINFO_METHOD_INFO* meth
     case IMAGE_CEE_CS_CALLCONV_STDCALL:
         NYI_INTERP("InterpreterMethodInfo::InitArgInfo -- IMAGE_CEE_CS_CALLCONV_STDCALL");
         break;
+#endif
 
     case IMAGE_CEE_CS_CALLCONV_THISCALL:
         NYI_INTERP("InterpreterMethodInfo::InitArgInfo -- IMAGE_CEE_CS_CALLCONV_THISCALL");
@@ -554,7 +563,7 @@ void Interpreter::ArgState::AddArg(unsigned canonIndex, short numSlots, bool noR
         // so we set this to a negative number relative to the SP before the first arg push.
         callerArgStackSlots += numSlots;
         ClrSafeInt<short> offset(-callerArgStackSlots);
-#elif defined(HOST_ARM) || defined(HOST_ARM64) || defined(HOST_POWERPC64)
+#elif defined(HOST_ARM) || defined(HOST_ARM64)
         // On ARM, args are pushed in *reverse* order.  So we will create an offset relative to the address
         // of the first stack arg; later, we will add the size of the non-stack arguments.
         ClrSafeInt<short> offset(callerArgStackSlots);
@@ -1009,7 +1018,7 @@ CorJitResult Interpreter::GenerateInterpreterStub(CEEInfo* comp,
         totalArgs++;
     }
 
-    if (sig.GetCallingConvention() & CORINFO_CALLCONV_VARARG)
+    if (sig.GetCallingConvention() == CORINFO_CALLCONV_VARARG)
     {
         isVarArg = true;
         vaSigCookieIndex = totalArgs;
@@ -1100,6 +1109,10 @@ CorJitResult Interpreter::GenerateInterpreterStub(CEEInfo* comp,
     {
     case CORINFO_CALLCONV_DEFAULT:
     case CORINFO_CALLCONV_VARARG:
+#ifdef HOST_POWERPC64
+    case IMAGE_CEE_CS_CALLCONV_C:
+    case IMAGE_CEE_CS_CALLCONV_STDCALL:
+#endif
         {
             unsigned firstSigArgIndex = 0;
             if (hasThis)
@@ -1321,9 +1334,9 @@ CorJitResult Interpreter::GenerateInterpreterStub(CEEInfo* comp,
             unsigned short stackArgBaseOffset = (unsigned short) ((argState.numRegArgs + argState.numFPRegArgSlots) * sizeof(void*));
 #elif defined(HOST_POWERPC64)
 	    // TODO TARGET_POWERPC64 check here offset on StubLinkerCPU::EmitProlog
-	    unsigned       floatRegArgBaseOffset = 16 * sizeof(void*); // ???? copied from s390x
-            unsigned       intRegArgBaseOffset = (argState.numFPRegArgSlots) * sizeof(void*);
-            unsigned short stackArgBaseOffset = (unsigned short) ((argState.numRegArgs + argState.numFPRegArgSlots) * sizeof(void*));
+            unsigned short stackArgBaseOffset = 32;
+            unsigned       intRegArgBaseOffset = stackArgBaseOffset;
+	    unsigned       floatRegArgBaseOffset = intRegArgBaseOffset + ((argState.numRegArgs + 14 + argState.numFPRegArgSlots) * sizeof(void*));
 #else
 #error unsupported platform
 #endif
@@ -1393,7 +1406,7 @@ CorJitResult Interpreter::GenerateInterpreterStub(CEEInfo* comp,
                     argState.argOffsets[k] = (regArgsFound - 1) * sizeof(void*);
                 }
 #endif
-#if defined(HOST_S390X)
+#if defined(HOST_POWERPC64)
 		else if (argState.argIsReg[k] == ArgState::ARS_FloatReg)
 		{
 		    argState.argOffsets[k] += floatRegArgBaseOffset;
@@ -1410,6 +1423,7 @@ CorJitResult Interpreter::GenerateInterpreterStub(CEEInfo* comp,
         }
         break;
 
+#ifndef HOST_POWERPC64
     case IMAGE_CEE_CS_CALLCONV_C:
         NYI_INTERP("GenerateInterpreterStub -- IMAGE_CEE_CS_CALLCONV_C");
         break;
@@ -1417,6 +1431,7 @@ CorJitResult Interpreter::GenerateInterpreterStub(CEEInfo* comp,
     case IMAGE_CEE_CS_CALLCONV_STDCALL:
         NYI_INTERP("GenerateInterpreterStub -- IMAGE_CEE_CS_CALLCONV_STDCALL");
         break;
+#endif
 
     case IMAGE_CEE_CS_CALLCONV_THISCALL:
         NYI_INTERP("GenerateInterpreterStub -- IMAGE_CEE_CS_CALLCONV_THISCALL");
@@ -4237,7 +4252,7 @@ bool InterpreterType::MatchesWork(const InterpreterType it2, CEEInfo* info) cons
     // NativeInt matches byref.  (In unsafe code).
     if ((cit1 == CORINFO_TYPE_BYREF && cit2 == CORINFO_TYPE_NATIVEINT))
         return true;
-#if defined(HOST_AMD64) || defined(HOST_S390X)
+#if defined(HOST_AMD64) || defined(HOST_POWERPC64)
     if ((cit1 == CORINFO_TYPE_BYREF && cit2 == CORINFO_TYPE_LONG))
 	return true;
 #endif

@@ -9,4 +9,6 @@
 //
 NESTED_ENTRY TheUMEntryPrestub, _TEXT, UnhandledExceptionHandlerUnix
 // NOT YET IMPLEMENTED
+    bl abort 
+    nop
 NESTED_END TheUMEntryPrestub, _TEXT
