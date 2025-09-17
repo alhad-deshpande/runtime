@@ -109,8 +109,8 @@
     sed -i '158i<ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Net.Ping\\tests\\FunctionalTests\\System.Net.Ping.Functional.Tests.csproj" />' src/libraries/tests.proj
     sed -i '159i<ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Runtime\\tests\\System.IO.FileSystem.Tests\\System.IO.FileSystem.Tests.csproj" />' src/libraries/tests.proj
     sed -i '160i<ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Net.NetworkInformation\\tests\\FunctionalTests\\System.Net.NetworkInformation.Functional.Tests.csproj" />' src/libraries/tests.proj
-    sed -i '161i<ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Formats.Tar\\tests\\System.Formats.Tar.Tests.csproj" />' src/libraries/tests.proj
-    sed -i '162i<ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Net.Sockets\\tests\\FunctionalTests\\System.Net.Sockets.Tests.csproj" />' src/libraries/tests.proj
+    # sed -i '161i<ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Formats.Tar\\tests\\System.Formats.Tar.Tests.csproj" />' src/libraries/tests.proj
+    sed -i '161i<ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Net.Sockets\\tests\\FunctionalTests\\System.Net.Sockets.Tests.csproj" />' src/libraries/tests.proj
     # sed -i '158i<ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Runtime\\tests\\System.IO.Tests\\System.IO.Tests.csproj" />' src/libraries/tests.proj
     # sed -i '159i<ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Threading\\tests\\System.Threading.Tests.csproj" />' src/libraries/tests.proj
     # sed -i '162i<ProjectExclusions Include="$(MSBuildThisFileDirectory)Common\\tests\\Common.Tests.csproj" />' src/libraries/tests.proj
