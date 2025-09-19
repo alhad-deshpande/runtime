@@ -63,12 +63,14 @@ private:
      //ppc64le:
      void EmitStoreDoubleWord(IntReg RS, IntReg RA, int DS);
      void EmitStoreFloatingPointDouble(VecReg RS, IntReg RA, int DS);
-     void EmitLoadDoubleWord(IntReg RS, IntReg RA, int DS);
+     void EmitLoadDoubleWord(IntReg RS, int DS, IntReg RA);
      void EmitLoadFloatingPointDouble(VecReg RS, IntReg RA, int DS);
+     void EmitBranchToCountRegister(IntReg R12, int BO, int BI);
+     void EmitStoreDoubleWordWithUpdate(IntReg R1, int D2, IntReg R2);
  public:
      static void Init();
  
-     void EmitLoadRegister(IntReg target, IntReg source);
+     void EmitMoveRegister(IntReg target, IntReg source);
  
      void EmitCallLabel(CodeLabel *target);
  

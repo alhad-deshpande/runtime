@@ -121,13 +121,12 @@ static BYTE gPPC64LECall[sizeof(PPC64LECall)];
 {
 }*/
 
-void StubLinkerCPU::EmitBranchRegister(IntReg R2)
+// mtctr %r12
+// bcctr
+void StubLinkerCPU::EmitBranchToCountRegister(IntReg R12, int BO, int BI)
 {
-}
-
-void StubLinkerCPU::EmitLoadRegister(IntReg R1, IntReg R2)
-{
-    EmitMoveRegister(R2,R1,R2);
+    Emit32((DWORD)((31 << 26) | (R12 << 21) | (288 << 11) | (467 << 1)));			//mtctr %r12
+    Emit32((DWORD)((19 << 26) | (BO << 21 )| (BI << 16) | (0 << 11) | (528 << 1) | 0));		//bcctr
 }
 
 void StubLinkerCPU::EmitLoadHalfwordImmediate(IntReg R1, int I2)
@@ -154,8 +153,14 @@ void StubLinkerCPU::EmitLoadAddress(IntReg R1, int D2, IntReg X2, IntReg B2)
 {
 }
 
-void StubLinkerCPU::EmitLoadAddress(IntReg R1, int D2, IntReg B2)
+//stdu %r1, -<stack_size>(%r1) 
+void StubLinkerCPU::EmitStoreDoubleWordWithUpdate(IntReg R1, int D2, IntReg R2)
 {
+    STANDARD_VM_CONTRACT;
+
+    _ASSERTE((-524288 <= D2) && (D2 < 524288));
+
+    Emit32((DWORD)((62 << 26) | ((R1) << 21) | ((R2) << 16) | (-(D2) & 0xfffc) | 1));
 }
 
 void StubLinkerCPU::EmitLoad(IntReg R1, int D2, IntReg X2, IntReg B2)
@@ -276,6 +281,11 @@ void StubLinkerCPU::EmitStoreFloatingPointDouble(VecReg RS, IntReg RA, int DS)
 }
 
 // mr %r3, %r11
+void StubLinkerCPU::EmitMoveRegister(IntReg R1, IntReg R2)
+{
+    EmitMoveRegister(R2,R1,R2);
+}
+
 void StubLinkerCPU::EmitMoveRegister(IntReg RS, IntReg RA, IntReg RB)
 {
     STANDARD_VM_CONTRACT;
@@ -284,7 +294,7 @@ void StubLinkerCPU::EmitMoveRegister(IntReg RS, IntReg RA, IntReg RB)
 }
 
 // ld %r3, 32(%r1)
-void StubLinkerCPU::EmitLoadDoubleWord(IntReg RS, IntReg RA, int DS)
+void StubLinkerCPU::EmitLoadDoubleWord(IntReg RS, int DS, IntReg RA)
 {
     STANDARD_VM_CONTRACT;
     Emit32((DWORD)((58 << 26) | ((RS) << 21) | ((RA) << 16) | (DS & 0xfffc) | 0));		//ld %r0, 16(%r1)
@@ -305,7 +315,7 @@ void StubLinkerCPU::EmitRestoreArguments(IntReg R0, IntReg R1)
     int disp = 32;
     for (int i=3; i<=10; i++)
     {
-    	EmitLoadDoubleWord(i, 1, disp);
+    	EmitLoadDoubleWord(i, disp, 1);
 	disp = disp + 8;
     }
 
@@ -313,7 +323,7 @@ void StubLinkerCPU::EmitRestoreArguments(IntReg R0, IntReg R1)
     // ld r14 to r31
     for (int i=14; i<=31; i++)
     {
-    	EmitLoadDoubleWord(i, 1, disp);
+    	EmitLoadDoubleWord(i, disp, 1);
 	disp = disp + 8;
     }
 
@@ -326,7 +336,7 @@ void StubLinkerCPU::EmitRestoreArguments(IntReg R0, IntReg R1)
     }
 
     Emit32((DWORD)((14 << 26) | (R1 << 21) | (R1 << 16) | 496));			//addi %r1, %r1, 496
-    EmitLoadDoubleWord(0, 1, 16);							//ld %r0, 16(%r1)
+    EmitLoadDoubleWord(0, 16, 1);							//ld %r0, 16(%r1)
     Emit32((DWORD)((31 << 26) | (R0 << 21) | (256 << 11) | (467 << 1)));		//mtlr %r0
     Emit32((DWORD)(0x4e800020));							//blr
 }
@@ -339,7 +349,79 @@ void StubLinkerCPU::EmitCallLabel(CodeLabel *target)
 
 VOID StubLinkerCPU::EmitComputedInstantiatingMethodStub(MethodDesc* pSharedMD, struct ShuffleEntry *pShuffleEntryArray, void* extraArg)
 {
-    _ASSERTE(!"NYI POWERPC64 EmitComputedInstantiatingMethodStub");
+    //_ASSERTE(!"NYI POWERPC64 EmitComputedInstantiatingMethodStub");
+    STANDARD_VM_CONTRACT
+
+    LOG((LF_CORDB, LL_INFO100, "SL::ECIMS: pSharedMD:%p extraArg:%p\n", pSharedMD, extraArg));
+    
+    for (ShuffleEntry* pEntry = pShuffleEntryArray; pEntry->srcofs != ShuffleEntry::SENTINEL; pEntry++)
+    {
+	_ASSERTE((pEntry->srcofs & ShuffleEntry::REGMASK) && (pEntry->dstofs & ShuffleEntry::REGMASK));
+        // Source in a general purpose or float register, destination in the same kind of a register or on stack
+	int srcRegIndex = pEntry->srcofs & ShuffleEntry::OFSREGMASK;
+
+        // Both the srcofs and dstofs must be of the same kind of registers - float or general purpose.
+        _ASSERTE((pEntry->dstofs & ShuffleEntry::FPREGMASK) == (pEntry->srcofs & ShuffleEntry::FPREGMASK));
+        int dstRegIndex = pEntry->dstofs & ShuffleEntry::OFSREGMASK;
+	if (pEntry->srcofs & ShuffleEntry::FPREGMASK)
+	{
+	    _ASSERTE(!"TARGET_POWERPC64:NYI");
+            // X64EmitMovXmmXmm((X86Reg)(kXMM0 + dstRegIndex), (X86Reg)(kXMM0 + srcRegIndex));
+	}
+	else
+	{
+	    EmitMoveRegister(IntReg(3 + dstRegIndex), IntReg(3 + srcRegIndex));
+	}
+    }
+
+    MetaSig msig(pSharedMD);
+    ArgIterator argit(&msig);
+
+    if (argit.HasParamType())
+    {
+	int paramTypeArgOffset = argit.GetParamTypeArgOffset();
+	int paramTypeArgIndex = TransitionBlock::GetArgumentIndexFromOffset(paramTypeArgOffset);
+
+	if (extraArg == NULL)
+	{
+	    if (pSharedMD->RequiresInstMethodTableArg())
+	    {
+		// Unboxing stub case
+		// Extract MethodTable pointer (the hidden arg) from the object instance.
+		EmitLoadDoubleWord(IntReg(3 + paramTypeArgIndex), 0, IntReg(THIS_kREG));
+		LOG((LF_CORDB, LL_INFO100, "SL::ECIMS: param/unbox reg:%d\n", 3 + paramTypeArgIndex));
+	    }
+	}
+	else
+	{
+	    EmitLoadImmediate(IntReg(3 + paramTypeArgIndex), (UINT_PTR)extraArg);
+	    LOG((LF_CORDB, LL_INFO100, "SL::ECIMS: param/extra reg:%d\n", 3 + paramTypeArgIndex));
+	}
+    }
+
+    if (extraArg == NULL)
+    {
+        // Unboxing stub case
+        // Skip over the MethodTable* to find the address of the unboxed value type.
+        EmitStoreDoubleWordWithUpdate(IntReg(THIS_kREG), sizeof(void*), IntReg(THIS_kREG)); 
+    }
+
+    PCODE multiCallableAddr = pSharedMD->TryGetMultiCallableAddrOfCode(CORINFO_ACCESS_PREFER_SLOT_OVER_TEMPORARY_ENTRYPOINT);
+    // Use direct call if possible.
+    if (multiCallableAddr != (PCODE)NULL)
+    {
+	EmitLoadImmediate(IntReg(12), (UINT_PTR)multiCallableAddr);
+    }
+    else
+    {
+	EmitLoadImmediate(IntReg(12), (UINT_PTR)pSharedMD->GetAddrOfSlot());
+	EmitLoadDoubleWord(IntReg(12), 0, IntReg(12));
+    }
+  
+    EmitBranchToCountRegister(IntReg(12), 20/*branch always*/, 0);
+    Emit32((DWORD)((24 << 26) | (0 << 21) | (0 << 16) | 0));
+
+    SetTargetMethod(pSharedMD);
 }
 
 VOID StubLinkerCPU::EmitShuffleThunk(ShuffleEntry *pShuffleEntryArray)

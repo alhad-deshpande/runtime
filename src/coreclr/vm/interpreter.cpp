@@ -1760,7 +1760,7 @@ CorJitResult Interpreter::GenerateInterpreterStub(CEEInfo* comp,
         if (pMD->IsILStub())
         {
             // Third argument is stubcontext, in %r11 (METHODDESC_REGISTER)
-            sl.EmitLoadRegister(IntReg(5), IntReg(11));
+            sl.EmitMoveRegister(IntReg(5), IntReg(11));
         }
         else
 #endif
@@ -1771,7 +1771,7 @@ CorJitResult Interpreter::GenerateInterpreterStub(CEEInfo* comp,
 	
 	// TODO Check registers value for ppc64le and update - vikas
 	// Second arg is pointer to the base of the ILArgs -- i.e., the incoming save are
-        sl.EmitLoadRegister(IntReg(4), IntReg(1));
+        sl.EmitMoveRegister(IntReg(4), IntReg(1));
 
         // First arg is the pointer to the interpMethInfo structure
         sl.EmitLoadImmediate(IntReg(3), reinterpret_cast<UINT64>(interpMethInfo));

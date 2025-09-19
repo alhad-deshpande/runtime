@@ -155,6 +155,9 @@ struct CalleeSavedRegistersPointers {
     #undef CALLEE_SAVED_REGISTER
 };
 
+#define THIS_REG R3
+#define THIS_kREG 3
+
 #define NUM_FLOAT_ARGUMENT_REGISTERS 13	// ppc64le : Up to thirteen qualified floating-point arguments can be passed in floating-point registers f1–f13
 
 typedef DPTR(struct FloatArgumentRegisters) PTR_FloatArgumentRegisters;
