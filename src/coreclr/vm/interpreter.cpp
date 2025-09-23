@@ -40,6 +40,23 @@ static CorInfoType asCorInfoType(CORINFO_CLASS_HANDLE clsHnd)
     return CEEInfo::asCorInfoType(typeHnd.GetInternalCorElementType(), typeHnd, NULL);
 }
 
+static bool isNativePrimitiveStructType(CEEInfo *info, CORINFO_CLASS_HANDLE clsHnd)
+{
+    if (!info->isIntrinsicType(clsHnd))
+    {
+        return false;
+    }
+    const char* namespaceName = nullptr;
+    const char* typeName      = info->getClassNameFromMetadata(clsHnd, &namespaceName);
+
+    if (strcmp(namespaceName, "System.Runtime.InteropServices") != 0)
+    {
+        return false;
+    }
+
+    return strcmp(typeName, "CLong") == 0 || strcmp(typeName, "CULong") == 0 || strcmp(typeName, "NFloat") == 0;
+}
+
 InterpreterMethodInfo::InterpreterMethodInfo(CEEInfo* comp, CORINFO_METHOD_INFO* methInfo)
     : m_method(methInfo->ftn),
       m_module(methInfo->scope),
@@ -114,6 +131,12 @@ InterpreterMethodInfo::InterpreterMethodInfo(CEEInfo* comp, CORINFO_METHOD_INFO*
 #elif defined(HOST_ARM) || defined(HOST_AMD64)|| defined(HOST_ARM64)
     // ...or it fits into one register.
     if (hasRetBuff && getClassSize(methInfo->args.retTypeClass) <= sizeof(void*))
+    {
+        hasRetBuff = false;
+    }
+#elif defined(HOST_POWERPC64)
+    if (methInfo->args.retType == CORINFO_TYPE_VALUECLASS &&
+        isNativePrimitiveStructType(comp, methInfo->args.retTypeClass))
     {
         hasRetBuff = false;
     }
@@ -563,7 +586,7 @@ void Interpreter::ArgState::AddArg(unsigned canonIndex, short numSlots, bool noR
         // so we set this to a negative number relative to the SP before the first arg push.
         callerArgStackSlots += numSlots;
         ClrSafeInt<short> offset(-callerArgStackSlots);
-#elif defined(HOST_ARM) || defined(HOST_ARM64)
+#elif defined(HOST_ARM) || defined(HOST_ARM64) || defined(HOST_POWERPC64)
         // On ARM, args are pushed in *reverse* order.  So we will create an offset relative to the address
         // of the first stack arg; later, we will add the size of the non-stack arguments.
         ClrSafeInt<short> offset(callerArgStackSlots);
@@ -573,9 +596,6 @@ void Interpreter::ArgState::AddArg(unsigned canonIndex, short numSlots, bool noR
 #elif defined(HOST_RISCV64)
         callerArgStackSlots += numSlots;
         ClrSafeInt<short> offset(-callerArgStackSlots);
-#elif defined(HOST_POWERPC64)
-	callerArgStackSlots += numSlots;
-	ClrSafeInt<short> offset(-callerArgStackSlots);
 #endif
         offset *= static_cast<short>(sizeof(void*));
         _ASSERTE(!offset.IsOverflow());
@@ -2902,7 +2922,7 @@ EvalLoop:
                 _ASSERTE(cit == CORINFO_TYPE_INT || cit == CORINFO_TYPE_UINT || cit == CORINFO_TYPE_NATIVEINT);
 #endif // _DEBUG
 #if defined(HOST_AMD64) || defined(HOST_POWERPC64)
-                UINT32 val = (cit == CORINFO_TYPE_NATIVEINT) ? (INT32) OpStackGet<NativeInt>(m_curStackHt)
+		NativeUInt val = (cit == CORINFO_TYPE_NATIVEINT) ?  (NativeUInt) OpStackGet<NativeInt>(m_curStackHt)
                                                              : OpStackGet<INT32>(m_curStackHt);
 #else
                 UINT32 val = OpStackGet<INT32>(m_curStackHt);
@@ -5658,6 +5678,7 @@ void Interpreter::ConvOvf()
     case CORINFO_TYPE_DOUBLE:
          {
             double d = OpStackGet<double>(opidx);
+	    d = trunc(d);
             if (!DoubleFitsInIntType<TMin, TMax>(d))
             {
                 ThrowOverflowException();
@@ -10130,7 +10151,9 @@ void Interpreter::DoCallWork(bool virtualCall, void* thisArg, CORINFO_RESOLVED_T
             if (sz > 8)
             {
                 void* srcPtr = OpStackGet<void*>(argsBase + arg);
-                args[curArgSlot] = PtrToArgSlot(srcPtr);
+                void *tmpPtr = (void*)_alloca(sz);
+                memmove(tmpPtr, srcPtr, sz);
+                args[curArgSlot] = PtrToArgSlot(tmpPtr);
                 if (!IsInLargeStructLocalArea(srcPtr))
                     largeStructSpaceToPop += sz;
             }
@@ -10594,6 +10617,11 @@ void Interpreter::CallI()
         // TODO: Investigate why HasRetBuffArg can't be used. pMD is a hacked up MD for the
         // calli because it belongs to the current method. Doing what the JIT does.
         hasRetBuffArg = (retTypeSz > sizeof(void*)) || ((retTypeSz & (retTypeSz - 1)) != 0);
+#elif defined(HOST_POWERPC64)
+        if (!isNativePrimitiveStructType(&m_interpCeeInfo, retTypeClsHnd))
+        {
+            hasRetBuffArg = true;
+        }
 #else
         hasRetBuffArg = !!pMD->HasRetBuffArg();
 #endif

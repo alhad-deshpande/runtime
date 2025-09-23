@@ -9,6 +9,9 @@
 //         MachState *pState
 //         )
 LEAF_ENTRY HelperMethodFrameRestoreState, _TEXT
+#ifdef _DEBUG
+        mr %r3, %r4
+#endif
 	// Check if the MachState is valid
 	ld %r0, OFFSETOF__MachState___pRetAddr(%r3)
 	cmpdi %r0, 0
@@ -31,11 +34,11 @@ LEAF_ENTRY HelperMethodFrameRestoreState, _TEXT
 //
 
 #define RestoreReg(reg, regnum) \
-	addi %r5, %r3, (OFFSETOF__MachState__m_Capture + 8 * regnum); \
+	ld %r5,(OFFSETOF__MachState__m_Capture + 8 * regnum)(%r3); \
 	ld %r6, (OFFSETOF__MachState__m_Ptrs + 8 * regnum)(%r3); \
 	cmpd %r5, %r6; \
 	bne 0f;	\
-	ld reg, 0(%r0); \
+	ld reg, 0(%r5); \
 0:
 	RestoreReg(%r14, 0)
 	RestoreReg(%r15, 1)
