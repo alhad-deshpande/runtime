@@ -353,7 +353,7 @@ void InterpreterMethodInfo::InitArgInfo(CEEInfo* comp, CORINFO_METHOD_INFO* meth
                 directRetBuffOffset = static_cast<short>(reinterpret_cast<intptr_t>(ArgSlotEndiannessFixup(directOffset, sizeof(void*))));
                 directOffset++;
             }
-#if defined(HOST_AMD64)
+#if defined(HOST_AMD64) || defined (HOST_POWERPC64)
             if (GetFlag<Flag_isVarArg>())
             {
                 directVarArgOffset = static_cast<short>(reinterpret_cast<intptr_t>(ArgSlotEndiannessFixup(directOffset, sizeof(void*))));
@@ -586,7 +586,7 @@ void Interpreter::ArgState::AddArg(unsigned canonIndex, short numSlots, bool noR
         // so we set this to a negative number relative to the SP before the first arg push.
         callerArgStackSlots += numSlots;
         ClrSafeInt<short> offset(-callerArgStackSlots);
-#elif defined(HOST_ARM) || defined(HOST_ARM64) || defined(HOST_POWERPC64)
+#elif defined(HOST_ARM) || defined(HOST_ARM64)
         // On ARM, args are pushed in *reverse* order.  So we will create an offset relative to the address
         // of the first stack arg; later, we will add the size of the non-stack arguments.
         ClrSafeInt<short> offset(callerArgStackSlots);
@@ -596,11 +596,14 @@ void Interpreter::ArgState::AddArg(unsigned canonIndex, short numSlots, bool noR
 #elif defined(HOST_RISCV64)
         callerArgStackSlots += numSlots;
         ClrSafeInt<short> offset(-callerArgStackSlots);
+#elif defined(HOST_POWERPC64)
+        callerArgStackSlots += numSlots;
+        ClrSafeInt<short> offset(-callerArgStackSlots);
 #endif
         offset *= static_cast<short>(sizeof(void*));
         _ASSERTE(!offset.IsOverflow());
         argOffsets[canonIndex] = offset.Value();
-#if defined(HOST_ARM) || defined(HOST_ARM64) || defined(HOST_POWERPC64)
+#if defined(HOST_ARM) || defined(HOST_ARM64)
         callerArgStackSlots += numSlots;
 #endif
     }
@@ -771,30 +774,40 @@ void Interpreter::ArgState::AddFPArg(unsigned canonIndex, unsigned short numSlot
     }
     numFPRegArgSlots += numSlots;
 #elif defined(HOST_POWERPC64)
+    assert(numFPRegArgSlots + numSlots <= MaxNumFPRegArgSlots);
+    assert(!twoSlotAlign);
+    argIsReg[canonIndex] = ARS_FloatReg;
+
+    argOffsets[canonIndex] = numFPRegArgSlots * sizeof(void*);
+    for (unsigned i = 0; i < numSlots; i++)
+    {
+        fpArgsUsed |= (0x1 << (numFPRegArgSlots + i));
+    }
+    numFPRegArgSlots += numSlots;
     //assert(!"Not yet implemenetd on PPC64LE yet");
     // TODO : Fix as per ppc64le if any
-    _ASSERTE(!twoSlotAlign);
+    // _ASSERTE(!twoSlotAlign);
     
-    if (numFPRegArgSlots + numSlots <= MaxNumFPRegArgSlots)
-    {
-	argIsReg[canonIndex] = ARS_FloatReg;
+    // if (numFPRegArgSlots + numSlots <= MaxNumFPRegArgSlots)
+    // {
+	// argIsReg[canonIndex] = ARS_FloatReg;
 
-	argOffsets[canonIndex] = numFPRegArgSlots * sizeof(void*);
-	for (unsigned i = 0; i < numSlots; i++)
-	{
-	    fpArgsUsed |= (0x1 << (numFPRegArgSlots + i));
-	}
-	numFPRegArgSlots += numSlots;
-    }
-    else
-    {
-	argIsReg[canonIndex] = ARS_NotReg;
-	ClrSafeInt<short> offset(callerArgStackSlots);
-	offset *= static_cast<short>(sizeof(void*));
-	_ASSERTE(!offset.IsOverflow());
-	argOffsets[canonIndex] = offset.Value();
-	callerArgStackSlots += numSlots;
-    }
+	// argOffsets[canonIndex] = numFPRegArgSlots * sizeof(void*);
+	// for (unsigned i = 0; i < numSlots; i++)
+	// {
+	//     fpArgsUsed |= (0x1 << (numFPRegArgSlots + i));
+	// }
+	// numFPRegArgSlots += numSlots;
+    // }
+    // else
+    // {
+	// argIsReg[canonIndex] = ARS_NotReg;
+	// ClrSafeInt<short> offset(callerArgStackSlots);
+	// offset *= static_cast<short>(sizeof(void*));
+	// _ASSERTE(!offset.IsOverflow());
+	// argOffsets[canonIndex] = offset.Value();
+	// callerArgStackSlots += numSlots;
+    // }
 #else
 #error "Unsupported architecture"
 #endif
@@ -1354,9 +1367,9 @@ CorJitResult Interpreter::GenerateInterpreterStub(CEEInfo* comp,
             unsigned short stackArgBaseOffset = (unsigned short) ((argState.numRegArgs + argState.numFPRegArgSlots) * sizeof(void*));
 #elif defined(HOST_POWERPC64)
 	    // TODO TARGET_POWERPC64 check here offset on StubLinkerCPU::EmitProlog
-            unsigned short stackArgBaseOffset = 32;
+            unsigned short stackArgBaseOffset = 0;
             unsigned       intRegArgBaseOffset = stackArgBaseOffset;
-	    unsigned       floatRegArgBaseOffset = intRegArgBaseOffset + ((argState.numRegArgs + 14 + argState.numFPRegArgSlots) * sizeof(void*));
+	    unsigned       floatRegArgBaseOffset = intRegArgBaseOffset + (27 * sizeof(void*));
 #else
 #error unsupported platform
 #endif
@@ -1791,7 +1804,7 @@ CorJitResult Interpreter::GenerateInterpreterStub(CEEInfo* comp,
 	
 	// TODO Check registers value for ppc64le and update - vikas
 	// Second arg is pointer to the base of the ILArgs -- i.e., the incoming save are
-        sl.EmitMoveRegister(IntReg(4), IntReg(1));
+        sl.EmitAddImm(IntReg(4), IntReg(1), 32);
 
         // First arg is the pointer to the interpMethInfo structure
         sl.EmitLoadImmediate(IntReg(3), reinterpret_cast<UINT64>(interpMethInfo));

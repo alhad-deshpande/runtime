@@ -246,7 +246,7 @@ void StubLinkerCPU::EmitSaveArguments(unsigned int cIntRegArgs, unsigned int cFl
 
     // Store integer argument registers
     int disp = 32;
-    for (int i=3; i<=10; i++)
+    for (int i=3; i<=11; i++)
     {
     	EmitStoreDoubleWord(i, 1, disp);
 	disp = disp + 8;
@@ -313,7 +313,7 @@ void StubLinkerCPU::EmitRestoreArguments(IntReg R0, IntReg R1)
     // Store integer argument registers
     // ld r3 to r10
     int disp = 32;
-    for (int i=3; i<=10; i++)
+    for (int i=3; i<=11; i++)
     {
     	EmitLoadDoubleWord(i, disp, 1);
 	disp = disp + 8;
@@ -440,9 +440,9 @@ void StubLinkerCPU::EmitMovConstant(IntReg R1, int I2)
     _ASSERTE(!"NYI POWERPC64 EmitMovConstant");
 }
 
-void StubLinkerCPU::EmitAddImm(IntReg R1, IntReg R2, unsigned int I3)
+void StubLinkerCPU::EmitAddImm(IntReg R1, IntReg R2, unsigned int Imm)
 {
-    _ASSERTE(!"NYI POWERPC64 EmitAddImm");
+    Emit32((DWORD)((14 << 26) | (R1 << 21) | (R2 << 16) | Imm));
 }
 
 unsigned int StubLinkerCPU::GetSavedRegArgsOffset()
