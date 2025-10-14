@@ -12,8 +12,8 @@ NESTED_ENTRY CallDescrWorkerInternal, _TEXT, NoHandler
     std %r2, 24(%r1)
 	
 	// Save pCallDescrData in %r11
-    //mr %r11, %r3 
-    lwa %r0, CallDescrData__numStackSlots(%r3)
+    mr %r11, %r3 
+    lwa %r0, CallDescrData__numStackSlots(%r11)
 	li %r4, 2
 	divd %r4, %r0, %r4
 	mulli %r4, %r4, 2
@@ -29,11 +29,11 @@ LOCAL_LABEL(NO_STACK_PADDING):
 	mulli %r4, %r4, 8
 	
 	// minimum stack frame 32 + default paramaters 64
-	addic %r4, %r4, -96 //-96
+	addic %r4, %r4, -384 //-96-288  = 384 
     stdux %r1, %r1, %r4
 	std %r3, 32(%r1)
 
-/*LOCAL_LABEL(StoreCalleeSavedRegisters):
+LOCAL_LABEL(StoreCalleeSavedRegisters):
 	// store callee saved registers
     	std %r14, 96(%r1)
     	std %r15, 104(%r1)
@@ -72,10 +72,10 @@ LOCAL_LABEL(NO_STACK_PADDING):
     	stfd %f28, 352(%r1)
     	stfd %f29, 360(%r1)
     	stfd %f30, 368(%r1)
-    	stfd %f31, 376(%r1) */
+    	stfd %f31, 376(%r1)
 
 	// If there are stack arguments, copy the arguments in.
-    ld %r4, CallDescrData__pSrc(%r3)  // Source address
+    ld %r4, CallDescrData__pSrc(%r11)  // Source address
     li %r5, 0                          // Source offset
 	li %r6, 96                        // Destination offset on stack
 	cmpdi %r0, 0
@@ -97,9 +97,8 @@ LOCAL_LABEL(NoStackArguments):
 
     // All argument registers are loaded regardless of the actual number
     // of arguments.
-    ld %r12, CallDescrData__pArgumentRegisters(%r3)
+    ld %r12, CallDescrData__pArgumentRegisters(%r11)
     ld %r3, 0(%r12)
-    std %r3, 40(%r1) // Backup r3 value to be passed as an argument value
     ld %r4, 8(%r12)
     ld %r5, 16(%r12)
     ld %r6, 24(%r12)
@@ -108,8 +107,7 @@ LOCAL_LABEL(NoStackArguments):
     ld %r9, 48(%r12)
     ld %r10, 56(%r12)
 
-    ld %r3, 32(%r1) // Restore original r3 argument
-    ld %r12, CallDescrData__pFloatArgumentRegisters(%r3)
+    ld %r12, CallDescrData__pFloatArgumentRegisters(%r11)
     cmpdi %r12, 0
     beq LOCAL_LABEL(NoFloatArguments)
     lfd %f1, 0(%r12)
@@ -129,15 +127,14 @@ LOCAL_LABEL(NoStackArguments):
 LOCAL_LABEL(NoFloatArguments):
 
     // Call target function.
-    ld %r12, CallDescrData__pTarget(%r3)
-    ld %r3, 40(%r1) //Restore r3 value to be passed as an argument value from stack
+    ld %r12, CallDescrData__pTarget(%r11)
 	mtctr %r12
 	bctrl
 
 LOCAL_LABEL(CallDescrWorkerInternalReturnAddress):
     // Check expected return value type.
-    ld %r4, 32(%r1)
-    ld %r0, CallDescrData__fpReturnSize(%r4)
+    ld %r11, 32(%r1)
+    ld %r0, CallDescrData__fpReturnSize(%r11)
     cmpdi %r0, 0
     beq      LOCAL_LABEL(ReturnsInt)
     cmpdi %r0, 4
@@ -148,23 +145,24 @@ LOCAL_LABEL(CallDescrWorkerInternalReturnAddress):
     // Store double-precision floating-point value.
 
 LOCAL_LABEL(ReturnsDouble):
-    lfd     %f1,CallDescrData__returnValue(%r4)
+    lfd     %f1,CallDescrData__returnValue(%r11)
     b       LOCAL_LABEL(Epilog)
 
     // Store single-precision floating-point value.
 
 LOCAL_LABEL(ReturnsFloat):
-    lfs     %f1,CallDescrData__returnValue+4(%r4)
+    lfs     %f1,CallDescrData__returnValue+4(%r11)
     b       LOCAL_LABEL(Epilog)
 
     // Store integer return value.
 
 LOCAL_LABEL(ReturnsInt):
-    ld     %r3,CallDescrData__returnValue(%r4)
+    ld     %r3,CallDescrData__returnValue(%r11)
     // fall through
 
 LOCAL_LABEL(Epilog):
 
+	ld %r4, 32(%r1)
 	lwa %r5, CallDescrData__numStackSlots(%r4)
 	li %r6, 2
 	divd %r6, %r5, %r6
@@ -176,12 +174,12 @@ LOCAL_LABEL(Epilog):
 
 LOCAL_LABEL(NO_STACK_PADDING_EPILOG):
 	mulli %r5, %r5, 8
-	addic %r6, %r5, 96 	//stack size 96
+	addic %r6, %r5, 384 	//stack size 384
 	//addic %r7, %r6, 16	// restoring r0
 	//addic %r9, %r6, 24	// restoring r2 (toc)
 	
 	//restore callee saved registers
-    	/*ld %r14, 96(%r1)
+    	ld %r14, 96(%r1)
     	ld %r15, 104(%r1)
     	ld %r16, 112(%r1)
     	ld %r17, 120(%r1)
@@ -218,7 +216,7 @@ LOCAL_LABEL(NO_STACK_PADDING_EPILOG):
     	lfd %f28, 352(%r1)
     	lfd %f29, 360(%r1)
     	lfd %f30, 368(%r1)
-    	lfd %f31, 376(%r1) */
+    	lfd %f31, 376(%r1)
 
 	add   %r1, %r1, %r6
 	
