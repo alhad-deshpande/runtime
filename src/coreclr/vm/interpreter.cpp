@@ -1354,9 +1354,9 @@ CorJitResult Interpreter::GenerateInterpreterStub(CEEInfo* comp,
             unsigned short stackArgBaseOffset = (unsigned short) ((argState.numRegArgs + argState.numFPRegArgSlots) * sizeof(void*));
 #elif defined(HOST_POWERPC64)
 	    // TODO TARGET_POWERPC64 check here offset on StubLinkerCPU::EmitProlog
-            unsigned short stackArgBaseOffset = 32;
+            unsigned short stackArgBaseOffset = 0;
             unsigned       intRegArgBaseOffset = stackArgBaseOffset;
-	    unsigned       floatRegArgBaseOffset = intRegArgBaseOffset + ((argState.numRegArgs + 14 + argState.numFPRegArgSlots) * sizeof(void*));
+	    unsigned       floatRegArgBaseOffset = intRegArgBaseOffset + (26 * sizeof(void*));
 #else
 #error unsupported platform
 #endif
@@ -1791,18 +1791,17 @@ CorJitResult Interpreter::GenerateInterpreterStub(CEEInfo* comp,
 	
 	// TODO Check registers value for ppc64le and update - vikas
 	// Second arg is pointer to the base of the ILArgs -- i.e., the incoming save are
-        sl.EmitMoveRegister(IntReg(4), IntReg(1));
+	sl.EmitAddImm(IntReg(4), IntReg(1), 32);
 
         // First arg is the pointer to the interpMethInfo structure
         sl.EmitLoadImmediate(IntReg(3), reinterpret_cast<UINT64>(interpMethInfo));
 
         // Place target method func into %r12
-        sl.EmitLoadImmediate(IntReg(12), reinterpret_cast<UINT64>(interpretMethodFunc));
-        //sl.EmitCallLabel(sl.NewExternalCodeLabel((LPVOID)interpretMethodFunc));
+	sl.EmitCallLabel(sl.NewExternalCodeLabel((LPVOID)interpretMethodFunc),FALSE,FALSE);
 
         // Use an intermediate thunk to actually call the interpreter method.
         // This is needed since we cannot generate unwind info with the stublinker.
-        sl.EmitCallLabel(sl.NewExternalCodeLabel((LPVOID)InterpreterStubThunk));
+        //sl.EmitCallLabel(sl.NewExternalCodeLabel((LPVOID)InterpreterStubThunk));
         
 	//Epilog
 	sl.EmitRestoreArguments(IntReg(0), IntReg(1));

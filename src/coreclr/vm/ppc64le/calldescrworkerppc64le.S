@@ -29,50 +29,9 @@ LOCAL_LABEL(NO_STACK_PADDING):
 	mulli %r4, %r4, 8
 	
 	// minimum stack frame 32 + default paramaters 64
-	addic %r4, %r4, -384 //-96-288  = 384 
-    stdux %r1, %r1, %r4
+	addic %r4, %r4, -96 
+        stdux %r1, %r1, %r4
 	std %r3, 32(%r1)
-
-LOCAL_LABEL(StoreCalleeSavedRegisters):
-	// store callee saved registers
-    	std %r14, 96(%r1)
-    	std %r15, 104(%r1)
-    	std %r16, 112(%r1)
-    	std %r17, 120(%r1)
-    	std %r18, 128(%r1)
-    	std %r19, 136(%r1)
-    	std %r20, 144(%r1)
-    	std %r21, 152(%r1)
-    	std %r22, 160(%r1)
-    	std %r23, 168(%r1)
-    	std %r24, 176(%r1)
-    	std %r25, 184(%r1)
-    	std %r26, 192(%r1)
-    	std %r27, 200(%r1)
-    	std %r28, 208(%r1)
-    	std %r29, 216(%r1)
-    	std %r30, 224(%r1)
-    	std %r31, 232(%r1)
-
-	// store floating point callee saved registers
-    	stfd %f14, 240(%r1)
-    	stfd %f15, 248(%r1)
-    	stfd %f16, 256(%r1)
-    	stfd %f17, 264(%r1)
-    	stfd %f18, 272(%r1)
-    	stfd %f19, 280(%r1)
-    	stfd %f20, 288(%r1)
-    	stfd %f21, 296(%r1)
-    	stfd %f22, 304(%r1)
-    	stfd %f23, 312(%r1)
-    	stfd %f24, 320(%r1)
-    	stfd %f25, 328(%r1)
-    	stfd %f26, 336(%r1)
-    	stfd %f27, 344(%r1)
-    	stfd %f28, 352(%r1)
-    	stfd %f29, 360(%r1)
-    	stfd %f30, 368(%r1)
-    	stfd %f31, 376(%r1)
 
 	// If there are stack arguments, copy the arguments in.
     ld %r4, CallDescrData__pSrc(%r11)  // Source address
@@ -133,8 +92,8 @@ LOCAL_LABEL(NoFloatArguments):
 
 LOCAL_LABEL(CallDescrWorkerInternalReturnAddress):
     // Check expected return value type.
-    ld %r11, 32(%r1)
-    ld %r0, CallDescrData__fpReturnSize(%r11)
+    ld %r4, 32(%r1)
+    lwz %r0, CallDescrData__fpReturnSize(%r4)
     cmpdi %r0, 0
     beq      LOCAL_LABEL(ReturnsInt)
     cmpdi %r0, 4
@@ -145,24 +104,23 @@ LOCAL_LABEL(CallDescrWorkerInternalReturnAddress):
     // Store double-precision floating-point value.
 
 LOCAL_LABEL(ReturnsDouble):
-    lfd     %f1,CallDescrData__returnValue(%r11)
+    stfd     %f1,CallDescrData__returnValue(%r4)
     b       LOCAL_LABEL(Epilog)
 
     // Store single-precision floating-point value.
 
 LOCAL_LABEL(ReturnsFloat):
-    lfs     %f1,CallDescrData__returnValue+4(%r11)
+    stfs     %f1,CallDescrData__returnValue+4(%r4)
     b       LOCAL_LABEL(Epilog)
 
     // Store integer return value.
 
 LOCAL_LABEL(ReturnsInt):
-    ld     %r3,CallDescrData__returnValue(%r11)
+    std     %r3,CallDescrData__returnValue(%r4)
     // fall through
 
 LOCAL_LABEL(Epilog):
 
-	ld %r4, 32(%r1)
 	lwa %r5, CallDescrData__numStackSlots(%r4)
 	li %r6, 2
 	divd %r6, %r5, %r6
@@ -174,53 +132,10 @@ LOCAL_LABEL(Epilog):
 
 LOCAL_LABEL(NO_STACK_PADDING_EPILOG):
 	mulli %r5, %r5, 8
-	addic %r6, %r5, 384 	//stack size 384
-	//addic %r7, %r6, 16	// restoring r0
-	//addic %r9, %r6, 24	// restoring r2 (toc)
+	addic %r6, %r5, 96
 	
-	//restore callee saved registers
-    	ld %r14, 96(%r1)
-    	ld %r15, 104(%r1)
-    	ld %r16, 112(%r1)
-    	ld %r17, 120(%r1)
-    	ld %r18, 128(%r1)
-    	ld %r19, 136(%r1)
-    	ld %r20, 144(%r1)
-    	ld %r21, 152(%r1)
-    	ld %r22, 160(%r1)
-    	ld %r23, 168(%r1)
-    	ld %r24, 176(%r1)
-    	ld %r25, 184(%r1)
-    	ld %r26, 192(%r1)
-    	ld %r27, 200(%r1)
-    	ld %r28, 208(%r1)
-    	ld %r29, 216(%r1)
-    	ld %r30, 224(%r1)
-    	ld %r31, 232(%r1)
-
-	// restore floating point callee saved registers
-    	lfd %f14, 240(%r1)
-    	lfd %f15, 248(%r1)
-    	lfd %f16, 256(%r1)
-    	lfd %f17, 264(%r1)
-    	lfd %f18, 272(%r1)
-    	lfd %f19, 280(%r1)
-    	lfd %f20, 288(%r1)
-    	lfd %f21, 296(%r1)
-    	lfd %f22, 304(%r1)
-    	lfd %f23, 312(%r1)
-    	lfd %f24, 320(%r1)
-    	lfd %f25, 328(%r1)
-    	lfd %f26, 336(%r1)
-    	lfd %f27, 344(%r1)
-    	lfd %f28, 352(%r1)
-    	lfd %f29, 360(%r1)
-    	lfd %f30, 368(%r1)
-    	lfd %f31, 376(%r1)
-
 	add   %r1, %r1, %r6
 	
-	//add %r8, %r1, %r7 
 	ld      %r2, 24(%r1)
 	ld      %r0, 16(%r1)
 	mtlr    %r0

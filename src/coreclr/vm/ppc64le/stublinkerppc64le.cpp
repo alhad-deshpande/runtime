@@ -36,53 +36,79 @@ public:
 
             _ASSERTE(refsize == InstructionFormat::k64);
 
-            return 28;
+	    if(variationCode)
+		return 32;
+	    else
+                return 28;
 	}
 	virtual VOID EmitInstruction(UINT refsize, int64_t fixedUpReference, BYTE *pOutBufferRX, BYTE *pOutBufferRW, UINT variationCode, BYTE *pDataBuffer)
         {
 	    UINT64 target = (UINT64)(((INT64)pOutBufferRX) + fixedUpReference + GetSizeOfInstruction(refsize, variationCode));
 
-            // lis r0, <target>
+            // lis r12, <target>
             *((UINT64*)&pOutBufferRW[0]) = ((UINT64)(target) >> 48 & 0xff);
             *((UINT64*)&pOutBufferRW[1]) = ((UINT64)(target) >> 56 & 0xff);
-            pOutBufferRW[2] = 0x00;
-            pOutBufferRW[3] = 0x3C;
+            pOutBufferRW[2] = 0x80;
+            pOutBufferRW[3] = 0x3D;
 
-            // ori r0, r0, <target>
+            // ori r12, r12, <target>
             *((UINT64*)&pOutBufferRW[4]) = ((UINT64)(target) >> 32) & 0xff;
             *((UINT64*)&pOutBufferRW[5]) = ((UINT64)(target) >> 40) & 0xff;
-            pOutBufferRW[6] = 0x00;
-            pOutBufferRW[7] = 0x60;
+            pOutBufferRW[6] = 0x8C;
+            pOutBufferRW[7] = 0x61;
 
-            // sldi r0, r0, 32
+            // sldi r12, r12, 32
             pOutBufferRW[8] = 0xC6;
             pOutBufferRW[9] = 0x07;
-            pOutBufferRW[10] = 0x00;
-            pOutBufferRW[11] = 0x78;
+            pOutBufferRW[10] = 0x8C;
+            pOutBufferRW[11] = 0x79;
 
-            // oris r0, r0, <target>
+            // oris r12, r12, <target>
             *((UINT64*)&pOutBufferRW[12]) = ((UINT64)(target) >> 16) & 0xff;
             *((UINT64*)&pOutBufferRW[13]) = ((UINT64)(target) >> 24) & 0xff;
-            pOutBufferRW[14] = 0x00;
-            pOutBufferRW[15] = 0x64;
+            pOutBufferRW[14] = 0x8C;
+            pOutBufferRW[15] = 0x65;
 
-            // ori r0, r0, <target>
+            // ori r12, r12, <target>
             *((UINT64*)&pOutBufferRW[16]) = ((UINT64)(target) >> 0) & 0xff;
             *((UINT64*)&pOutBufferRW[17]) = ((UINT64)(target) >> 8) & 0xff;
-            pOutBufferRW[18] = 0x00;
-            pOutBufferRW[19] = 0x60;
+            pOutBufferRW[18] = 0x8C;
+            pOutBufferRW[19] = 0x61;
 
-            // mtlr r0
-            pOutBufferRW[20] = 0xA6;
-            pOutBufferRW[21] = 0x03;
-            pOutBufferRW[22] = 0x08;
-            pOutBufferRW[23] = 0x7C;
+	    if(variationCode)
+	    {
+		// ld r12, 0(r12) e9 8c 00 00
+		pOutBufferRW[20] = 0x00;
+                pOutBufferRW[21] = 0x00;
+                pOutBufferRW[22] = 0x8C;
+                pOutBufferRW[23] = 0xE9;
 
-            // blrl
-            pOutBufferRW[24] = 0x21;
-            pOutBufferRW[25] = 0x00;
-            pOutBufferRW[26] = 0x80;
-            pOutBufferRW[27] = 0x4E;
+		// mtctr r12
+		pOutBufferRW[24] = 0xA6;
+                pOutBufferRW[25] = 0x03;
+                pOutBufferRW[26] = 0x89;
+                pOutBufferRW[27] = 0x7D;
+
+		// bctr 4e800420
+		pOutBufferRW[28] = 0x20;
+                pOutBufferRW[29] = 0x04;
+                pOutBufferRW[30] = 0x80;
+                pOutBufferRW[31] = 0x4E;
+	    }
+	    else
+	    {
+                // mtctr r12
+            	pOutBufferRW[20] = 0xA6;
+            	pOutBufferRW[21] = 0x03;
+            	pOutBufferRW[22] = 0x89;
+            	pOutBufferRW[23] = 0x7D;
+
+            	// bcctrl
+            	pOutBufferRW[24] = 0x21;
+            	pOutBufferRW[25] = 0x04;
+            	pOutBufferRW[26] = 0x81;
+            	pOutBufferRW[27] = 0x4E;
+	    }
 	}
 	/*virtual BOOL CanReach(UINT refsize, UINT variationCode, BOOL fExternal, INT_PTR offset)
 	{
@@ -311,11 +337,11 @@ void StubLinkerCPU::EmitLoadFloatingPointDouble(VecReg RS, IntReg RA, int DS)
 void StubLinkerCPU::EmitRestoreArguments(IntReg R0, IntReg R1)
 {
     // Store integer argument registers
-    // ld r3 to r10
-    int disp = 32;
-    for (int i=3; i<=10; i++)
+    // ld r4 to r10, r3 contains return value hence not restoring it.
+    int disp = 40;
+    for (int i=4; i<=10; i++)
     {
-    	EmitLoadDoubleWord(i, disp, 1);
+    	EmitLoadDoubleWord(IntReg(i), disp, IntReg(1));
 	disp = disp + 8;
     }
 
@@ -328,22 +354,23 @@ void StubLinkerCPU::EmitRestoreArguments(IntReg R0, IntReg R1)
     }
 
     // Store floating-point argument registers
-    // lfd f1 to f31
-    for (int i=1; i<=31; i++)
+    // lfd f2 to f31, f1 contains return value hence not restoring it
+    disp = disp + 8;
+    for (int i=2; i<=31; i++)
     {
     	EmitLoadFloatingPointDouble(i, 1, disp);
 	disp = disp + 8;
     }
 
     Emit32((DWORD)((14 << 26) | (R1 << 21) | (R1 << 16) | 496));			//addi %r1, %r1, 496
-    EmitLoadDoubleWord(0, 16, 1);							//ld %r0, 16(%r1)
+    EmitLoadDoubleWord(IntReg(0), 16, IntReg(1));					//ld %r0, 16(%r1)
     Emit32((DWORD)((31 << 26) | (R0 << 21) | (256 << 11) | (467 << 1)));		//mtlr %r0
     Emit32((DWORD)(0x4e800020));							//blr
 }
 
-void StubLinkerCPU::EmitCallLabel(CodeLabel *target)
+void StubLinkerCPU::EmitCallLabel(CodeLabel *target, BOOL fTailCall, BOOL fIndirect)
 {
-    EmitLabelRef(target, reinterpret_cast<PPC64LECall&>(gPPC64LECall), 0);
+    EmitLabelRef(target, reinterpret_cast<PPC64LECall&>(gPPC64LECall), fIndirect);
     //_ASSERTE(!"NYI POWERPC64 EmitCallLabel");
 }
 
@@ -366,7 +393,6 @@ VOID StubLinkerCPU::EmitComputedInstantiatingMethodStub(MethodDesc* pSharedMD, s
 	if (pEntry->srcofs & ShuffleEntry::FPREGMASK)
 	{
 	    _ASSERTE(!"TARGET_POWERPC64:NYI");
-            // X64EmitMovXmmXmm((X86Reg)(kXMM0 + dstRegIndex), (X86Reg)(kXMM0 + srcRegIndex));
 	}
 	else
 	{
@@ -403,31 +429,96 @@ VOID StubLinkerCPU::EmitComputedInstantiatingMethodStub(MethodDesc* pSharedMD, s
     {
         // Unboxing stub case
         // Skip over the MethodTable* to find the address of the unboxed value type.
-        EmitStoreDoubleWordWithUpdate(IntReg(THIS_kREG), sizeof(void*), IntReg(THIS_kREG)); 
+	EmitAddImm(IntReg(THIS_kREG), IntReg(THIS_kREG), sizeof(MethodDesc*));
     }
 
     PCODE multiCallableAddr = pSharedMD->TryGetMultiCallableAddrOfCode(CORINFO_ACCESS_PREFER_SLOT_OVER_TEMPORARY_ENTRYPOINT);
     // Use direct call if possible.
     if (multiCallableAddr != (PCODE)NULL)
     {
-	EmitLoadImmediate(IntReg(12), (UINT_PTR)multiCallableAddr);
+	EmitCallLabel(NewExternalCodeLabel((LPVOID)multiCallableAddr),TRUE, FALSE);
     }
     else
     {
-	EmitLoadImmediate(IntReg(12), (UINT_PTR)pSharedMD->GetAddrOfSlot());
-	EmitLoadDoubleWord(IntReg(12), 0, IntReg(12));
+	EmitCallLabel(NewExternalCodeLabel((LPVOID)pSharedMD->GetAddrOfSlot()),TRUE, TRUE);
     }
   
-    EmitBranchToCountRegister(IntReg(12), 20/*branch always*/, 0);
-    Emit32((DWORD)((24 << 26) | (0 << 21) | (0 << 16) | 0));
-
     SetTargetMethod(pSharedMD);
 }
 
 VOID StubLinkerCPU::EmitShuffleThunk(ShuffleEntry *pShuffleEntryArray)
 {
-    // TODO TARGET_POWERPC64
-    _ASSERTE(!"NYI POWERPC64");
+    // On entry THIS_kREG (i.e. r3) holds the delegate instance. Look up the real target address stored in the MethodPtrAux
+    // field and save it in r12. Tailcall to the target method after re-arranging the arguments
+    // ld r12, offsetof(DelegateObject, _methodPtrAux)(THIS_kREG)
+    EmitLoadDoubleWord(IntReg(12), DelegateObject::GetOffsetOfMethodPtrAux(), IntReg(THIS_kREG));
+
+    // load the indirection cell into x11 used by ResolveWorkerAsmStub
+    // addi %r11, %r3, DelegateObject::GetOffsetOfMethodPtrAux() 
+    EmitAddImm(IntReg(11), IntReg(THIS_kREG), DelegateObject::GetOffsetOfMethodPtrAux());
+
+    for (ShuffleEntry* pEntry = pShuffleEntryArray; pEntry->srcofs != ShuffleEntry::SENTINEL; pEntry++)
+    {
+	if (pEntry->srcofs == ShuffleEntry::HELPERREG)
+        {
+            _ASSERTE(!"S390X:NYI");
+        }
+        else if (pEntry->dstofs == ShuffleEntry::HELPERREG)
+        {
+            _ASSERTE(!"S390X:NYI");
+        }
+	else if (pEntry->srcofs & ShuffleEntry::REGMASK)
+	{
+            // Source in a general purpose or float register, destination in the same kind of a register or on stack
+            int srcRegIndex = pEntry->srcofs & ShuffleEntry::OFSREGMASK;
+
+	    if (pEntry->dstofs & ShuffleEntry::REGMASK)
+	    {
+                // Source in register, destination in register
+
+                // Both the srcofs and dstofs must be of the same kind of registers - float or general purpose.
+                _ASSERTE((pEntry->dstofs & ShuffleEntry::FPREGMASK) == (pEntry->srcofs & ShuffleEntry::FPREGMASK));
+                int dstRegIndex = pEntry->dstofs & ShuffleEntry::OFSREGMASK;
+                
+		if (pEntry->srcofs & ShuffleEntry::FPREGMASK)
+                {
+            	    _ASSERTE(!"POWERPC NYI");
+                }
+                else
+                {
+	    	    EmitMoveRegister(IntReg(3 + dstRegIndex), IntReg(3 + srcRegIndex));
+                }
+	    }
+	    else
+	    {
+            	_ASSERTE(!"POWERPC NYI");
+	    }
+	}
+	else if (pEntry->dstofs & ShuffleEntry::REGMASK)
+	{
+            // Source on stack, destination in register
+            _ASSERTE(!(pEntry->srcofs & ShuffleEntry::REGMASK));
+            
+	    int dstRegIndex = pEntry->dstofs & ShuffleEntry::OFSREGMASK;
+	    int srcOffset = pEntry->srcofs * sizeof(void*); //need to check - vikas
+
+	    if (pEntry->dstofs & ShuffleEntry::FPREGMASK)
+	    {
+            	_ASSERTE(!"POWERPC NYI");
+	    }
+	    else
+	    {
+    		EmitLoadDoubleWord(IntReg(3 + dstRegIndex), srcOffset, IntReg(1));
+	    }
+	}
+	else
+	{
+            _ASSERTE(!"S390X:NYI");
+	}
+    }
+
+    // Tailcall to target
+    EmitBranchToCountRegister(IntReg(12), 20/*branch always*/, 0);
 }
 
 void StubLinkerCPU::EmitMovReg(IntReg R1, IntReg R2)
@@ -440,9 +531,10 @@ void StubLinkerCPU::EmitMovConstant(IntReg R1, int I2)
     _ASSERTE(!"NYI POWERPC64 EmitMovConstant");
 }
 
-void StubLinkerCPU::EmitAddImm(IntReg R1, IntReg R2, unsigned int I3)
+//addi %r1, %r2, imm
+void StubLinkerCPU::EmitAddImm(IntReg R1, IntReg R2, unsigned int Imm)
 {
-    _ASSERTE(!"NYI POWERPC64 EmitAddImm");
+    Emit32((DWORD)((14 << 26) | (R1 << 21) | (R2 << 16) | Imm));
 }
 
 unsigned int StubLinkerCPU::GetSavedRegArgsOffset()

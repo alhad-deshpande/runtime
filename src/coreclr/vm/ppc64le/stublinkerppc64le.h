@@ -72,7 +72,8 @@ private:
  
      void EmitMoveRegister(IntReg target, IntReg source);
  
-     void EmitCallLabel(CodeLabel *target);
+     //void EmitCallLabel(CodeLabel *target);
+     void EmitCallLabel(CodeLabel *target, BOOL fTailCall, BOOL fIndirect);
  
      void EmitSaveArguments(unsigned int cIntRegArgs, unsigned int cFloatRegArgs);
  

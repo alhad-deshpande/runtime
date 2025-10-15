@@ -123,7 +123,7 @@ inline void Interpreter::LdLoc(int locNum)
 
     unsigned stackHt = m_curStackHt;
     GCX_FORBID();
-    // Small types might have been modified via a pointer handed out by LdLocA.Add commentMore actions
+    // Small types might have been modified via a pointer handed out by LdLocA.
     // Ensure values are properly normalized when pushed to the stack.
     INT64 val = *FixedSizeLocalSlot(locNum);
     switch (m_methInfo->m_localDescs[locNum].m_type.ToCorInfoType())

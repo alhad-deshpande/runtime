@@ -110,7 +110,9 @@ NESTED_END OnCallCountThresholdReachedStub, _TEXT
 #endif // FEATURE_TIERED_COMPILATION
 
 NESTED_ENTRY InterpreterStubThunk, _TEXT, NoHandler
-	mflr %r0
+        bl abort
+	nop
+/*	mflr %r0
 	std %r0, 16(%r1)
 	std %r2, 24(%r1)
 	stdu %r1, -240(%r1)
@@ -177,4 +179,5 @@ NESTED_ENTRY InterpreterStubThunk, _TEXT, NoHandler
 	ld %r2, 24(%r1)
 	mtlr %r0
 	blr
+*/
 NESTED_END InterpreterStubThunk, _TEXT

@@ -188,8 +188,6 @@ struct TransitionBlock
     ArgumentRegisters       m_argumentRegisters;
 #elif defined(TARGET_POWERPC64)
     ArgumentRegisters       m_argumentRegisters;// 8*8 = 64 r3 - r10
-    TADDR                   m_methodDescPtr;	//8 = r11
-    TADDR                   m_countRegister;	//8 = r12
     CalleeSavedRegisters    m_calleeSavedRegisters; 	// r14-r31 8*18 = 144
     FloatArgumentRegisters  m_floatArgumentRegisters; //f1-f13 8*13 = 104 
     FloatCalleeSavedRegisters    m_floatCalleeSaveRegisters;		//8*18 = 144
@@ -2077,7 +2075,8 @@ void ArgIteratorTemplate<ARGITERATOR_BASE>::ComputeReturnFlags()
         }
 #endif // ENREGISTERED_RETURNTYPE_INTEGER_MAXSIZE
 #if defined(TARGET_POWERPC64)
-            _ASSERTE_MSG(false, "Unsupported arch POWERPC64.");
+            //_ASSERTE_MSG(false, "Unsupported arch POWERPC64.");
+	    _ASSERTE(!thValueType.IsNull());
 #endif
         // Value types are returned using return buffer by default
         flags |= RETURN_HAS_RET_BUFFER;
