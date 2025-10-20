@@ -500,7 +500,7 @@ VOID StubLinkerCPU::EmitShuffleThunk(ShuffleEntry *pShuffleEntryArray)
             _ASSERTE(!(pEntry->srcofs & ShuffleEntry::REGMASK));
             
 	    int dstRegIndex = pEntry->dstofs & ShuffleEntry::OFSREGMASK;
-	    int srcOffset = pEntry->srcofs * sizeof(void*); //need to check - vikas
+	    int srcOffset = 32 + pEntry->srcofs * sizeof(void*); //need to check - vikas
 
 	    if (pEntry->dstofs & ShuffleEntry::FPREGMASK)
 	    {

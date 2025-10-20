@@ -1791,7 +1791,8 @@ CorJitResult Interpreter::GenerateInterpreterStub(CEEInfo* comp,
 	
 	// TODO Check registers value for ppc64le and update - vikas
 	// Second arg is pointer to the base of the ILArgs -- i.e., the incoming save are
-	sl.EmitAddImm(IntReg(4), IntReg(1), 32);
+	sl.EmitLoadDoubleWord(IntReg(4), 0, IntReg(1));
+	sl.EmitAddImm(IntReg(4), IntReg(4), 200);
 
         // First arg is the pointer to the interpMethInfo structure
         sl.EmitLoadImmediate(IntReg(3), reinterpret_cast<UINT64>(interpMethInfo));

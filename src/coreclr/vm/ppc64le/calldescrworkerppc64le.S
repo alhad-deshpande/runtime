@@ -110,7 +110,7 @@ LOCAL_LABEL(ReturnsDouble):
     // Store single-precision floating-point value.
 
 LOCAL_LABEL(ReturnsFloat):
-    stfs     %f1,CallDescrData__returnValue+4(%r4)
+    stfs     %f1,CallDescrData__returnValue(%r4)
     b       LOCAL_LABEL(Epilog)
 
     // Store integer return value.
