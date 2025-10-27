@@ -1862,6 +1862,12 @@ EEClass::CheckForHFA()
         return false;
     }
 
+    if (GetMethodTable()->GetMDImport()->GetCustomAttributeByName(GetMethodTable()->GetCl(),
+          "System.Runtime.CompilerServices.CompilerGeneratedAttribute", NULL, NULL) == S_OK)
+    {
+        return false;
+    }
+
     CorInfoHFAElemType hfaType = CORINFO_HFA_ELEM_NONE;
 
     FieldDesc *pFieldDescList = GetFieldDescList();

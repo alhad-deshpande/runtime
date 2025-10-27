@@ -187,16 +187,16 @@ struct TransitionBlock
     };
     ArgumentRegisters       m_argumentRegisters;
 #elif defined(TARGET_POWERPC64)
-    ArgumentRegisters       m_argumentRegisters;// 8*8 = 64 r3 - r10
-    CalleeSavedRegisters    m_calleeSavedRegisters; 	// r14-r31 8*18 = 144
-    FloatArgumentRegisters  m_floatArgumentRegisters; //f1-f13 8*13 = 104 
-    FloatCalleeSavedRegisters    m_floatCalleeSaveRegisters;		//8*18 = 144
-    TADDR		    padding;
     TADDR                   m_backchain;	//8
     DWORD                   m_crSaveWord;	//4
     DWORD                   m_reserved;		//4
     TADDR		    m_ReturnAddress;	//8
     TADDR		    m_tocPtr;		//8 = r2
+    ArgumentRegisters       m_argumentRegisters;// 8*8 = 64 r3 - r10
+    FloatArgumentRegisters  m_floatArgumentRegisters; //f1-f13 8*13 = 104 
+    TADDR		    m_padding;
+    CalleeSavedRegisters    m_calleeSavedRegisters; 	// r14-r31 8*18 = 144
+    FloatCalleeSavedRegisters    m_floatCalleeSaveRegisters;		//8*18 = 144
 
 #else
     PORTABILITY_ASSERT("TransitionBlock");
@@ -309,7 +309,7 @@ struct TransitionBlock
         return (offset != TransitionBlock::StructInRegsOffset) && (offset < 0);
 #elif defined(TARGET_POWERPC64)
         return offset >= offsetof(TransitionBlock, m_floatArgumentRegisters)
-               && offset < sizeof(TransitionBlock);
+               && offset < offsetof(TransitionBlock, m_padding);
 #else
         return offset < 0;
 #endif
@@ -333,7 +333,7 @@ struct TransitionBlock
         }
     #elif defined(TARGET_POWERPC64)
         return offset >= offsetof(TransitionBlock, m_floatArgumentRegisters)
-               && offset < sizeof(TransitionBlock);
+               && offset < offsetof(TransitionBlock, m_padding);
     #endif
         return offset < 0;
     }
@@ -581,7 +581,7 @@ public:
 #elif defined(TARGET_RISCV64)
         return (size > ENREGISTERED_PARAMTYPE_MAXSIZE);
 #elif defined(TARGET_POWERPC64)
-        return (size > ENREGISTERED_PARAMTYPE_MAXSIZE) || ((size & (size-1)) != 0);
+        return (size > ENREGISTERED_PARAMTYPE_MAXSIZE);
 #else
         PORTABILITY_ASSERT("ArgIteratorTemplate::IsArgPassedByRef");
         return FALSE;
@@ -647,7 +647,7 @@ public:
         if (m_argType == ELEMENT_TYPE_VALUETYPE)
         {
             _ASSERTE(!m_argTypeHandle.IsNull());
-            return (m_argSize > ENREGISTERED_PARAMTYPE_MAXSIZE) || ((m_argSize & (m_argSize-1)) != 0);
+            return (m_argSize > ENREGISTERED_PARAMTYPE_MAXSIZE);
         }
         return FALSE;
 #else

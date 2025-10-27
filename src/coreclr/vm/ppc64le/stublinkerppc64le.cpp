@@ -270,25 +270,34 @@ void StubLinkerCPU::EmitSaveArguments(unsigned int cIntRegArgs, unsigned int cFl
     IntReg RS = IntReg(1);
     Emit32((DWORD)((62 << 26) | ((RS) << 21) | ((RS) << 16) | (-496 & 0xfffc) | 1));
 
-    // Store integer argument registers
+    // Store integer argument registers (r3-r10)
     int disp = 32;
     for (int i=3; i<=10; i++)
     {
-    	EmitStoreDoubleWord(i, 1, disp);
+    	EmitStoreDoubleWord(IntReg(i), IntReg(1), disp);
 	disp = disp + 8;
     }
 
-    // Store call-saved registers
+    // Store float argument registers(f1-f13)
+    for (int i=1; i<=13; i++)
+    {
+    	EmitStoreFloatingPointDouble(VecReg(i), IntReg(1), disp);
+	disp = disp + 8;
+    }
+
+    disp = disp + 8; //padding
+
+    // Store call-saved registers (r14-r31)
     for (int i=14; i<=31; i++)
     {
-    	EmitStoreDoubleWord(i, 1, disp);
+    	EmitStoreDoubleWord(IntReg(i), IntReg(1), disp);
 	disp = disp + 8;
     }
 
-    // Store floating-point argument registers
-    for (int i=1; i<=31; i++)
+    // Store floating-point argument registers(f14-f31)
+    for (int i=14; i<=31; i++)
     {
-    	EmitStoreFloatingPointDouble(i, 1, disp);
+    	EmitStoreFloatingPointDouble(VecReg(i), IntReg(1), disp);
 	disp = disp + 8;
     }
 }
@@ -336,7 +345,7 @@ void StubLinkerCPU::EmitLoadFloatingPointDouble(VecReg RS, IntReg RA, int DS)
 //EpiLog
 void StubLinkerCPU::EmitRestoreArguments(IntReg R0, IntReg R1)
 {
-    // Store integer argument registers
+    // Store integer argument registers (r4-r10)
     // ld r4 to r10, r3 contains return value hence not restoring it.
     int disp = 40;
     for (int i=4; i<=10; i++)
@@ -345,20 +354,29 @@ void StubLinkerCPU::EmitRestoreArguments(IntReg R0, IntReg R1)
 	disp = disp + 8;
     }
 
-    // Store call-saved registers
-    // ld r14 to r31
-    for (int i=14; i<=31; i++)
+    // store float arguments (f2-f13)
+    // lfd f2 to f31, f1 contains return value hence not restoring it
+    disp = disp + 8;
+    for (int i=2; i<=13; i++)
     {
-    	EmitLoadDoubleWord(i, disp, 1);
+    	EmitLoadFloatingPointDouble(VecReg(i), IntReg(1), disp);
 	disp = disp + 8;
     }
 
-    // Store floating-point argument registers
-    // lfd f2 to f31, f1 contains return value hence not restoring it
-    disp = disp + 8;
-    for (int i=2; i<=31; i++)
+    disp = disp + 8;  //padding
+
+    // Store callee-saved registers
+    // ld r14 to r31
+    for (int i=14; i<=31; i++)
     {
-    	EmitLoadFloatingPointDouble(i, 1, disp);
+    	EmitLoadDoubleWord(IntReg(i), disp, IntReg(1));
+	disp = disp + 8;
+    }
+
+    // Store float callee-saved registers
+    for (int i=14; i<=31; i++)
+    {
+    	EmitLoadFloatingPointDouble(VecReg(i), IntReg(1), disp);
 	disp = disp + 8;
     }
 
@@ -461,11 +479,11 @@ VOID StubLinkerCPU::EmitShuffleThunk(ShuffleEntry *pShuffleEntryArray)
     {
 	if (pEntry->srcofs == ShuffleEntry::HELPERREG)
         {
-            _ASSERTE(!"S390X:NYI");
+            _ASSERTE(!"POWERPC:NYI");
         }
         else if (pEntry->dstofs == ShuffleEntry::HELPERREG)
         {
-            _ASSERTE(!"S390X:NYI");
+            _ASSERTE(!"POWERPC:NYI");
         }
 	else if (pEntry->srcofs & ShuffleEntry::REGMASK)
 	{
@@ -513,7 +531,7 @@ VOID StubLinkerCPU::EmitShuffleThunk(ShuffleEntry *pShuffleEntryArray)
 	}
 	else
 	{
-            _ASSERTE(!"S390X:NYI");
+            _ASSERTE(!"POWERPC:NYI");
 	}
     }
 
