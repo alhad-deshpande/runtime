@@ -187,16 +187,16 @@ struct TransitionBlock
     };
     ArgumentRegisters       m_argumentRegisters;
 #elif defined(TARGET_POWERPC64)
-    TADDR                   m_backchain;	//8
-    DWORD                   m_crSaveWord;	//4
-    DWORD                   m_reserved;		//4
-    TADDR		    m_ReturnAddress;	//8
-    TADDR		    m_tocPtr;		//8 = r2
+    FloatCalleeSavedRegisters    m_floatCalleeSaveRegisters;            //8*18 = 144
+    CalleeSavedRegisters    m_calleeSavedRegisters;     // r14-r31 8*18 = 144
+    TADDR                   m_padding;
+    FloatArgumentRegisters  m_floatArgumentRegisters; //f1-f13 8*13 = 104
     ArgumentRegisters       m_argumentRegisters;// 8*8 = 64 r3 - r10
-    FloatArgumentRegisters  m_floatArgumentRegisters; //f1-f13 8*13 = 104 
-    TADDR		    m_padding;
-    CalleeSavedRegisters    m_calleeSavedRegisters; 	// r14-r31 8*18 = 144
-    FloatCalleeSavedRegisters    m_floatCalleeSaveRegisters;		//8*18 = 144
+    TADDR                   m_tocPtr;           //8 = r2
+    TADDR                   m_ReturnAddress;    //8
+    DWORD                   m_reserved;         //4
+    DWORD                   m_crSaveWord;       //4
+    TADDR                   m_backchain;        //8
 
 #else
     PORTABILITY_ASSERT("TransitionBlock");
@@ -309,7 +309,7 @@ struct TransitionBlock
         return (offset != TransitionBlock::StructInRegsOffset) && (offset < 0);
 #elif defined(TARGET_POWERPC64)
         return offset >= offsetof(TransitionBlock, m_floatArgumentRegisters)
-               && offset < offsetof(TransitionBlock, m_padding);
+               && offset < offsetof(TransitionBlock, m_argumentRegisters);
 #else
         return offset < 0;
 #endif
@@ -333,7 +333,7 @@ struct TransitionBlock
         }
     #elif defined(TARGET_POWERPC64)
         return offset >= offsetof(TransitionBlock, m_floatArgumentRegisters)
-               && offset < offsetof(TransitionBlock, m_padding);
+               && offset < offsetof(TransitionBlock, m_argumentRegisters);
     #endif
         return offset < 0;
     }

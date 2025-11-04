@@ -1354,9 +1354,9 @@ CorJitResult Interpreter::GenerateInterpreterStub(CEEInfo* comp,
             unsigned short stackArgBaseOffset = (unsigned short) ((argState.numRegArgs + argState.numFPRegArgSlots) * sizeof(void*));
 #elif defined(HOST_POWERPC64)
 	    // TODO TARGET_POWERPC64 check here offset on StubLinkerCPU::EmitProlog
-            unsigned       intRegArgBaseOffset = 32;
+            unsigned       intRegArgBaseOffset = 0;
 	    unsigned       floatRegArgBaseOffset = intRegArgBaseOffset + (8 * sizeof(void*));
-            unsigned short stackArgBaseOffset = floatRegArgBaseOffset + (13 * sizeof(void*));
+            unsigned short stackArgBaseOffset =  0;
 #else
 #error unsupported platform
 #endif
@@ -1410,7 +1410,7 @@ CorJitResult Interpreter::GenerateInterpreterStub(CEEInfo* comp,
 #elif defined(HOST_RISCV64)
                     argState.argOffsets[k] += intRegArgBaseOffset;
 #elif defined(HOST_POWERPC64)
-		    argState.argOffsets[k] += intRegArgBaseOffset;
+		    argState.argOffsets[k] += intRegArgBaseOffset + (k * sizeof(void*));
 #else
 #error unsupported platform
 #endif
@@ -1429,11 +1429,15 @@ CorJitResult Interpreter::GenerateInterpreterStub(CEEInfo* comp,
 #if defined(HOST_POWERPC64)
 		else if (argState.argIsReg[k] == ArgState::ARS_FloatReg)
 		{
+		    _ASSERTE_MSG(false, "Power floatRegArgBaseOffset");
 		    argState.argOffsets[k] += floatRegArgBaseOffset;
 		}
 #endif
                 else if (argState.argIsReg[k] == ArgState::ARS_NotReg)
                 {
+#if defined(HOST_POWERPC64)
+		    _ASSERTE_MSG(false, "Power stackArgBaseOffset");
+#endif
                     argState.argOffsets[k] += stackArgBaseOffset;
                 }
                 // So far, x86 doesn't have any FP reg args, and ARM and ARM64 puts them at offset 0, so no
@@ -1791,8 +1795,7 @@ CorJitResult Interpreter::GenerateInterpreterStub(CEEInfo* comp,
 	
 	// TODO Check registers value for ppc64le and update - vikas
 	// Second arg is pointer to the base of the ILArgs -- i.e., the incoming save are
-	sl.EmitLoadDoubleWord(IntReg(4), 0, IntReg(1));
-	sl.EmitAddImm(IntReg(4), IntReg(4), 200);
+	sl.EmitAddImm(IntReg(4), IntReg(1), 32);
 
         // First arg is the pointer to the interpMethInfo structure
         sl.EmitLoadImmediate(IntReg(3), reinterpret_cast<UINT64>(interpMethInfo));

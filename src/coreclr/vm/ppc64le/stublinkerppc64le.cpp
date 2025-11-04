@@ -263,7 +263,10 @@ void StubLinkerCPU::EmitSaveArguments(unsigned int cIntRegArgs, unsigned int cFl
     Emit32((DWORD)((31 << 26) | ((RA) << 21) | (256 << 11) | (339 << 1)));
 
     //std %r0, 16(%r1)
-    EmitStoreDoubleWord(0, 1, 16);
+    EmitStoreDoubleWord(IntReg(0), IntReg(1), 16);
+
+    //std %r2, 24(%r1)
+    EmitStoreDoubleWord(IntReg(2), IntReg(1), 24); 
 
     //#define ppc_stdu(c,S,ds,A)  ppc_emit32(c, (62 << 26) | ((S) << 21) | ((A) << 16) | ((guint32)(ds) & 0xfffc) | 1)
     //stdu %r1, -496(%r1)
@@ -381,6 +384,7 @@ void StubLinkerCPU::EmitRestoreArguments(IntReg R0, IntReg R1)
     }
 
     Emit32((DWORD)((14 << 26) | (R1 << 21) | (R1 << 16) | 496));			//addi %r1, %r1, 496
+    EmitLoadDoubleWord(IntReg(2), 24, IntReg(1));                                      //ld %r2, 24(%r1)
     EmitLoadDoubleWord(IntReg(0), 16, IntReg(1));					//ld %r0, 16(%r1)
     Emit32((DWORD)((31 << 26) | (R0 << 21) | (256 << 11) | (467 << 1)));		//mtlr %r0
     Emit32((DWORD)(0x4e800020));							//blr

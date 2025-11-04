@@ -74,7 +74,7 @@ NESTED_ENTRY ThePreStub, _TEXT, NoHandler
 	stfd %f30, 480(%r1)
 	stfd %f31, 488(%r1)
 
-	addi %r3, %r1, 32		//load pTransitionBlock structure address in r3 (parameter registers)
+	addi %r3, %r1, 496		//load pTransitionBlock structure address in r3 (parameter registers)
 	mr %r4, METHODDESC_REGISTER	//load METHODDESC_REGISTER(r11)  in r4 (parameter registers)
 
 	bl C_FUNC(PreStubWorker)	//call function PreStubWorker
