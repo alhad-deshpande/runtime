@@ -3,8 +3,8 @@ name: Trigger ppc64le build on GHA
 on:
   issue_comment:
     types: [created, edited]
-#  schedule:
-#    - cron: '* * * * *'
+  schedule:
+    - cron: '0 * * * *'
 
 permissions:
   issues: write
