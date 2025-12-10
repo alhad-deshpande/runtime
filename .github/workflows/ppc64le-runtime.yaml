@@ -34,7 +34,6 @@ jobs:
 
   ppc64le-sync:
     runs-on: ubuntu-latest
-
     steps:
       - name: configure
         run: |
