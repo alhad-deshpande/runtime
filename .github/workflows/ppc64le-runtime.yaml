@@ -36,6 +36,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: configure
+        run: |
+          git config user.name "GitHub Actions Bot"
+          git config user.email "actions@github.com"
+
       - name: Checkout fork
         uses: actions/checkout@v3
         with:
