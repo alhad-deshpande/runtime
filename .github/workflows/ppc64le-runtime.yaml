@@ -3,9 +3,9 @@ name: Trigger ppc64le build on GHA
 on:
   issue_comment:
     types: [created, edited]
-  schedule:
-    - cron: '0 * * * *'
-  workflow_dispatch:
+      #  schedule:
+      #    - cron: '0 * * * *'
+      #  workflow_dispatch:
 
 permissions:
   issues: write
