@@ -14,23 +14,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  ppc64le-trigger:
-    runs-on: ubuntu-latest
-    if: contains(github.event.comment.body, '@Dotnet-ppc64le build')
-    outputs:
-      command: ${{ steps.check_comment.outputs.command }}
-    steps:
-      - name: Parse comment
-        id: check_comment
-        uses: actions/github-script@v6
-        with:
-          script: |
-            const comment = context.payload.comment.body || "";
-            let command = "";
-            if (comment.includes("@Dotnet-ppc64le build")) {
-              command = "build";
-            }
-            core.setOutput("command", command);
 
   ppc64le-sync:
     runs-on: ubuntu-latest
@@ -61,6 +44,24 @@ jobs:
         run: git push origin main
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  ppc64le-trigger:
+    runs-on: ubuntu-latest
+    if: contains(github.event.comment.body, '@Dotnet-ppc64le build')
+    outputs:
+      command: ${{ steps.check_comment.outputs.command }}
+    steps:
+      - name: Parse comment
+        id: check_comment
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const comment = context.payload.comment.body || "";
+            let command = "";
+            if (comment.includes("@Dotnet-ppc64le build")) {
+              command = "build";
+            }
+            core.setOutput("command", command);
 
   ppc64le-runtime-build-test:
     needs: ppc64le-trigger
