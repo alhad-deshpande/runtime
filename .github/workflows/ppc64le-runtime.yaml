@@ -44,10 +44,10 @@ jobs:
           #git checkout main
           #git merge upstream/main
 
-      - name: Rebase
-        run: |
-          git checkout main
-          git pull --rebase origin main 
+      # - name: Rebase
+      #   run: |
+      #     git checkout main
+      #     git pull --rebase origin main 
 
       - name: Push changes to fork
         run: git push origin main
