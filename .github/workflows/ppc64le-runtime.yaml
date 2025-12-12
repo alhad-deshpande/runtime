@@ -25,6 +25,11 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
+      - name: Set Git identity
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
       - name: Add upstream repo
         run: |
           git remote add upstream https://github.com/dotnet/runtime.git
