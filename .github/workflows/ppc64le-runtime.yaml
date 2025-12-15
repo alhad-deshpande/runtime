@@ -46,9 +46,9 @@ jobs:
       
       - name: Push changes
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PAT: ${{ secrets.PAT }}
         run: |
-          git push https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git main
+          git push https://x-access-token:${PAT}@github.com/${{ github.repository }} main
 
 
   ppc64le-trigger:
