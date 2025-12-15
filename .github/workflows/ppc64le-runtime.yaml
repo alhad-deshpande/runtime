@@ -29,6 +29,7 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config core.editor true
 
       - name: Add upstream repo
         run: |
@@ -38,8 +39,16 @@ jobs:
       - name: Merge upstream and push
         run: |
           git checkout main
-          git merge upstream/main
-          git push https://${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }} main
+          git merge upstream/main --no-edit
+          # git merge upstream/main
+          # git push https://${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }} main
+      
+      - name: Push changes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git push https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git main
+
 
   ppc64le-trigger:
     runs-on: ubuntu-latest
