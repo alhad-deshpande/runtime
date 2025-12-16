@@ -41,15 +41,15 @@ jobs:
         run: |
           git checkout main
           git merge upstream/main --no-edit
+          gh repo sync alhad-deshpande/runtime --source dotnet/runtime --branch main
           # git merge upstream/main
           # git push https://${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }} main
       
-      - name: Push changes
-        env:
-          PAT: ${{ secrets.PAT }}
-        run: |
-          git push https://x-access-token:${PAT}@github.com/${{ github.repository }} main
-
+      # - name: Push changes
+      #   env:
+      #     PAT: ${{ secrets.PAT }}
+      #   run: |
+      #     git push https://x-access-token:${PAT}@github.com/${{ github.repository }} main
 
   ppc64le-trigger:
     runs-on: ubuntu-latest
