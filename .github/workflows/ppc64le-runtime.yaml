@@ -17,16 +17,16 @@ concurrency:
 
 jobs:
 
-  sync:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: tgymnich/fork-sync@v2.0
-        with:
-          # token: ${{ secrets.PERSONAL_TOKEN }}
-          owner: alhad-deshpande
-          repo: runtime
-          head: master
-          base: master
+  # sync:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: tgymnich/fork-sync@v2.0
+  #       with:
+  #         # token: ${{ secrets.PERSONAL_TOKEN }}
+  #         owner: alhad-deshpande
+  #         repo: runtime
+  #         head: master
+  #         base: master
 
   # ppc64le-sync:
   #   runs-on: ubuntu-latest
