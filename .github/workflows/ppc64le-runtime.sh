@@ -88,8 +88,8 @@
     COMMIT=$(git rev-parse HEAD)
     echo "$REPO is at $COMMIT"
     # git apply $PATCH_PATH
-    sed -i 's/"version": "10\.0\.100"/"version": "10.0.100-rc.2.25502.107"/' global.json
-    sed -i 's/"dotnet": "10\.0\.100"/"dotnet": "10.0.100-rc.2.25502.107"/' global.json
+    sed -i '/"sdk"[[:space:]]*:/, /}/ s/"version":[[:space:]]*"[^"]*"/"version": "10.0.100-rc.2.25502.107"/' global.json
+    sed -i '/"tools"[[:space:]]*:/, /}/ s/"dotnet":[[:space:]]*"[^"]*"/"dotnet": "10.0.100-rc.2.25502.107"/' global.json
     GLOBAL_JSON_PATH="global.json"
     SDK_VERSION=$(jq -r '.sdk.version' "$GLOBAL_JSON_PATH")
 
