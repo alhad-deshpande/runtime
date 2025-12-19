@@ -114,6 +114,7 @@
     <ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Runtime\\tests\\System.IO.Tests\\System.IO.Tests.csproj" />\
     <ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Net.WebSockets.Client\\tests\\System.Net.WebSockets.Client.Tests.csproj" />\
     <ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Threading.ThreadPool\\tests\\System.Threading.ThreadPool.Tests.csproj" />\
+    <ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Threading\\tests\\System.Threading.Tests.csproj" />\
     <ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Net.Ping\\tests\\FunctionalTests\\System.Net.Ping.Functional.Tests.csproj" />
     }' src/libraries/tests.proj
 
