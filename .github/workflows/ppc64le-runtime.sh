@@ -3,7 +3,7 @@
   # Runtime build script for ubuntu:22.04, only for CI job
 
   set -uxo pipefail
-  apt update && apt upgrade -y && apt-get install apt-utils sudo libterm-readline-perl-perl software-properties-common -y
+  apt update && apt upgrade -y && apt-get install apt-utils sudo software-properties-common -y
 
   REPO=https://github.com/alhad-deshpande/runtime.git
   REF=main
