@@ -95,7 +95,7 @@ jobs:
           script: |
             const prUrl = context.payload.issue.pull_request.url;
             const pr = await github.request(prUrl);
-            const sha = pr.data.head.sha;
+            const sha = pr.data.base.sha;
             core.setOutput("sha", sha);
       - name: Checkout code
         uses: actions/checkout@v4
