@@ -3,8 +3,8 @@ name: Trigger ppc64le build on GHA
 on:
   issue_comment:
     types: [created, edited]
-  # schedule:
-  #   - cron: '0 * * * *'
+  schedule:
+    - cron: '0 6 * * 1'
   workflow_dispatch:
 
 permissions:
@@ -16,6 +16,37 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  ppc64le-sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          fetch-depth: 0
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-app[bot]"
+          git config user.email "github-app[bot]@users.noreply.github.com"
+      - name: Add upstream remote
+        run: |
+          git remote add upstream https://github.com/dotnet/runtime.git || true
+          git fetch upstream
+      - name: Sync main safely
+        run: |
+          git checkout main
+          git pull origin main
+          git merge upstream/main --no-edit || true
+          git push origin main
 
   # sync:
   #   runs-on: ubuntu-latest
@@ -64,26 +95,26 @@ jobs:
       #   run: |
       #     git push https://x-access-token:${PAT}@github.com/${{ github.repository }} main
 
-  ppc64le-trigger:
-    runs-on: ubuntu-latest
-    if: contains(github.event.comment.body, '@Dotnet-ppc64le build')
-    outputs:
-      command: ${{ steps.check_comment.outputs.command }}
-    steps:
-      - name: Parse comment
-        id: check_comment
-        uses: actions/github-script@v6
-        with:
-          script: |
-            const comment = context.payload.comment.body || "";
-            let command = "";
-            if (comment.includes("@Dotnet-ppc64le build")) {
-              command = "build";
-            }
-            core.setOutput("command", command);
+  # ppc64le-trigger:
+  #   runs-on: ubuntu-latest
+  #   if: contains(github.event.comment.body, '@Dotnet-ppc64le build')
+  #   outputs:
+  #     command: ${{ steps.check_comment.outputs.command }}
+  #   steps:
+  #     - name: Parse comment
+  #       id: check_comment
+  #       uses: actions/github-script@v6
+  #       with:
+  #         script: |
+  #           const comment = context.payload.comment.body || "";
+  #           let command = "";
+  #           if (comment.includes("@Dotnet-ppc64le build")) {
+  #             command = "build";
+  #           }
+  #           core.setOutput("command", command);
 
   ppc64le-runtime-build-test:
-    needs: ppc64le-trigger
+    needs: ppc64le-sync
     if: needs.ppc64le-trigger.outputs.command == 'build'
     runs-on: ubuntu-24.04-ppc64le-p10
     steps:
@@ -125,7 +156,7 @@ jobs:
           path: ./Script-details
 
   ppc64le-result-status:
-    needs: [ppc64le-trigger, ppc64le-runtime-build-test]
+    needs: [ppc64le-sync, ppc64le-runtime-build-test]
     if: >
       always() &&
       needs.ppc64le-trigger.outputs.command == 'build'
