@@ -22,7 +22,7 @@ jobs:
     steps:
       - name: Capture workflow start time
         run: |
-          echo "WORKFLOW_START_TIME=$(TZ=Asia/Kolkata date -u +"%H:%M:%S")" >> $GITHUB_ENV
+          echo "WORKFLOW_START_TIME=$(TZ=Asia/Kolkata date +"%H:%M:%S")" >> $GITHUB_ENV
 
       - name: Generate GitHub App token
         id: app-token
@@ -201,7 +201,7 @@ jobs:
       
       - name: Set workflow status summary
         run: |
-          TRIGGER_DATE=$(TZ=Asia/Kolkata date -u +"%Y-%m-%d")
+          TRIGGER_DATE=$(TZ=Asia/Kolkata date +"%Y-%m-%d")
           START_TIME="${{ needs.ppc64le-sync.outputs.workflow_start_time }}"
           END_TIME=$(TZ=Asia/Kolkata date -u +"%H:%M:%S")
           BUILD_STATUS="${{ needs.ppc64le-runtime-build-test.result }}"
