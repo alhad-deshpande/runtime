@@ -20,6 +20,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Capture workflow start time
+        run: |
+          echo "WORKFLOW_START_TIME=$(TZ=Asia/Kolkata date -u +"%H:%M:%S")" >> $GITHUB_ENV
+
       - name: Generate GitHub App token
         id: app-token
         uses: actions/create-github-app-token@v1
@@ -197,9 +201,9 @@ jobs:
       
       - name: Set workflow status summary
         run: |
-          TRIGGER_DATE=$(date -u +"%Y-%m-%d")
-          START_TIME="${{ needs.ppc64le-runtime-build-test.outputs.workflow_start_time }}"
-          END_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          TRIGGER_DATE=$(TZ=Asia/Kolkata date -u +"%Y-%m-%d")
+          START_TIME="${{ needs.ppc64le-sync.outputs.workflow_start_time }}"
+          END_TIME=$(TZ=Asia/Kolkata date -u +"%H:%M:%S")
           BUILD_STATUS="${{ needs.ppc64le-runtime-build-test.result }}"
           TEST_STATUS="${{ needs.ppc64le-runtime-build-test.result }}"
           cat <<EOF >> workflow_status
@@ -208,10 +212,10 @@ jobs:
           End Time: ${END_TIME}
           Build Status: ${BUILD_STATUS}
           Test Status: ${TEST_STATUS}
+          EOF
           cat Script-details >> workflow_status
           echo "------------------------------------------------------------------" >> workflow_status
-          # EOF
-          cat workflow_status
+          # cat workflow_status
       
       - name: Generate GitHub App token
         id: app-token
@@ -222,9 +226,6 @@ jobs:
   
       - name: Commit workflow_status to repo
         run: |
-          pwd
-          ls -la
-          ls -la ../
           git config user.name "github-app[bot]"
           git config user.email "github-app[bot]@users.noreply.github.com"
           git add workflow_status
