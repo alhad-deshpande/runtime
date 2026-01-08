@@ -18,9 +18,12 @@ concurrency:
 jobs:
   ppc64le-sync:
     runs-on: ubuntu-latest
+    outputs:
+      workflow_start_time: ${{ steps.capture-start.outputs.start_time }}
 
     steps:
       - name: Capture workflow start time
+        id: capture-start
         run: |
           echo "WORKFLOW_START_TIME=$(TZ=Asia/Kolkata date +"%H:%M:%S")" >> $GITHUB_ENV
 
@@ -203,7 +206,7 @@ jobs:
         run: |
           TRIGGER_DATE=$(TZ=Asia/Kolkata date +"%Y-%m-%d")
           START_TIME="${{ needs.ppc64le-sync.outputs.workflow_start_time }}"
-          END_TIME=$(TZ=Asia/Kolkata date -u +"%H:%M:%S")
+          END_TIME=$(TZ=Asia/Kolkata date +"%H:%M:%S")
           BUILD_STATUS="${{ needs.ppc64le-runtime-build-test.result }}"
           TEST_STATUS="${{ needs.ppc64le-runtime-build-test.result }}"
           cat <<EOF >> workflow_status
