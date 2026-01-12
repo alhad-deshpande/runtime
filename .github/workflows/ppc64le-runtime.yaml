@@ -177,6 +177,7 @@ jobs:
     #   needs.ppc64le-trigger.outputs.command == 'build'
     runs-on: ubuntu-latest
     steps:
+    
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
@@ -185,6 +186,13 @@ jobs:
       - name: Set failure flag
         id: check-status
         run: echo "status=${{ needs.ppc64le-runtime-build-test.result }}" >> $GITHUB_OUTPUT
+
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
     
       - name: Download Script-details artifact
         uses: actions/download-artifact@v4
@@ -202,36 +210,158 @@ jobs:
             echo "found=false" >> $GITHUB_OUTPUT
           fi
       
-      - name: Set workflow status summary
-        run: |
-          TRIGGER_DATE=$(TZ=Asia/Kolkata date +"%Y-%m-%d")
-          START_TIME="${{ needs.ppc64le-sync.outputs.workflow_start_time }}"
-          END_TIME=$(TZ=Asia/Kolkata date +"%H:%M:%S")
-          BUILD_STATUS="${{ needs.ppc64le-runtime-build-test.result }}"
-          TEST_STATUS="${{ needs.ppc64le-runtime-build-test.result }}"
-          cat <<EOF >> workflow_status
-          Trigger Date: ${TRIGGER_DATE}
-          Start Time: ${START_TIME}
-          End Time: ${END_TIME}
-          Build Status: ${BUILD_STATUS}
-          Test Status: ${TEST_STATUS}
-          EOF
-          cat Script-details >> workflow_status
-          echo "------------------------------------------------------------------" >> workflow_status
-          # cat workflow_status
+      # - name: Set workflow status summary
+      #   run: |
+      #     TRIGGER_DATE=$(TZ=Asia/Kolkata date +"%Y-%m-%d")
+      #     START_TIME="${{ needs.ppc64le-sync.outputs.workflow_start_time }}"
+      #     END_TIME=$(TZ=Asia/Kolkata date +"%H:%M:%S")
+      #     BUILD_STATUS="${{ needs.ppc64le-runtime-build-test.result }}"
+      #     TEST_STATUS="${{ needs.ppc64le-runtime-build-test.result }}"
+      #     cat <<EOF >> workflow_status
+      #     Trigger Date: ${TRIGGER_DATE}
+      #     Start Time: ${START_TIME}
+      #     End Time: ${END_TIME}
+      #     Build Status: ${BUILD_STATUS}
+      #     Test Status: ${TEST_STATUS}
+      #     EOF
+      #     cat Script-details >> workflow_status
+      #     echo "------------------------------------------------------------------" >> workflow_status
+      #     # cat workflow_status
       
-      - name: Generate GitHub App token
-        id: app-token
-        uses: actions/create-github-app-token@v1
-        with:
-          app-id: ${{ secrets.APP_ID }}
-          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+      # - name: Generate GitHub App token
+      #   id: app-token
+      #   uses: actions/create-github-app-token@v1
+      #   with:
+      #     app-id: ${{ secrets.APP_ID }}
+      #     private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Append entry to HTML report
+        run: |
+          set -e
+          TRIGGER_DATE=$(TZ=Asia/Kolkata date +"%d/%m/%Y")
+          START_TIME="${{ needs.ppc64le-sync.outputs.workflow_start_time }}"
+          END_TIME=$(TZ=Asia/Kolkata date +"%I:%M %p")
+          RESULT="${{ needs.ppc64le-runtime-build-test.result }}"
+          SCRIPT_FILE="./Script-details"
+          # -----------------------------
+          # Parse Script-details (Example B)
+          # -----------------------------
+          if [[ -f "$SCRIPT_FILE" ]]; then
+          TOTAL_TESTS=$(grep -oE 'Total:[[:space:]]*[0-9]+' "$SCRIPT_FILE" | grep -oE '[0-9]+' || true)
+          PASSED_TESTS=$(grep -oE 'Passed:[[:space:]]*[0-9]+' "$SCRIPT_FILE" | grep -oE '[0-9]+' || true)
+          FAILED_TESTS=$(grep -oE 'Failed:[[:space:]]*[0-9]+' "$SCRIPT_FILE" | grep -oE '[0-9]+' || true)
+          SKIPPED_TESTS=$(grep -oE 'Skipped:[[:space:]]*[0-9]+' "$SCRIPT_FILE" | grep -oE '[0-9]+' || true)
+          else
+            echo "Script-details not found"
+            TOTAL_TESTS=0
+            PASSED_TESTS=0
+            FAILED_TESTS=0
+            SKIPPED_TESTS=0
+          fi
+          TOTAL_TESTS=${TOTAL_TESTS:-0}
+          PASSED_TESTS=${PASSED_TESTS:-0}
+          FAILED_TESTS=${FAILED_TESTS:-0}
+          SKIPPED_TESTS=${SKIPPED_TESTS:-0}
+          if [[ "$TOTAL_TESTS" -gt 0 ]]; then
+            PASS_PERCENT=$(awk "BEGIN { printf \"%.2f\", ($PASSED_TESTS/$TOTAL_TESTS)*100 }")
+          else
+            PASS_PERCENT="0.00"
+          fi
+          ROW_CLASS="success"
+          STATUS_TEXT="Runtime build and tests successful"
+          if [[ "$RESULT" != "success" || "$FAILED_TESTS" -gt 0 ]]; then
+            ROW_CLASS="failure"
+            STATUS_TEXT="Runtime build or tests failed"
+          fi
+          # -----------------------------
+          # Create row fragment
+          # -----------------------------
+          cat > row.html <<'ROW'
+          <tr class="ROW_CLASS">
+            <td>TRIGGER_DATE</td>
+            <td>START_TIME</td>
+            <td>END_TIME</td>
+            <td class="status">
+              STATUS_TEXT
+              <hr>
+              <div class="status-grid">
+                <div class="label">Total Test Cases :</div><div>TOTAL_TESTS</div>
+                <div class="label">Test Passed :</div><div>PASSED_TESTS (PASS_PERCENT%)</div>
+                <div class="label">Test Failed :</div><div>FAILED_TESTS</div>
+                <div class="label">Test Skipped :</div><div>SKIPPED_TESTS</div>
+              </div>
+            </td>
+          </tr>
+          ROW
+          sed -i \
+            -e "s|ROW_CLASS|$ROW_CLASS|g" \
+            -e "s|TRIGGER_DATE|$TRIGGER_DATE|g" \
+            -e "s|START_TIME|$START_TIME|g" \
+            -e "s|END_TIME|$END_TIME|g" \
+            -e "s|STATUS_TEXT|$STATUS_TEXT|g" \
+            -e "s|TOTAL_TESTS|$TOTAL_TESTS|g" \
+            -e "s|PASSED_TESTS|$PASSED_TESTS|g" \
+            -e "s|FAILED_TESTS|$FAILED_TESTS|g" \
+            -e "s|SKIPPED_TESTS|$SKIPPED_TESTS|g" \
+            -e "s|PASS_PERCENT|$PASS_PERCENT|g" \
+            row.html
+          # -----------------------------
+          # Create report.html if missing
+          # -----------------------------
+          if [[ ! -f report.html ]]; then
+            cat > report.html <<'HTML'
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+            <meta charset="UTF-8">
+            <title>Build Status Report</title>
+            <style>
+              body { font-family: Arial, sans-serif; padding: 20px; }
+              table { width: 100%; border-collapse: collapse; }
+              th, td { border: 1px solid #333; padding: 10px; vertical-align: top; }
+              th { background-color: #f2f2f2; }
+              .success { background-color: #e6f9e6; color: #1b5e20; }
+              .failure { background-color: #fdecea; color: #b71c1c; }
+              .status hr { margin: 10px 0; }
+              .status-grid {
+                display: grid;
+                grid-template-columns: auto 1fr auto 1fr;
+                gap: 6px 20px;
+              }
+              .label { font-weight: bold; }
+            </style>
+          </head>
+          <body>
+          
+          <h2>Report</h2>
+          
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Start Time</th>
+                <th>End Time</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+            </tbody>
+          </table>
+          
+          </body>
+          </html>
+          HTML
+          fi
+          # -----------------------------
+          # Append row
+          # -----------------------------
+          sed -i "/<\/tbody>/r row.html" report.html
   
       - name: Commit workflow_status to repo
         run: |
           git config user.name "github-app[bot]"
           git config user.email "github-app[bot]@users.noreply.github.com"
-          git add workflow_status
+          git add .
           git commit -m "Add ppc64le workflow status summary" || echo "No changes to commit"
           git pull --rebase origin main
           git push
