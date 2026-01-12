@@ -25,8 +25,8 @@ jobs:
       - name: Capture workflow start time
         id: capture-start
         run: |
-          echo "WORKFLOW_START_TIME=$(TZ=Asia/Kolkata date +"%H:%M:%S")" >> $GITHUB_ENV
-
+          echo "start_time=$(TZ=Asia/Kolkata date +"%I:%M %p")" >> $GITHUB_OUTPUT
+          
       - name: Generate GitHub App token
         id: app-token
         uses: actions/create-github-app-token@v1
