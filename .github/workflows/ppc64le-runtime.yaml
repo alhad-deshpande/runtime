@@ -172,6 +172,7 @@ jobs:
 
   ppc64le-result-status:
     needs: [ppc64le-sync, ppc64le-runtime-build-test]
+    if: always()
     # if: >
     #   always() &&
     #   needs.ppc64le-trigger.outputs.command == 'build'
@@ -243,14 +244,14 @@ jobs:
           START_TIME="${{ needs.ppc64le-sync.outputs.workflow_start_time }}"
           END_TIME=$(TZ=Asia/Kolkata date +"%I:%M %p")
           RESULT="${{ needs.ppc64le-runtime-build-test.result }}"
-
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           SCRIPT_FILE="./Script-details"
 
           if [[ -f "$SCRIPT_FILE" ]]; then
-          TOTAL_TESTS=$(grep -oE 'Total Test Cases[[:space:]]*:[[:space:]]*[0-9]+' "$SCRIPT_FILE" | grep -oE '[0-9]+' || true)
-          PASSED_TESTS=$(grep -oE 'Test Passed[[:space:]]*:[[:space:]]*[0-9]+' "$SCRIPT_FILE" | grep -oE '[0-9]+' || true)
-          FAILED_TESTS=$(grep -oE 'Test Failed[[:space:]]*:[[:space:]]*[0-9]+' "$SCRIPT_FILE" | grep -oE '[0-9]+' || true)
-          SKIPPED_TESTS=$(grep -oE 'Test Skipped[[:space:]]*:[[:space:]]*[0-9]+' "$SCRIPT_FILE" | grep -oE '[0-9]+' || true)
+          TOTAL_TESTS=$(grep -oE 'Total:[[:space:]]*[0-9]+' "$SCRIPT_FILE" | grep -oE '[0-9]+' || true)
+          PASSED_TESTS=$(grep -oE 'Passed:[[:space:]]*[0-9]+' "$SCRIPT_FILE" | grep -oE '[0-9]+' || true)
+          FAILED_TESTS=$(grep -oE 'Failed:[[:space:]]*[0-9]+' "$SCRIPT_FILE" | grep -oE '[0-9]+' || true)
+          SKIPPED_TESTS=$(grep -oE 'Skipped:[[:space:]]*[0-9]+' "$SCRIPT_FILE" | grep -oE '[0-9]+' || true)
           else
             echo "Script-details not found"
             TOTAL_TESTS=0
@@ -282,43 +283,56 @@ jobs:
           ROW_CLASS="success"
           STATUS_TEXT="Runtime build and tests successful"
 
-          if [[ "$RESULT" != "success" || "$FAILED_TESTS" -gt 0 ]]; then
+          if [[ "$RESULT" != "success" ]]; then
             ROW_CLASS="failure"
-            STATUS_TEXT="Runtime build or tests failed"
+            STATUS_TEXT="Runtime build or tests failed<hr><a href=\"$RUN_URL\" target=\"_blank\">$RUN_URL</a>"
+          
+            TOTAL_TESTS=""
+            PASSED_TESTS=""
+            FAILED_TESTS=""
+            SKIPPED_TESTS=""
+            PASS_PERCENT=""
+            FAIL_PERCENT=""
+            SKIPPED_PERCENT=""
           fi
-
-          cat > row.html <<'ROW'
+          if [[ "$ROW_CLASS" == "failure" ]]; then
+            TEST_DETAILS=""
+          else
+            TEST_DETAILS='<hr>
+            <div class="status-grid">
+              <div class="label">Total Test Cases :</div><div>'"$TOTAL_TESTS"'</div>
+              <div class="label">Test Passed :</div><div>'"$PASSED_TESTS $PASS_PERCENT"'</div>
+              <div class="label">Test Failed :</div><div>'"$FAILED_TESTS $FAIL_PERCENT"'</div>
+              <div class="label">Test Skipped :</div><div>'"$SKIPPED_TESTS $SKIPPED_PERCENT"'</div>
+            </div>'
+          fi
+          
+          cat > row.html <<ROW
           <tr class="ROW_CLASS">
-            <td>TRIGGER_DATE</td>
-            <td>START_TIME</td>
-            <td>END_TIME</td>
+          <tr class="$ROW_CLASS">
+            <td>$TRIGGER_DATE</td>
+            <td>$START_TIME</td>
+            <td>$END_TIME</td>
             <td class="status">
-              STATUS_TEXT
-              <hr>
-              <div class="status-grid">
-                <div class="label">Total Test Cases :</div><div>TOTAL_TESTS</div>
-                <div class="label">Test Passed :</div><div>PASSED_TESTS PASS_PERCENT</div>
-                <div class="label">Test Failed :</div><div>FAILED_TESTS FAIL_PERCENT</div>
-                <div class="label">Test Skipped :</div><div>SKIPPED_TESTS SKIPPED_PERCENT</div>
-              </div>
+              $STATUS_TEXT
+              $TEST_DETAILS
             </td>
           </tr>
           ROW
-
-          sed -i \
-            -e "s|ROW_CLASS|$ROW_CLASS|g" \
-            -e "s|TRIGGER_DATE|$TRIGGER_DATE|g" \
-            -e "s|START_TIME|$START_TIME|g" \
-            -e "s|END_TIME|$END_TIME|g" \
-            -e "s|STATUS_TEXT|$STATUS_TEXT|g" \
-            -e "s|TOTAL_TESTS|$TOTAL_TESTS|g" \
-            -e "s|PASSED_TESTS|$PASSED_TESTS|g" \
-            -e "s|FAILED_TESTS|$FAILED_TESTS|g" \
-            -e "s|SKIPPED_TESTS|$SKIPPED_TESTS|g" \
-            -e "s|PASS_PERCENT|$PASS_PERCENT|g" \
-            -e "s|FAIL_PERCENT|$FAIL_PERCENT|g" \
-            -e "s|SKIPPED_PERCENT|$SKIPPED_PERCENT|g" \
-            row.html
+          # sed -i \
+          #   -e "s|ROW_CLASS|$ROW_CLASS|g" \
+          #   -e "s|TRIGGER_DATE|$TRIGGER_DATE|g" \
+          #   -e "s|START_TIME|$START_TIME|g" \
+          #   -e "s|END_TIME|$END_TIME|g" \
+          #   -e "s|STATUS_TEXT|$STATUS_TEXT|g" \
+          #   -e "s|TOTAL_TESTS|$TOTAL_TESTS|g" \
+          #   -e "s|PASSED_TESTS|$PASSED_TESTS|g" \
+          #   -e "s|FAILED_TESTS|$FAILED_TESTS|g" \
+          #   -e "s|SKIPPED_TESTS|$SKIPPED_TESTS|g" \
+          #   -e "s|PASS_PERCENT|$PASS_PERCENT|g" \
+          #   -e "s|FAIL_PERCENT|$FAIL_PERCENT|g" \
+          #   -e "s|SKIPPED_PERCENT|$SKIPPED_PERCENT|g" \
+          #   row.html
 
           if [[ ! -s report.html ]] || ! grep -q "</tbody>" report.html; then
             printf '%s\n' \
