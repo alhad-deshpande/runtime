@@ -104,20 +104,20 @@
     popd
     cd "$(basename "$REPO" .git)"
 
-    # sed -i '/<ItemGroup Condition="'"'"'$(TargetOS)'"'"' == '"'"'linux'"'"' and '"'"'$(TargetArchitecture)'"'"' == '"'"'ppc64le'"'"'">/{
-    # n
-    # a\
-    # <ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Diagnostics.Process\\tests\\System.Diagnostics.Process.Tests.csproj" />\
-    # <ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Net.NetworkInformation\\tests\\FunctionalTests\\System.Net.NetworkInformation.Functional.Tests.csproj" />\
-    # <ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Formats.Tar\\tests\\System.Formats.Tar.Tests.csproj" />\
-    # <ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Net.Sockets\\tests\\FunctionalTests\\System.Net.Sockets.Tests.csproj" />\
-    # <ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Runtime\\tests\\System.IO.Tests\\System.IO.Tests.csproj" />\
-    # <ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Net.WebSockets.Client\\tests\\System.Net.WebSockets.Client.Tests.csproj" />\
-    # <ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Threading.ThreadPool\\tests\\System.Threading.ThreadPool.Tests.csproj" />\
-    # <ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Threading\\tests\\System.Threading.Tests.csproj" />\
-    # <ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Net.Ping\\tests\\FunctionalTests\\System.Net.Ping.Functional.Tests.csproj" />\
-    # <ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Net.Requests\\tests\\System.Net.Requests.Tests.csproj" />
-    # }' src/libraries/tests.proj
+    sed -i '/<ItemGroup Condition="'"'"'$(TargetOS)'"'"' == '"'"'linux'"'"' and '"'"'$(TargetArchitecture)'"'"' == '"'"'ppc64le'"'"'">/{
+    n
+    a\
+    <ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Diagnostics.Process\\tests\\System.Diagnostics.Process.Tests.csproj" />\
+    <ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Net.NetworkInformation\\tests\\FunctionalTests\\System.Net.NetworkInformation.Functional.Tests.csproj" />\
+    <ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Formats.Tar\\tests\\System.Formats.Tar.Tests.csproj" />\
+    <ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Net.Sockets\\tests\\FunctionalTests\\System.Net.Sockets.Tests.csproj" />\
+    <ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Runtime\\tests\\System.IO.Tests\\System.IO.Tests.csproj" />\
+    <ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Net.WebSockets.Client\\tests\\System.Net.WebSockets.Client.Tests.csproj" />\
+    <ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Threading.ThreadPool\\tests\\System.Threading.ThreadPool.Tests.csproj" />\
+    <ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Threading\\tests\\System.Threading.Tests.csproj" />\
+    <ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Net.Ping\\tests\\FunctionalTests\\System.Net.Ping.Functional.Tests.csproj" />\
+    <ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Net.Requests\\tests\\System.Net.Requests.Tests.csproj" />
+    }' src/libraries/tests.proj
 
 
     # sed -i '157i<ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Diagnostics.Process\\tests\\System.Diagnostics.Process.Tests.csproj" />' src/libraries/tests.proj
