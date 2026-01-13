@@ -1,4 +1,3 @@
-
   #!/bin/bash -e
 
   # Runtime build script for ubuntu:22.04, only for CI job
