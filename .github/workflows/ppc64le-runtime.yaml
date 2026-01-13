@@ -247,10 +247,10 @@ jobs:
           SCRIPT_FILE="./Script-details"
 
           if [[ -f "$SCRIPT_FILE" ]]; then
-          TOTAL_TESTS=$(grep -oE 'Total:[[:space:]]*[0-9]+' "$SCRIPT_FILE" | grep -oE '[0-9]+' || true)
-          PASSED_TESTS=$(grep -oE 'Passed:[[:space:]]*[0-9]+' "$SCRIPT_FILE" | grep -oE '[0-9]+' || true)
-          FAILED_TESTS=$(grep -oE 'Failed:[[:space:]]*[0-9]+' "$SCRIPT_FILE" | grep -oE '[0-9]+' || true)
-          SKIPPED_TESTS=$(grep -oE 'Skipped:[[:space:]]*[0-9]+' "$SCRIPT_FILE" | grep -oE '[0-9]+' || true)
+          TOTAL_TESTS=$(grep -oE 'Total Test Cases[[:space:]]*:[[:space:]]*[0-9]+' "$SCRIPT_FILE" | grep -oE '[0-9]+' || true)
+          PASSED_TESTS=$(grep -oE 'Test Passed[[:space:]]*:[[:space:]]*[0-9]+' "$SCRIPT_FILE" | grep -oE '[0-9]+' || true)
+          FAILED_TESTS=$(grep -oE 'Test Failed[[:space:]]*:[[:space:]]*[0-9]+' "$SCRIPT_FILE" | grep -oE '[0-9]+' || true)
+          SKIPPED_TESTS=$(grep -oE 'Test Skipped[[:space:]]*:[[:space:]]*[0-9]+' "$SCRIPT_FILE" | grep -oE '[0-9]+' || true)
           else
             echo "Script-details not found"
             TOTAL_TESTS=0
