@@ -75,10 +75,21 @@
 
   apt-get update && DEBIAN_FRONTEND="noninteractive" TZ="Asia/Kolkata" apt-get install -y tzdata
 
-  apt-get -y install bc automake clang cmake findutils git \
+  apt-get -y install bc automake clang curl findutils git \
                   hostname libtool libkrb5-dev \
                   llvm make python3  liblttng-ust-dev \
-                  tar wget jq lld build-essential zlib1g-dev libssl-dev libbrotli-dev
+                  tar wget jq lld build-essential zlib1g-dev libssl-dev libbrotli-dev curl ca-certificates
+
+# Install cmake:3.26.6
+  cd /tmp
+  wget https://github.com/Kitware/CMake/releases/download/v3.26.6/cmake-3.26.6.tar.gz
+  tar -xf cmake-3.26.6.tar.gz
+  cd cmake-3.26.6
+  ./bootstrap --prefix=/usr/local
+  make -j$(nproc)
+  make install
+  export PATH=/usr/local/bin:$PATH
+  cmake --version && which cmake
 
   runtime-build()
   {
