@@ -90,6 +90,7 @@
   make install
   export PATH=/usr/local/bin:$PATH
   cmake --version && which cmake
+  cd ../../
 
   runtime-build()
   {
