@@ -76,14 +76,14 @@
   apt-get update && DEBIAN_FRONTEND="noninteractive" TZ="Asia/Kolkata" apt-get install -y tzdata
 
   apt-get -y install bc automake clang curl findutils git \
-                  hostname libtool libkrb5-dev \
+                  hostname libtool libkrb5-dev ninja-build \
                   llvm make python3  liblttng-ust-dev \
                   tar wget jq lld build-essential zlib1g-dev libssl-dev libbrotli-dev curl ca-certificates
 
 # Install cmake:3.26.6
   cd /tmp
-  wget https://github.com/Kitware/CMake/releases/download/v3.26.6/cmake-3.26.6.tar.gz
-  tar -xf cmake-3.26.6.tar.gz
+  wget https://github.com/Kitware/CMake/releases/download/v3.26.6/cmake-3.26.6.tar.gz > /dev/null
+  tar -xf cmake-3.26.6.tar.gz > /dev/null
   cd cmake-3.26.6
   ./bootstrap --prefix=/usr/local
   make -j$(nproc)
@@ -110,7 +110,7 @@
     pushd dotnet-sdk-$(uname -m)
     wget https://github.com/IBM/dotnet-s390x/releases/download/v$SDK_VERSION/dotnet-sdk-$SDK_VERSION-linux-ppc64le.tar.gz
     mkdir .dotnet
-    tar xvf dotnet-sdk-*linux-$(uname -m).tar.gz -C .dotnet
+    tar xvf dotnet-sdk-*linux-$(uname -m).tar.gz -C .dotnet > /dev/null
     export DOTNET_ROOT=$(pwd)/.dotnet
     export PATH=$DOTNET_ROOT:$PATH
     popd
