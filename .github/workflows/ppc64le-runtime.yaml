@@ -334,7 +334,7 @@ jobs:
           #   -e "s|SKIPPED_PERCENT|$SKIPPED_PERCENT|g" \
           #   row.html
 
-          if [[ ! -s report.html ]] || ! grep -q "</tbody>" report.html; then
+          if [[ ! -s index.html ]] || ! grep -q "</tbody>" index.html; then
             printf '%s\n' \
           '<!DOCTYPE html>' \
           '<html lang="en">' \
@@ -375,13 +375,14 @@ jobs:
           '</table>' \
           '' \
           '</body>' \
-          '</html>' > report.html
+          '</html>' > index.html
           fi
           
-          sed -i "/<\/tbody>/r row.html" report.html
+          sed -i "/<\/tbody>/r row.html" index.html
 
       - name: Commit workflow_status to repo
         run: |
+          rm -rf row.html workflow_status
           git config user.name "github-app[bot]"
           git config user.email "github-app[bot]@users.noreply.github.com"
           git add .
