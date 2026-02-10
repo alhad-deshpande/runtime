@@ -382,7 +382,7 @@ jobs:
 
       - name: Commit workflow_status to repo
         run: |
-          rm -rf row.html workflow_status
+          rm -rf row.html
           git config user.name "github-app[bot]"
           git config user.email "github-app[bot]@users.noreply.github.com"
           git add .
