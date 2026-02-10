@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Build Status Report</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #333; padding: 10px; vertical-align: top; }
+    th { background-color: #f2f2f2; }
+    .success { background-color: #e6f9e6; color: #1b5e20; }
+    .failure { background-color: #fdecea; color: #b71c1c; }
+    .status hr { margin: 10px 0; }
+    .status-grid {
+      display: grid;
+      grid-template-columns: auto 1fr auto 1fr;
+      gap: 6px 20px;
+    }
+    .label { font-weight: bold; }
+  </style>
+</head>
+<body>
+
+<h2>Report</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Date</th>
+      <th>Start Time</th>
+      <th>End Time</th>
+      <th>Status</th>
+    </tr>
+  </thead>
+  <tbody>
+  </tbody>
+<tr class="ROW_CLASS">
+<tr class="success">
+  <td>10/02/2026</td>
+  <td>11:12 AM</td>
+  <td>03:53 PM</td>
+  <td class="status">
+    Runtime build and tests successful
+    <hr>
+  <div class="status-grid">
+    <div class="label">Total Test Cases :</div><div>248</div>
+    <div class="label">Test Passed :</div><div>245 (98.79%)</div>
+    <div class="label">Test Failed :</div><div>0 (0.00%)</div>
+    <div class="label">Test Skipped :</div><div>3 (1.21%)</div>
+  </div>
+  </td>
+</tr>
+</table>
+
+</body>
+</html>
