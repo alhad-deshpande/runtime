@@ -15,7 +15,9 @@
   export ARCH=$(arch)
   export SCRIPT_DIR=$(pwd)
   export CONFIGURATION=Debug
-
+  export WORK_DIR=/
+  export DOTNET_DIR=/dotnet-sdk-$(uname -m)
+  
   NUM=0
   sdk_versions=0
   REF=0
@@ -90,7 +92,7 @@
   make install
   export PATH=/usr/local/bin:$PATH
   cmake --version && which cmake
-  cd ../../
+  cd $WORK_DIR
 
   runtime-build()
   {
@@ -105,8 +107,8 @@
     GLOBAL_JSON_PATH="global.json"
     SDK_VERSION=$(jq -r '.sdk.version' "$GLOBAL_JSON_PATH")
 
-    cd ../
-    mkdir dotnet-sdk-$(uname -m)
+    # cd ../
+    mkdir $DOTNET_DIR
     pushd dotnet-sdk-$(uname -m)
     wget https://github.com/IBM/dotnet-s390x/releases/download/v$SDK_VERSION/dotnet-sdk-$SDK_VERSION-linux-ppc64le.tar.gz
     mkdir .dotnet
@@ -184,7 +186,7 @@
     TEST_EXIT_CODE=0
     cd "$(basename "$REPO" .git)"
 
-    cd ../
+    cd $WORK_DIR
     pushd dotnet-sdk-$(uname -m)
     export DOTNET_ROOT=$(pwd)/.dotnet
     export PATH=$DOTNET_ROOT:$PATH
