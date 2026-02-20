@@ -8336,6 +8336,9 @@ void Interpreter::StSFld()
     InterpreterType fldIt;
     UINT sz;
     bool managedMem;
+#ifdef defined(TARGET_POWERPC64)
+    bool isUnsigned;
+#endif
     void* dstPtr = NULL;
     GCPROTECT_BEGININTERIOR(dstPtr);
 
@@ -8379,7 +8382,33 @@ void Interpreter::StSFld()
             *reinterpret_cast<UINT32*>(dstPtr) = OpStackGet<UINT32>(m_curStackHt);
             break;
         case 8:
+#ifdef defined(TARGET_POWERPC64)
+	    isUnsigned = CorInfoTypeIsUnsigned(valCit);
+	    if (valCit == CORINFO_TYPE_INT)
+	    {
+		    if (isUnsigned)
+		    {
+			*reinterpret_cast<UINT64*>(dstPtr) = (UINT64)OpStackGet<UINT32>(m_curStackHt);
+		    }
+		    else
+		    {
+			*reinterpret_cast<INT64*>(dstPtr) = (INT64)OpStackGet<INT32>(m_curStackHt);
+		    }
+	    }
+	    else
+	    {
+		    if (isUnsigned)
+		    {
+			*reinterpret_cast<UINT64*>(dstPtr) = OpStackGet<UINT64>(m_curStackHt);
+		    }
+		    else
+		    {
+			*reinterpret_cast<INT64*>(dstPtr) = OpStackGet<INT64>(m_curStackHt);
+		    }
+	    }
+#else
             *reinterpret_cast<UINT64*>(dstPtr) = OpStackGet<UINT64>(m_curStackHt);
+#endif
             break;
         default:
             _ASSERTE_MSG(false, "This should have exhausted all the possible sizes.");
