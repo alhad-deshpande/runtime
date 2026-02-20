@@ -8336,7 +8336,7 @@ void Interpreter::StSFld()
     InterpreterType fldIt;
     UINT sz;
     bool managedMem;
-#ifdef defined(TARGET_POWERPC64)
+#if defined(TARGET_POWERPC64)
     bool isUnsigned;
 #endif
     void* dstPtr = NULL;
@@ -8382,7 +8382,7 @@ void Interpreter::StSFld()
             *reinterpret_cast<UINT32*>(dstPtr) = OpStackGet<UINT32>(m_curStackHt);
             break;
         case 8:
-#ifdef defined(TARGET_POWERPC64)
+#if defined(TARGET_POWERPC64)
 	    isUnsigned = CorInfoTypeIsUnsigned(valCit);
 	    if (valCit == CORINFO_TYPE_INT)
 	    {
