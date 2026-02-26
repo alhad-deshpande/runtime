@@ -131,6 +131,7 @@
     <ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Threading\\tests\\System.Threading.Tests.csproj" />\
     <ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Net.Ping\\tests\\FunctionalTests\\System.Net.Ping.Functional.Tests.csproj" />\
     <ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Net.Requests\\tests\\System.Net.Requests.Tests.csproj" />\
+    <ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Runtime\\tests\\System.IO.FileSystem.Tests\\System.IO.FileSystem.Tests.csproj" />\
     <ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Security.Cryptography\\tests\\System.Security.Cryptography.Tests.csproj" />
     }' src/libraries/tests.proj
 
