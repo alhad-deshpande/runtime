@@ -2373,7 +2373,6 @@ EvalLoop:
 #endif // INTERP_ILCYCLE_PROFILE
 
     DoMonitorEnterWork();
-
     INTERPLOG("START %d, %s\n", m_methInfo->m_stubNum, methName);
     for (;;)
     {
@@ -5756,6 +5755,7 @@ void Interpreter::ConvOvf()
     case CORINFO_TYPE_FLOAT:
         {
             float f = OpStackGet<float>(opidx);
+	    f = trunc(f);
             if (!FloatFitsInIntType<TMin, TMax>(f))
             {
                 ThrowOverflowException();
