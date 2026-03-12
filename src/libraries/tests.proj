@@ -149,7 +149,10 @@
   <ItemGroup Condition="'$(TargetOS)' == 'linux' and '$(TargetArchitecture)' == 'ppc64le'">
     <!-- LibraryImportGenerator runtime tests build depends pulling down a pre-built nethost binary, which is not available for ppc64le. -->
     <ProjectExclusions Include="$(MSBuildThisFileDirectory)..\tests\baseservices\TieredCompilation\BasicTest_DefaultMode_R2r.csproj" />
-    <ProjectExclusions Include="$(MSBuildThisFileDirectory)..\tests\baseservices\TieredCompilation\BasicTest_QuickJitForLoopsOff_R2r.csproj" />
+    <ProjectExclusions Include="$(MSBuildThisFileDirectory)..\tests\baseservices\TieredCompilation\BasicTest_QuickJitForLoopsOff.csproj" />
+    <ProjectExclusions Include="$(MSBuildThisFileDirectory)..\tests\baseservices\TieredCompilation\BasicTest_QuickJitForLoopsOn_R2r.csproj" />
+    <ProjectExclusions Include="$(MSBuildThisFileDirectory)..\tests\baseservices\TieredCompilation\BasicTest_QuickJitOff_R2r.csproj" />
+    <ProjectExclusions Include="$(MSBuildThisFileDirectory)..\tests\baseservices\TieredCompilation\BasicTest_QuickJitOn_R2r.csproj" />
     <ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Runtime.InteropServices\tests\LibraryImportGenerator.Tests\LibraryImportGenerator.Tests.csproj" />
     <ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Runtime.InteropServices\tests\ComInterfaceGenerator.Tests\ComInterfaceGenerator.Tests.csproj" />
     <ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Runtime.InteropServices\tests\ComInterfaceGenerator.Unit.Tests\ComInterfaceGenerator.Unit.Tests.csproj" />
