@@ -3,6 +3,8 @@
     <MergedWrapperProjectReference Include="*/**/*.??proj" />
     <MergedWrapperProjectReference Remove="exceptions/**/*.??proj" />
     <MergedWrapperProjectReference Remove="threading/**/*.??proj" />
+    <MergedWrapperProjectReference Remove="varargs/*.??proj" />
+    <MergedWrapperProjectReference Remove="TieredCompilation/*R2r.??proj" />
   </ItemGroup>
 
   <Import Project="$(TestSourceDir)MergedTestRunner.targets" />
