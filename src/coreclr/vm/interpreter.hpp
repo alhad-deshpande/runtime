@@ -145,7 +145,8 @@ inline void Interpreter::LdLoc(int locNum)
         break;
 #if defined(TARGET_POWERPC64)
     case CORINFO_TYPE_INT:
-	OpStackSet<INT32>(stackHt, static_cast<UINT32>(val));
+    case CORINFO_TYPE_FLOAT:
+	OpStackSet<INT32>(stackHt, static_cast<INT32>(val));
 	break;
 #endif
     default:
@@ -227,7 +228,7 @@ void Interpreter::StLoc(int locNum)
 #if defined(TARGET_POWERPC64)
 	InterpreterType t1 = OpStackTypeGet(ind);
 	CorInfoType cit1 = t1.ToCorInfoType();
-	if(cit1 == CORINFO_TYPE_INT)
+	if(cit1 == CORINFO_TYPE_INT || cit1 == CORINFO_TYPE_FLOAT)
 	{
 		*FixedSizeLocalSlot(locNum) = OpStackGet<INT32>(ind);
 	}
