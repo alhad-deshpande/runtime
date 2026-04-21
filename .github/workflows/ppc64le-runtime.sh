@@ -132,6 +132,9 @@
     <ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Net.Ping\\tests\\FunctionalTests\\System.Net.Ping.Functional.Tests.csproj" />\
     <ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Net.Requests\\tests\\System.Net.Requests.Tests.csproj" />\
     <ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Runtime\\tests\\System.IO.FileSystem.Tests\\System.IO.FileSystem.Tests.csproj" />\
+    <ProjectExclusions Include="$(MSBuildThisFileDirectory)System.DirectoryServices.Protocols\\tests\\System.DirectoryServices.Protocols.Tests.csproj" />\
+    <ProjectExclusions Include="$(MSBuildThisFileDirectory)System.IO.Compression\\src\\System.IO.Compression.csproj" />\
+    <ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Net.NameResolution\\src\\System.Net.NameResolution.csproj" />\
     <ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Security.Cryptography\\tests\\System.Security.Cryptography.Tests.csproj" />
     }' src/libraries/tests.proj
 
