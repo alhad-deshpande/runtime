@@ -135,6 +135,8 @@
     <ProjectExclusions Include="$(MSBuildThisFileDirectory)System.DirectoryServices.Protocols\\tests\\System.DirectoryServices.Protocols.Tests.csproj" />\
     <ProjectExclusions Include="$(MSBuildThisFileDirectory)System.IO.Compression\\src\\System.IO.Compression.csproj" />\
     <ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Net.NameResolution\\src\\System.Net.NameResolution.csproj" />\
+    <ProjectExclusions Include="$(MSBuildThisFileDirectory)Common\\tests\\Common.Tests.csproj" />\
+    <ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Net.NameResolution\\tests\\FunctionalTests\\System.Net.NameResolution.Functional.Tests.csproj" />\
     <ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Security.Cryptography\\tests\\System.Security.Cryptography.Tests.csproj" />
     }' src/libraries/tests.proj
 
