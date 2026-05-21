@@ -136,6 +136,7 @@ q  #!/bin/bash -e
     <ProjectExclusions Include="$(MSBuildThisFileDirectory)System.IO.Compression\\tests\\System.IO.Compression.Tests.csproj" />\
     <ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Net.NameResolution\\src\\System.Net.NameResolution.csproj" />\
     <ProjectExclusions Include="$(MSBuildThisFileDirectory)Common\\tests\\Common.Tests.csproj" />\
+    <ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Private.Xml\\tests\\System.Private.Xml.Tests.csproj" />\
     <ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Net.NameResolution\\tests\\FunctionalTests\\System.Net.NameResolution.Functional.Tests.csproj" />\
     <ProjectExclusions Include="$(MSBuildThisFileDirectory)System.Security.Cryptography\\tests\\System.Security.Cryptography.Tests.csproj" />
     }' src/libraries/tests.proj
