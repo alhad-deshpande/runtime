@@ -21,4 +21,4 @@ jobs:
           docker exec gha chmod +x /jit_testing.sh
       - name: Build
         run: |
-          docker exec gha bash -c "/jit_testing"
+          docker exec gha bash -c "/jit_testing.sh"
