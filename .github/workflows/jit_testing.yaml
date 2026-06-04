@@ -1,1 +1,29 @@
+name: JIT Testing Pipeline
 
+on:
+  workflow_dispatch:
+
+jobs:
+  jit-testing:
+    runs-on: ubuntu-24.04-ppc64le-p10
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Create Working Directory
+        run: |
+          mkdir -p /tmp/jit_testing
+
+      - name: Copy JIT Testing Script
+        run: |
+          cp .github/workflows/jit_testing.sh /tmp/jit_testing/
+
+      - name: Make Script Executable
+        run: |
+          chmod +x /tmp/jit_testing/jit_testing.sh
+
+      - name: Execute JIT Testing Script
+        run: |
+          cd /tmp/jit_testing
+          ./jit_testing.sh
