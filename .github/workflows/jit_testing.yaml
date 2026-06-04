@@ -11,19 +11,14 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Create Working Directory
+      - name: Container
         run: |
-          mkdir -p /tmp/jit_testing
-
-      - name: Copy JIT Testing Script
+          docker stop gha && docker rm gha
+          docker run -dit --privileged -v /sys/fs/cgroup:/sys/fs/cgroup:ro --network host --name gha ubuntu:22.04
+      - name: Copy script
         run: |
-          cp .github/workflows/jit_testing.sh /tmp/jit_testing/
-
-      - name: Make Script Executable
+          docker cp .github/workflows/jit_testing.sh /jit_testing/
+          docker exec gha chmod +x /jit_testing/
+      - name: Build
         run: |
-          chmod +x /tmp/jit_testing/jit_testing.sh
-
-      - name: Execute JIT Testing Script
-        run: |
-          cd /tmp/jit_testing
-          ./jit_testing.sh
+          docker exec gha bash -c "/jit_testing"
