@@ -17,8 +17,8 @@ jobs:
           docker run -dit --privileged -v /sys/fs/cgroup:/sys/fs/cgroup:ro --network host --name gha ubuntu:22.04
       - name: Copy script
         run: |
-          docker cp .github/workflows/jit_testing.sh gha:/jit_testing/
-          docker exec gha chmod +x /jit_testing/
+          docker cp .github/workflows/jit_testing.sh gha:/jit_testing.sh
+          docker exec gha chmod +x /jit_testing.sh
       - name: Build
         run: |
           docker exec gha bash -c "/jit_testing"
