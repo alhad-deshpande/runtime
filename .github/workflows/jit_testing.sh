@@ -1,93 +1,130 @@
-#!/usr/bin/env bash
-set -euxo pipefail
+#!/bin/bash
 
-echo "===== STEP 1: Install dependencies ====="
+set -e
 
-export DEBIAN_FRONTEND=noninteractive
+echo "=========================================="
+echo "Installing dependencies"
+echo "=========================================="
 
-apt-get update && apt-get install -y \
-  bc automake clang curl findutils git \
-  hostname libtool libkrb5-dev ninja-build \
-  llvm make python3 liblttng-ust-dev \
-  tar wget jq lld build-essential \
-  zlib1g-dev libssl-dev libbrotli-dev \
-  ca-certificates libicu-dev locales tzdata
+sudo apt-get update
 
-ln -fs /usr/share/zoneinfo/Etc/UTC /etc/localtime
-dpkg-reconfigure --frontend noninteractive tzdata
-update-ca-certificates
+sudo apt-get -y install \
+    bc \
+    automake \
+    clang \
+    curl \
+    findutils \
+    git \
+    hostname \
+    libtool \
+    libkrb5-dev \
+    ninja-build \
+    llvm \
+    make \
+    python3 \
+    liblttng-ust-dev \
+    tar \
+    wget \
+    jq \
+    lld \
+    build-essential \
+    zlib1g-dev \
+    libssl-dev \
+    libbrotli-dev \
+    ca-certificates
 
-echo "===== STEP 2: Clone runtime ====="
+WORKSPACE=$(pwd)
+
+echo "=========================================="
+echo "Cloning Runtime Repository"
+echo "=========================================="
 
 git clone --recurse-submodules https://github.com/alhad-deshpande/runtime.git
 cd runtime
+
 git checkout ppc64le_coreclr_jit
 
-echo "===== STEP 3: Setup .NET SDK ====="
+echo "=========================================="
+echo "Installing .NET SDK"
+echo "=========================================="
 
-SDK_VERSION=$(jq -r '.sdk.version' global.json)
+GLOBAL_JSON_PATH="global.json"
+SDK_VERSION=$(jq -r '.sdk.version' "$GLOBAL_JSON_PATH")
 
-mkdir dotnet
-cd dotnet
+export DOTNET_DIR=/dotnet-sdk-$(uname -m)
+
+sudo mkdir -p "$DOTNET_DIR"
+
+pushd "$DOTNET_DIR"
 
 wget https://github.com/IBM/dotnet-s390x/releases/download/v${SDK_VERSION}/dotnet-sdk-${SDK_VERSION}-linux-$(uname -m).tar.gz
 
-tar -xvf dotnet-sdk-${SDK_VERSION}-linux-$(uname -m).tar.gz > /dev/null
+mkdir -p .dotnet
 
-export DOTNET_ROOT=$(pwd)
+tar xvf dotnet-sdk-${SDK_VERSION}-linux-$(uname -m).tar.gz \
+    -C .dotnet > /dev/null
+
+export DOTNET_ROOT=$(pwd)/.dotnet
 export PATH=$DOTNET_ROOT:$PATH
 
+popd
+
+echo "DOTNET_ROOT=$DOTNET_ROOT"
+
 dotnet --info
-cd ..
 
-echo "===== STEP 4: Clean NuGet cache ====="
-
-rm -rf ~/.nuget/packages
-mkdir -p ~/.nuget/packages
-
-export DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1
-export DOTNET_NOLOGO=1
-export NUGET_PACKAGES=$HOME/.nuget/packages
-
-echo "===== STEP 5: Build runtime ====="
+echo "=========================================="
+echo "Building Runtime"
+echo "=========================================="
 
 ./build.sh clr+clr.hosts \
-  /p:PrimaryRuntimeFlavor=CoreCLR \
-  /p:PublishAot=false \
-  /p:SupportsNativeAotComponents=false \
-  /p:RestoreSources=https://api.nuget.org/v3/index.json \
-  | tee build.log
+    /p:PrimaryRuntimeFlavor=CoreCLR \
+    /p:PublishAot=false \
+    /p:SupportsNativeAotComponents=false \
+    | tee build.log
 
-echo "===== STEP 6: Build libs ====="
+echo "=========================================="
+echo "Building Libraries"
+echo "=========================================="
 
-./build.sh libs \
-  /p:RestoreSources=https://api.nuget.org/v3/index.json
+./build.sh libs
 
-echo "===== STEP 7: Build tests ====="
+echo "=========================================="
+echo "Building Tests"
+echo "=========================================="
 
 ./src/tests/build.sh \
-  /p:LibrariesConfiguration=Debug \
-  /p:RestoreSources=https://api.nuget.org/v3/index.json
+    /p:LibrariesConfiguration=Debug
 
-echo "===== STEP 8: Fix CoreLib ====="
+echo "=========================================="
+echo "Copying System.Private.CoreLib.dll"
+echo "=========================================="
 
-CORE_ROOT=./artifacts/tests/coreclr/linux.ppc64le.Debug/Tests/Core_Root
+cp \
+./artifacts/tests/coreclr/linux.ppc64le.Debug/Tests/Core_Root/IL/System.Private.CoreLib.dll \
+./artifacts/tests/coreclr/linux.ppc64le.Debug/Tests/Core_Root/System.Private.CoreLib.dll
 
-cp $CORE_ROOT/IL/System.Private.CoreLib.dll \
-   $CORE_ROOT/System.Private.CoreLib.dll
+RUNTIME_PATH=$(pwd)
 
-echo "===== STEP 9: Clone JIT Testing ====="
+echo "=========================================="
+echo "Cloning JIT Testing Repository"
+echo "=========================================="
 
-cd ..
-git clone https://github.com/alhad-deshpande/JIT_Testing
+cd "$WORKSPACE"
+
+git clone https://github.com/alhad-deshpande/JIT_Testing.git
 cd JIT_Testing
+
 git checkout ppc64le_coreclr_jit_testing
 
-echo "===== STEP 10: Run tests ====="
+echo "=========================================="
+echo "Running JIT Tests"
+echo "=========================================="
 
-RUNTIME_PATH="$(pwd)/../runtime"
-DOTNET_PATH="$RUNTIME_PATH/dotnet"
+DOTNET_PATH=$DOTNET_ROOT/dotnet
 
 ./run_test.sh "$DOTNET_PATH" "$RUNTIME_PATH"
 
-echo "===== DONE ====="
+echo "=========================================="
+echo "Completed Successfully"
+echo "=========================================="
