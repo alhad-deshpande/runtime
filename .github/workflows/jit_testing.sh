@@ -1,6 +1,8 @@
 #!/bin/bash
 
-set -e
+set -ex
+
+export DEBIAN_FRONTEND=noninteractive
 
 echo "=========================================="
 echo "Installing dependencies"
@@ -8,7 +10,7 @@ echo "=========================================="
 
 apt-get update
 
-apt-get -y install \
+apt-get install -y \
     bc \
     automake \
     clang \
@@ -33,6 +35,14 @@ apt-get -y install \
     libbrotli-dev \
     ca-certificates
 
+echo "=========================================="
+echo "Environment Information"
+echo "=========================================="
+
+uname -a
+whoami
+pwd
+
 WORKSPACE=$(pwd)
 
 echo "=========================================="
@@ -40,44 +50,68 @@ echo "Cloning Runtime Repository"
 echo "=========================================="
 
 git clone --recurse-submodules https://github.com/alhad-deshpande/runtime.git
+
 cd runtime
 
 git checkout ppc64le_coreclr_jit
 
 echo "=========================================="
-echo "Installing .NET SDK"
+echo "Reading SDK Version"
 echo "=========================================="
 
 GLOBAL_JSON_PATH="global.json"
+
+if [ ! -f "$GLOBAL_JSON_PATH" ]; then
+    echo "global.json not found"
+    exit 1
+fi
+
 SDK_VERSION=$(jq -r '.sdk.version' "$GLOBAL_JSON_PATH")
 
-export DOTNET_DIR=/dotnet-sdk-$(uname -m)
+echo "SDK_VERSION=$SDK_VERSION"
+
+echo "=========================================="
+echo "Installing .NET SDK"
+echo "=========================================="
+
+ARCH=$(uname -m)
+
+DOTNET_DIR="/dotnet-sdk-${ARCH}"
 
 mkdir -p "$DOTNET_DIR"
 
 pushd "$DOTNET_DIR"
 
-wget https://github.com/IBM/dotnet-s390x/releases/download/v${SDK_VERSION}/dotnet-sdk-${SDK_VERSION}-linux-$(uname -m).tar.gz
+SDK_URL="https://github.com/IBM/dotnet-s390x/releases/download/v${SDK_VERSION}/dotnet-sdk-${SDK_VERSION}-linux-${ARCH}.tar.gz"
+
+echo "Downloading SDK from:"
+echo "$SDK_URL"
+
+wget "$SDK_URL"
 
 mkdir -p .dotnet
 
-tar xvf dotnet-sdk-${SDK_VERSION}-linux-$(uname -m).tar.gz \
-    -C .dotnet > /dev/null
+tar -xvf dotnet-sdk-${SDK_VERSION}-linux-${ARCH}.tar.gz \
+    -C .dotnet
 
 export DOTNET_ROOT=$(pwd)/.dotnet
 export PATH=$DOTNET_ROOT:$PATH
 
 popd
 
-echo "DOTNET_ROOT=$DOTNET_ROOT"
+echo "=========================================="
+echo ".NET Information"
+echo "=========================================="
 
+which dotnet
 dotnet --info
 
 echo "=========================================="
 echo "Building Runtime"
 echo "=========================================="
 
-./build.sh clr+clr.hosts \
+./build.sh \
+    clr+clr.hosts \
     /p:PrimaryRuntimeFlavor=CoreCLR \
     /p:PublishAot=false \
     /p:SupportsNativeAotComponents=false \
@@ -100,31 +134,44 @@ echo "=========================================="
 echo "Copying System.Private.CoreLib.dll"
 echo "=========================================="
 
+CORE_ROOT=./artifacts/tests/coreclr/linux.ppc64le.Debug/Tests/Core_Root
+
 cp \
-./artifacts/tests/coreclr/linux.ppc64le.Debug/Tests/Core_Root/IL/System.Private.CoreLib.dll \
-./artifacts/tests/coreclr/linux.ppc64le.Debug/Tests/Core_Root/System.Private.CoreLib.dll
+    ${CORE_ROOT}/IL/System.Private.CoreLib.dll \
+    ${CORE_ROOT}/System.Private.CoreLib.dll
 
 RUNTIME_PATH=$(pwd)
 
+echo "Runtime Path:"
+echo "$RUNTIME_PATH"
+
 echo "=========================================="
-echo "Cloning JIT Testing Repository"
+echo "Cloning JIT_Testing"
 echo "=========================================="
 
 cd "$WORKSPACE"
 
 git clone https://github.com/alhad-deshpande/JIT_Testing.git
+
 cd JIT_Testing
 
 git checkout ppc64le_coreclr_jit_testing
+
+DOTNET_PATH="$DOTNET_ROOT/dotnet"
+
+echo "DOTNET_PATH=$DOTNET_PATH"
+echo "RUNTIME_PATH=$RUNTIME_PATH"
+
+ls -l "$DOTNET_PATH"
 
 echo "=========================================="
 echo "Running JIT Tests"
 echo "=========================================="
 
-DOTNET_PATH=$DOTNET_ROOT/dotnet
+chmod +x run_test.sh
 
 ./run_test.sh "$DOTNET_PATH" "$RUNTIME_PATH"
 
 echo "=========================================="
-echo "Completed Successfully"
+echo "JIT TESTING COMPLETED"
 echo "=========================================="
