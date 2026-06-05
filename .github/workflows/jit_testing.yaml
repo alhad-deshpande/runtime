@@ -1,9 +1,7 @@
 name: JIT Testing Pipeline
 
 on:
- push:
-    branches:
-      - ppc64le_coreclr_jit
+  push:
   workflow_dispatch:
 
 jobs:
@@ -14,7 +12,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Cleanup Existing Container
+      - name: Remove Existing Container
         run: |
           docker rm -f gha || true
 
@@ -25,30 +23,20 @@ jobs:
             --network host \
             --name gha \
             ubuntu:22.04 \
-            bash
+            sleep infinity
 
       - name: Verify Container
         run: |
           docker ps -a
-          docker inspect gha --format='{{.State.Status}}'
 
       - name: Copy Script
         run: |
           docker cp .github/workflows/jit_testing.sh gha:/root/jit_testing.sh
           docker exec gha chmod +x /root/jit_testing.sh
-          docker exec gha ls -l /root/jit_testing.sh
 
-      - name: Run JIT Test Script
+      - name: Run JIT Testing
         run: |
-          docker exec gha bash -c "/root/jit_testing.sh"
-
-      - name: Collect Logs on Failure
-        if: failure()
-        run: |
-          echo "=== Container Status ==="
-          docker ps -a
-          echo "=== Container Logs ==="
-          docker logs gha || true
+          docker exec gha bash -lc "/root/jit_testing.sh"
 
       - name: Cleanup
         if: always()
