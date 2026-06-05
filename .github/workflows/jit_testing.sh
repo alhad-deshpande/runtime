@@ -13,10 +13,8 @@ apt-get update && apt-get install -y \
   zlib1g-dev libssl-dev libbrotli-dev \
   ca-certificates libicu-dev locales tzdata
 
-# Fix timezone (avoid prompt)
 ln -fs /usr/share/zoneinfo/Etc/UTC /etc/localtime
 dpkg-reconfigure --frontend noninteractive tzdata
-
 update-ca-certificates
 
 echo "===== STEP 2: Clone runtime ====="
@@ -42,22 +40,14 @@ export PATH=$DOTNET_ROOT:$PATH
 dotnet --info
 cd ..
 
-echo "===== STEP 4: FORCE ARCADE RESTORE FIX ====="
+echo "===== STEP 4: Clean NuGet cache ====="
 
-# Clean previous cache 
 rm -rf ~/.nuget/packages
-rm -rf ~/.nuget/NuGet
-
 mkdir -p ~/.nuget/packages
-export ArcadeBuildArgs="/p:RestoreSources=https://api.nuget.org/v3/index.json"
-export DotNetBuildArgs="$ArcadeBuildArgs"
-
-# Optional but safe
-export NUGET_PACKAGES=$HOME/.nuget/packages
-export NUGET_HTTP_CACHE_PATH=$HOME/.nuget/http-cache
 
 export DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1
 export DOTNET_NOLOGO=1
+export NUGET_PACKAGES=$HOME/.nuget/packages
 
 echo "===== STEP 5: Build runtime ====="
 
@@ -65,17 +55,19 @@ echo "===== STEP 5: Build runtime ====="
   /p:PrimaryRuntimeFlavor=CoreCLR \
   /p:PublishAot=false \
   /p:SupportsNativeAotComponents=false \
-  $ArcadeBuildArgs | tee build.log
+  /p:RestoreSources=https://api.nuget.org/v3/index.json \
+  | tee build.log
 
 echo "===== STEP 6: Build libs ====="
 
-./build.sh libs $ArcadeBuildArgs
+./build.sh libs \
+  /p:RestoreSources=https://api.nuget.org/v3/index.json
 
 echo "===== STEP 7: Build tests ====="
 
 ./src/tests/build.sh \
   /p:LibrariesConfiguration=Debug \
-  $ArcadeBuildArgs
+  /p:RestoreSources=https://api.nuget.org/v3/index.json
 
 echo "===== STEP 8: Fix CoreLib ====="
 
