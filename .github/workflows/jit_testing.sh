@@ -42,33 +42,40 @@ export PATH=$DOTNET_ROOT:$PATH
 dotnet --info
 cd ..
 
-echo "===== STEP 4: Fix NuGet (IMPORTANT) ====="
+echo "===== STEP 4: FORCE ARCADE RESTORE FIX ====="
 
+# Clean previous cache 
+rm -rf ~/.nuget/packages
+rm -rf ~/.nuget/NuGet
 
-echo "===== STEP 4: Force NuGet override (NO command change) ====="
+mkdir -p ~/.nuget/packages
+export ArcadeBuildArgs="/p:RestoreSources=https://api.nuget.org/v3/index.json"
+export DotNetBuildArgs="$ArcadeBuildArgs"
 
-# Force all restores to use ONLY nuget.org
+# Optional but safe
 export NUGET_PACKAGES=$HOME/.nuget/packages
 export NUGET_HTTP_CACHE_PATH=$HOME/.nuget/http-cache
 
-# THIS is key (works without modifying build commands)
-export DotNetRestoreSources="https://api.nuget.org/v3/index.json"
-
-# Extra safety
 export DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1
 export DOTNET_NOLOGO=1
 
 echo "===== STEP 5: Build runtime ====="
 
-./build.sh clr+clr.hosts /p:PrimaryRuntimeFlavor=CoreCLR /p:PublishAot=false /p:SupportsNativeAotComponents=false | tee build.log
+./build.sh clr+clr.hosts \
+  /p:PrimaryRuntimeFlavor=CoreCLR \
+  /p:PublishAot=false \
+  /p:SupportsNativeAotComponents=false \
+  $ArcadeBuildArgs | tee build.log
 
 echo "===== STEP 6: Build libs ====="
 
-./build.sh libs
+./build.sh libs $ArcadeBuildArgs
 
 echo "===== STEP 7: Build tests ====="
 
-./src/tests/build.sh /p:LibrariesConfiguration=Debug
+./src/tests/build.sh \
+  /p:LibrariesConfiguration=Debug \
+  $ArcadeBuildArgs
 
 echo "===== STEP 8: Fix CoreLib ====="
 
