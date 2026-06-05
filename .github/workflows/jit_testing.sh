@@ -3,25 +3,16 @@ set -ex
 
 echo "===== STEP 0: Install dependencies ====="
 
-apt-get update && apt-get -y install \
-  bc automake clang curl findutils git \
-  hostname libtool libkrb5-dev ninja-build \
-  llvm make python3 liblttng-ust-dev \
-  tar wget jq lld build-essential \
-  zlib1g-dev libssl-dev libbrotli-dev \
-  ca-certificates
-
+apt-get update && apt-get -y install bc automake clang curl findutils git hostname libtool libkrb5-dev ninja-build llvm make python3 liblttng-ust-dev tar wget jq lld build-essential zlib1g-dev libssl-dev libbrotli-dev ca-certificates
 
 echo "===== STEP 1: Clone runtime repository ====="
 git clone --recurse https://github.com/alhad-deshpande/runtime.git
 cd runtime
 git checkout ppc64le_coreclr_jit
 
-
 echo "===== STEP 2: Read .NET SDK version ====="
 GLOBAL_JSON_PATH="global.json"
 SDK_VERSION=$(jq -r '.sdk.version' "$GLOBAL_JSON_PATH")
-
 
 echo "===== STEP 3: Setup .NET SDK ====="
 
@@ -40,17 +31,14 @@ export PATH=$DOTNET_ROOT:$PATH
 
 popd
 
-
 echo "===== STEP 4: Build CoreCLR ====="
 ./build.sh clr+clr.hosts /p:PrimaryRuntimeFlavor=CoreCLR /p:PublishAot=false /p:SupportsNativeAotComponents=false | tee build.log
 
 echo "===== STEP 5: Build libraries ====="
 ./build.sh libs
 
-
 echo "===== STEP 6: Build tests ====="
 ./src/tests/build.sh /p:LibrariesConfiguration=Debug
-
 
 echo "===== STEP 7: Replace System.Private.CoreLib.dll ====="
 
@@ -70,7 +58,6 @@ git clone https://github.com/alhad-deshpande/JIT_Testing
 cd JIT_Testing
 git checkout ppc64le_coreclr_jit_testing
 
-
 echo "===== STEP 9: Run JIT tests ====="
 
 BASE_DIR="$(pwd)/.."
@@ -87,5 +74,4 @@ fi
 
 ./run_test.sh "$DOTNET_PATH" "$RUNTIME_PATH"
 
-
-echo "=====  DONE ====="
+echo "===== DONE ====="
