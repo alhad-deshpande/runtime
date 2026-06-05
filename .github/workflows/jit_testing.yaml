@@ -1,9 +1,9 @@
 name: JIT Testing Pipeline
 
 on:
-  push:               # Runs on every commit
-  pull_request:       # Runs on PRs
-  workflow_dispatch:  # Optional manual trigger
+  push:
+  pull_request:
+  workflow_dispatch:
 
 jobs:
   jit-testing:
@@ -15,27 +15,31 @@ jobs:
 
       - name: Start Container
         run: |
-          # Remove old container if exists
           docker rm -f gha 2>/dev/null || true
 
-          # Run new container
           docker run -dit \
             --privileged \
-            -v /sys/fs/cgroup:/sys/fs/cgroup:ro \
             --network host \
             --name gha \
             ubuntu:22.04
 
-      - name: Wait for Container
-        run: |
-          sleep 5
-          docker ps
-
-      - name: Copy Script to Container
+      - name: Copy Script
         run: |
           docker cp .github/workflows/jit_testing.sh gha:/jit_testing.sh
           docker exec gha chmod +x /jit_testing.sh
 
-      - name: Run Script
+      - name: Run Build + Test
         run: |
-          docker exec gha bash -c "/jit_testing.sh"
+          docker exec gha bash -c "/jit_testing.sh | tee /tmp/jit.log"
+
+      - name: Copy Logs (optional)
+        if: always()
+        run: |
+          docker cp gha:/tmp/jit.log ./jit.log || true
+
+      - name: Upload Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jit-log
+          path: jit.log
