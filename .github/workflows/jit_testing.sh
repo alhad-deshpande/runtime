@@ -6,9 +6,9 @@ echo "=========================================="
 echo "Installing dependencies"
 echo "=========================================="
 
-sudo apt-get update
+apt-get update
 
-sudo apt-get -y install \
+apt-get -y install \
     bc \
     automake \
     clang \
@@ -53,7 +53,7 @@ SDK_VERSION=$(jq -r '.sdk.version' "$GLOBAL_JSON_PATH")
 
 export DOTNET_DIR=/dotnet-sdk-$(uname -m)
 
-sudo mkdir -p "$DOTNET_DIR"
+mkdir -p "$DOTNET_DIR"
 
 pushd "$DOTNET_DIR"
 
