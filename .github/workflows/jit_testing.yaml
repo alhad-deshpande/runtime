@@ -1,6 +1,9 @@
 name: JIT Testing Pipeline
 
 on:
+ push:
+    branches:
+      - ppc64le_coreclr_jit
   workflow_dispatch:
 
 jobs:
