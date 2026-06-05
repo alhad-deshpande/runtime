@@ -1,8 +1,9 @@
 name: JIT Testing Pipeline
 
 on:
-  push:
-  workflow_dispatch:
+  push:               # Runs on every commit
+  pull_request:       # Runs on PRs
+  workflow_dispatch:  # Optional manual trigger
 
 jobs:
   jit-testing:
@@ -12,33 +13,29 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Remove Existing Container
+      - name: Start Container
         run: |
-          docker rm -f gha || true
+          # Remove old container if exists
+          docker rm -f gha 2>/dev/null || true
 
-      - name: Create Container
-        run: |
+          # Run new container
           docker run -dit \
             --privileged \
+            -v /sys/fs/cgroup:/sys/fs/cgroup:ro \
             --network host \
             --name gha \
-            ubuntu:22.04 \
-            sleep infinity
+            ubuntu:22.04
 
-      - name: Verify Container
+      - name: Wait for Container
         run: |
-          docker ps -a
+          sleep 5
+          docker ps
 
-      - name: Copy Script
+      - name: Copy Script to Container
         run: |
-          docker cp .github/workflows/jit_testing.sh gha:/root/jit_testing.sh
-          docker exec gha chmod +x /root/jit_testing.sh
+          docker cp .github/workflows/jit_testing.sh gha:/jit_testing.sh
+          docker exec gha chmod +x /jit_testing.sh
 
-      - name: Run JIT Testing
+      - name: Run Script
         run: |
-          docker exec gha bash -lc "/root/jit_testing.sh"
-
-      - name: Cleanup
-        if: always()
-        run: |
-          docker rm -f gha || true
+          docker exec gha bash -c "/jit_testing.sh"
