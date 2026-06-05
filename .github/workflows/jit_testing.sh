@@ -44,24 +44,23 @@ cd ..
 
 echo "===== STEP 4: Fix NuGet (IMPORTANT) ====="
 
-mkdir -p ~/.nuget/NuGet
 
-cat > ~/.nuget/NuGet/NuGet.Config <<EOF
-<?xml version="1.0" encoding="utf-8"?>
-<configuration>
-  <packageSources>
-    <clear />
-    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
-  </packageSources>
-</configuration>
-EOF
+echo "===== STEP 4: Force NuGet override (NO command change) ====="
+
+# Force all restores to use ONLY nuget.org
+export NUGET_PACKAGES=$HOME/.nuget/packages
+export NUGET_HTTP_CACHE_PATH=$HOME/.nuget/http-cache
+
+# THIS is key (works without modifying build commands)
+export DotNetRestoreSources="https://api.nuget.org/v3/index.json"
+
+# Extra safety
+export DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1
+export DOTNET_NOLOGO=1
 
 echo "===== STEP 5: Build runtime ====="
 
-./build.sh clr+clr.hosts \
-  /p:PrimaryRuntimeFlavor=CoreCLR \
-  /p:PublishAot=false \
-  /p:SupportsNativeAotComponents=false
+./build.sh clr+clr.hosts /p:PrimaryRuntimeFlavor=CoreCLR /p:PublishAot=false /p:SupportsNativeAotComponents=false | tee build.log
 
 echo "===== STEP 6: Build libs ====="
 
