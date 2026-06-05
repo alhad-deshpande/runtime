@@ -54,6 +54,22 @@ git clone --recurse-submodules https://github.com/alhad-deshpande/runtime.git
 cd runtime
 
 git checkout ppc64le_coreclr_jit
+echo "=========================================="
+echo "Fixing NuGet.config"
+echo "=========================================="
+
+cat > NuGet.config <<EOF
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <packageSources>
+    <clear />
+    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+  </packageSources>
+</configuration>
+EOF
+
+cat NuGet.config
+# =====================================================
 
 echo "=========================================="
 echo "Reading SDK Version"
