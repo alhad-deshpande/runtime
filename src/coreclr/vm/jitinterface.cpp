@@ -12642,6 +12642,8 @@ static bool ShouldUseInterpreterFallback(MethodDesc* ftnDesc,const char* ftnName
        "IsFunctionPointer",
        "IsByRef",
        "GetPinnableReference",
+       "Assert",
+       "Fail",			// This resolves stuck issue
     };
 
     struct JitInclusionEntry
