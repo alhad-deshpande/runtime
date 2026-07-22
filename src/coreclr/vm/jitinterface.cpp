@@ -12541,15 +12541,15 @@ static bool ShouldUseInterpreterFallback(MethodDesc* ftnDesc,const char* ftnName
        "get_Chars",
        "get_UTF8",
        "get_IsAllocated",
-       "get_EventListenersLock"
+       "get_EventListenersLock",
        "AsMethodTable",
        "get_IsFunctionPointer",
        "EqualsHelper",
        "get_CompletedTask",
        "get_UTF8NoBOM",
        "get_EncoderFallback",
-       "get_EnvVarTermInfoLocation"
-       "get_TerminalFormatStringsInstance"
+       "get_EnvVarTermInfoLocation",
+       "get_TerminalFormatStringsInstance",
        "get_ReflectedType",
        "get_RuntimeType",
        "get_IsGenericParameter",
@@ -12644,6 +12644,11 @@ static bool ShouldUseInterpreterFallback(MethodDesc* ftnDesc,const char* ftnName
        "GetPinnableReference",
        "Assert",
        "Fail",			// This resolves stuck issue
+       "GetCharset",
+       "GetConstructor",
+       "GetCharCountCommon",
+       "GetCharsCommon",
+       "StartsWith"
     };
 
     struct JitInclusionEntry
@@ -12714,6 +12719,10 @@ static bool ShouldUseInterpreterFallback(MethodDesc* ftnDesc,const char* ftnName
 	{ "IntroducedMethodEnumerator",".ctor"},
 	{ "Filter",".ctor"},
 	{ "System.MdUtf8String",".ctor"},
+	{ "System.Runtime.CompilerServices.Unsafe","Add"},
+	{ "System.Runtime.CompilerServices.TypeHandle","AsMethodTable"},
+	{ "ListBuilder`1[__Canon]","Add"},
+
 
     };
 
