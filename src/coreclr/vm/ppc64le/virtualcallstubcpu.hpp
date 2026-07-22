@@ -35,12 +35,11 @@ struct LookupHolder
 
 	void Initialize(LookupHolder* pLookupHolderRX, PCODE resolveWorkerTarget, size_t dispatchToken) {
         // r12 points to _entryPoint[0] (stub base), set by the caller.
-        
-        _stub._entryPoint[0] = 0xe94c0018; // ld r10, 24(r12) -> __resolveWorkerTarget
-        _stub._entryPoint[1] = 0xE8AC0020; // ld r5, 32(r12) -> _token
-        _stub._entryPoint[2] = 0x7d4903a6; // mtspr CTR, r10
-        _stub._entryPoint[3] = 0x4e800420; // bctr
-        _stub._entryPoint[4] = 0x60000000; // nop
+        _stub._entryPoint[0] = 0x7d896378; // mr r9, r12
+        _stub._entryPoint[1] = 0xe9890018; // ld r12, 24(r9) -> __resolveWorkerTarget
+        _stub._entryPoint[2] = 0xe9490020; // ld r10, 32(r9) -> _token
+        _stub._entryPoint[3] = 0x7d8903a6; // mtspr CTR, r12
+        _stub._entryPoint[4] = 0x4e800420; // bctr
         _stub._entryPoint[5] = 0x60000000; // nop
         _stub._resolveWorkerTarget = resolveWorkerTarget;
         _stub._token = dispatchToken;

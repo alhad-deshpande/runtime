@@ -2373,7 +2373,6 @@ EvalLoop:
 #endif // INTERP_ILCYCLE_PROFILE
 
     DoMonitorEnterWork();
-
     INTERPLOG("START %d, %s\n", m_methInfo->m_stubNum, methName);
     for (;;)
     {
@@ -5756,6 +5755,7 @@ void Interpreter::ConvOvf()
     case CORINFO_TYPE_FLOAT:
         {
             float f = OpStackGet<float>(opidx);
+	    f = trunc(f);
             if (!FloatFitsInIntType<TMin, TMax>(f))
             {
                 ThrowOverflowException();
@@ -5961,7 +5961,37 @@ void Interpreter::LdObjValueClassWork(CORINFO_CLASS_HANDLE valueClsHnd, unsigned
     }
     else
     {
-        OpStackSet<INT64>(ind, GetSmallStructValue(src, sz));
+       if (sz == 1)
+       {
+                CorInfoType cit = it.ToCorInfoType();
+               if (CorInfoTypeIsUnsigned(cit))
+               {
+                       OpStackSet<UINT64>(ind, *reinterpret_cast<UINT8*>(src));
+               }
+               else
+               {
+                       OpStackSet<INT64>(ind, *reinterpret_cast<INT8*>(src));
+               }
+       }
+       else if (sz == 2)
+       {
+               CorInfoType cit = it.ToCorInfoType();
+               if (CorInfoTypeIsUnsigned(cit))
+                {
+                    OpStackSet<UINT64>(ind, *reinterpret_cast<UINT16*>(src));
+                }
+                else
+                {
+                    OpStackSet<INT64>(ind, *reinterpret_cast<INT16*>(src));
+                }
+       }
+       else if (sz == 4)
+       {
+               OpStackSet<INT64>(ind, *reinterpret_cast<INT32*>(src));
+       }
+       else{
+               OpStackSet<INT64>(ind, GetSmallStructValue(src, sz));
+       }
     }
 
     OpStackTypeSet(ind, it.StackNormalize());
@@ -8336,6 +8366,9 @@ void Interpreter::StSFld()
     InterpreterType fldIt;
     UINT sz;
     bool managedMem;
+#if defined(TARGET_POWERPC64)
+    bool isUnsigned;
+#endif
     void* dstPtr = NULL;
     GCPROTECT_BEGININTERIOR(dstPtr);
 
@@ -8379,7 +8412,33 @@ void Interpreter::StSFld()
             *reinterpret_cast<UINT32*>(dstPtr) = OpStackGet<UINT32>(m_curStackHt);
             break;
         case 8:
+#if defined(TARGET_POWERPC64)
+	    isUnsigned = CorInfoTypeIsUnsigned(valCit);
+	    if (valCit == CORINFO_TYPE_INT)
+	    {
+		    if (isUnsigned)
+		    {
+			*reinterpret_cast<UINT64*>(dstPtr) = (UINT64)OpStackGet<UINT32>(m_curStackHt);
+		    }
+		    else
+		    {
+			*reinterpret_cast<INT64*>(dstPtr) = (INT64)OpStackGet<INT32>(m_curStackHt);
+		    }
+	    }
+	    else
+	    {
+		    if (isUnsigned)
+		    {
+			*reinterpret_cast<UINT64*>(dstPtr) = OpStackGet<UINT64>(m_curStackHt);
+		    }
+		    else
+		    {
+			*reinterpret_cast<INT64*>(dstPtr) = OpStackGet<INT64>(m_curStackHt);
+		    }
+	    }
+#else
             *reinterpret_cast<UINT64*>(dstPtr) = OpStackGet<UINT64>(m_curStackHt);
+#endif
             break;
         default:
             _ASSERTE_MSG(false, "This should have exhausted all the possible sizes.");

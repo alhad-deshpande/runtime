@@ -324,20 +324,38 @@ void HijackFrame::UpdateRegDisplay(const PREGDISPLAY pRD, bool updateFloats)
 #ifndef DACCESS_COMPILE
 void UMEntryThunkCode::Encode(UMEntryThunkCode *pEntryThunkCodeRX, BYTE* pTargetCode, void* pvSecretParam)
 {
-    _ASSERTE("TARGET_POWERPC64: NYI");
-    //TODO TARGET_POWERPC64
+    CONTRACTL
+    {
+        NOTHROW;
+        GC_NOTRIGGER;
+        MODE_ANY;
+    }
+    CONTRACTL_END;
+
+    //ld %r11, 0(%r6)  // move pvSecretParam(in r6) to METHODDESC_REGISTER(r11) // e9660000
+    //mr %r12, %r5								// 7cac2b78
+    //mtctr %r12								// 7d8903a6
+    //bctr									// 4e800420
+
+    m_code[0] = 0xe9660000; // ld %r11, 0(%r6)
+    m_code[1] = 0x7cac2b78; // mr %r12, %r5
+    m_code[2] = 0x7d8903a6; // mtctr %r12
+    m_code[3] = 0x4e800420; // bctr
+
+    m_pTargetCode = (TADDR)pTargetCode;
+    m_pvSecretParam = (TADDR)pvSecretParam;
+    FlushInstructionCache(GetCurrentProcess(),&pEntryThunkCodeRX->m_code,sizeof(m_code));
 }
 
 void UMEntryThunkCode::Poison()
 {
+    abort();
     //TODO TARGET_POWERPC64
     _ASSERTE("TARGET_POWERPC64: NYI");
 }
 
 UMEntryThunk* UMEntryThunk::Decode(LPVOID pCallback)
 {
-    //TODO TARGET_POWERPC64
-    _ASSERTE("TARGET_POWERPC64: NYI");
     LIMITED_METHOD_CONTRACT;
 
     _ASSERTE(offsetof(UMEntryThunkCode, m_code) == 0);
@@ -349,65 +367,76 @@ UMEntryThunk* UMEntryThunk::Decode(LPVOID pCallback)
 
 PCODE DynamicHelpers::CreateHelper(LoaderAllocator * pAllocator, TADDR arg, PCODE target)
 {
+    abort();
     _ASSERTE(!"PPC64LE:NYI CreateHelper");
     return NULL;
 }
 
 void DynamicHelpers::EmitHelperWithArg(BYTE*& p, size_t rxOffset, LoaderAllocator * pAllocator, TADDR arg, PCODE target)
 {
+    abort();
     _ASSERTE(!"PPC64LE:NYI EmitHelperWithArg");
 }
 
 PCODE DynamicHelpers::CreateHelperWithArg(LoaderAllocator * pAllocator, TADDR arg, PCODE target)
 {
+    abort();
     _ASSERTE(!"PPC64LE:NYI CreateHelperWithArg");
     return NULL;
 }
 
 PCODE DynamicHelpers::CreateHelper(LoaderAllocator * pAllocator, TADDR arg, TADDR arg2, PCODE target)
 {
+    abort();
     _ASSERTE(!"PPC64LE:NYI CreateHelper");
     return NULL;
 }
 
 PCODE DynamicHelpers::CreateHelperArgMove(LoaderAllocator * pAllocator, TADDR arg, PCODE target)
 {
+    abort();
     _ASSERTE(!"PPC64LE:NYI CreateHelperArgMove");
     return NULL;
 }
 
 PCODE DynamicHelpers::CreateReturn(LoaderAllocator * pAllocator)
 {
+    abort();
     _ASSERTE(!"PPC64LE:NYI CreateReturn");
     return NULL;
 }
 
 PCODE DynamicHelpers::CreateReturnConst(LoaderAllocator * pAllocator, TADDR arg)
 {
+    abort();
     _ASSERTE(!"PPC64LE:NYI CreateReturnConst");
     return NULL;
 }
 
 PCODE DynamicHelpers::CreateReturnIndirConst(LoaderAllocator * pAllocator, TADDR arg, INT8 offset)
 {
+    abort();
     _ASSERTE(!"PPC64LE:NYI CreateReturnIndirConst");
     return NULL;
 }
 
 PCODE DynamicHelpers::CreateHelperWithTwoArgs(LoaderAllocator * pAllocator, TADDR arg, PCODE target)
 {
+    abort();
     _ASSERTE(!"PPC64LE:NYI CreateHelperWithTwoArgs");
     return NULL;
 }
 
 PCODE DynamicHelpers::CreateHelperWithTwoArgs(LoaderAllocator * pAllocator, TADDR arg, TADDR arg2, PCODE target)
 {
+    abort();
     _ASSERTE(!"PPC64LE:NYI CreateHelperWithTwoArgs");
     return NULL;
 }
 
 PCODE DynamicHelpers::CreateDictionaryLookupHelper(LoaderAllocator * pAllocator, CORINFO_RUNTIME_LOOKUP * pLookup, DWORD dictionaryIndexAndSlot, Module * pModule)
 {
+    abort();
     _ASSERTE(!"PPC64LE:NYI CreateDictionaryLookupHelper");
     return NULL;
 }

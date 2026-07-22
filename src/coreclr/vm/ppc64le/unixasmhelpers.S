@@ -95,7 +95,7 @@ NESTED_END OnHijackTripThread, _TEXT
 #endif // FEATURE_HIJACK
 
 LEAF_ENTRY SinglecastDelegateInvokeStub, _TEXT
-    cmpd %r3, 0
+    cmpdi %r3, 0
     beq LOCAL_LABEL(NullObject)
 
     ld %r12, DelegateObject___methodPtr(%r3)
