@@ -12722,8 +12722,19 @@ static bool ShouldUseInterpreterFallback(MethodDesc* ftnDesc,const char* ftnName
 	{ "System.Runtime.CompilerServices.Unsafe","Add"},
 	{ "System.Runtime.CompilerServices.TypeHandle","AsMethodTable"},
 	{ "ListBuilder`1[__Canon]","Add"},
-
-
+	{ "System.Text.Ascii","NarrowTwoUtf16CharsToAsciiAndWriteToBuffer"},
+	{ "System.Diagnostics.Tracing.EventSource",".ctor"},
+	{ "System.Guid","EqualsCore"},
+	{ "System.Diagnostics.Tracing.NativeRuntimeEventSource","get_ProviderMetadata"},
+	{ "System.Runtime.CompilerServices.RuntimeHelpers","IsReferenceOrContainsReferences"},
+	{ "System.Int16","System.Numerics.IEqualityOperators<System.Int16,System.Int16,System.Boolean"},
+	{ "System.Text.Encoding",".ctor"},
+	{ "System.Text.EncoderReplacementFallback",".ctor"},
+	{ "System.Text.DecoderReplacementFallback",".ctor"},
+	{ "System.Text.Unicode.Utf8Utility","TranscodeToUtf8"},
+	{ "System.Text.Ascii","NarrowUtf16ToAscii"},
+	{ "System.String","Equals"},
+	{ "System.Type","get_IsValueType"},
     };
 
     const size_t numInclusions = sizeof(jitInclusionList) / sizeof(jitInclusionList[0]);
