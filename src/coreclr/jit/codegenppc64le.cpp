@@ -829,8 +829,13 @@ void CodeGen::genPutArgStk(GenTreePutArgStk* treeNode)
 
     GenTree* source = treeNode->gtGetOp1();
 
+    JITDUMP("[PPC64LE HFA DEBUG] genPutArgStk - source: oper=%s, type=%s, TypeIs(TYP_STRUCT)=%d, isContained=%d\n",
+           GenTree::OpName(source->OperGet()), varTypeName(source->TypeGet()),
+           source->TypeIs(TYP_STRUCT), source->isContained());
+
     if (!source->TypeIs(TYP_STRUCT)) // a normal non-Struct argument
     {
+        JITDUMP("[PPC64LE HFA DEBUG] genPutArgStk - Taking non-struct path\n");
         if (varTypeIsSIMD(source->TypeGet()))
         {
             // SIMD types not yet supported for PPC64LE
@@ -882,14 +887,17 @@ void CodeGen::genPutArgStk(GenTreePutArgStk* treeNode)
     }
     else // We have some kind of a struct argument
     {
+        JITDUMP("[PPC64LE HFA DEBUG] genPutArgStk - Taking struct path\n");
         assert(source->isContained()); // We expect that this node was marked as contained in Lower
 
         if (source->OperGet() == GT_FIELD_LIST)
         {
+            JITDUMP("[PPC64LE HFA DEBUG] genPutArgStk - Calling genPutArgStkFieldList\n");
             genPutArgStkFieldList(treeNode, varNumOut);
         }
         else
         {
+            JITDUMP("[PPC64LE HFA DEBUG] genPutArgStk - Handling local read or BLK\n");
             noway_assert(source->OperIsLocalRead() || source->OperIs(GT_BLK));
 
             var_types targetType = source->TypeGet();
@@ -939,14 +947,19 @@ void CodeGen::genPutArgStk(GenTreePutArgStk* treeNode)
 
             unsigned dstSize = treeNode->GetStackByteSize();
 
+            JITDUMP("[PPC64LE HFA DEBUG] genPutArgStk - dstSize=%u, srcSize=%u\n", dstSize, srcSize);
+
             // PPC64LE: If dstSize is 0, this struct is passed entirely in registers
             // and should not be processed by genPutArgStk. This can happen for HFAs.
             if (dstSize == 0)
             {
+                JITDUMP("[PPC64LE HFA DEBUG] genPutArgStk - dstSize is 0, returning early\n");
                 // This struct is passed entirely in registers via GT_FIELD_LIST
                 // Nothing to do here - the individual fields will be handled by genPutArgReg
                 return;
             }
+            
+            JITDUMP("[PPC64LE HFA DEBUG] genPutArgStk - dstSize is not 0, continuing\n");
 
             // We can generate smaller code if store size is a multiple of TARGET_POINTER_SIZE.
             // The dst size can be rounded up to PUTARG_STK size. The src size can be rounded up
@@ -973,17 +986,39 @@ void CodeGen::genPutArgStk(GenTreePutArgStk* treeNode)
             //             std     r2, offset(r1)
             // For HFA structs, we use lfd/stfd or lfs/stfs instead
             
+            JITDUMP("[PPC64LE HFA DEBUG] genPutArgStk - About to check HFA, srcSize=%u, dstSize=%u, remainingSize=%d\n",
+                   srcSize, dstSize, remainingSize);
+            
             // Check if this is an HFA struct
+            // Note: We check the struct type, not the register type, because for stack-only
+            // HFA structs, loReg might be an integer register used as a temporary
             bool isHfa = false;
             var_types hfaType = TYP_UNDEF;
             unsigned hfaSlots = 0;
-            CORINFO_CLASS_HANDLE structHnd = layout->GetClassHandle();
-            if (genIsValidFloatReg(loReg) && structHnd != NO_CLASS_HANDLE &&
+            
+            // Try to get class handle - first from lvClassHnd (if source is local), then from layout
+            CORINFO_CLASS_HANDLE structHnd = NO_CLASS_HANDLE;
+            if (srcLclNode != nullptr)
+            {
+                LclVarDsc* varDsc = compiler->lvaGetDesc(srcLclNode->GetLclNum());
+                structHnd = varDsc->lvClassHnd;
+            }
+            if (structHnd == NO_CLASS_HANDLE)
+            {
+                structHnd = layout->GetClassHandle();
+            }
+            
+            if (structHnd != NO_CLASS_HANDLE &&
                 IsPpc64leHfaLikeStruct(compiler, structHnd, &hfaType, &hfaSlots))
             {
                 isHfa = true;
-                printf("HFA DEBUG genPutArgStk: Detected HFA struct, loReg=%s, hfaType=%s, hfaSlots=%u\n",
-                       getRegName(loReg), varTypeName(hfaType), hfaSlots);
+                JITDUMP("[PPC64LE HFA DEBUG] genPutArgStk: Detected HFA struct, loReg=%s, hfaType=%s, hfaSlots=%u, structHnd=%p\n",
+                       getRegName(loReg), varTypeName(hfaType), hfaSlots, structHnd);
+            }
+            else
+            {
+                JITDUMP("[PPC64LE HFA DEBUG] genPutArgStk: NOT HFA - structHnd=%p, srcLclNode=%p\n",
+                       structHnd, srcLclNode);
             }
             
             // For HFA structs on stack, process field by field (floats are 4 bytes, doubles are 8 bytes)

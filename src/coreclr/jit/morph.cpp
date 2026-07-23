@@ -2282,6 +2282,8 @@ void CallArgs::AddFinalArgsAndDetermineABIInfo(Compiler* comp, GenTreeCall* call
             m_hasStackArgs = true;
             arg.AbiInfo.SetRegNum(0, REG_STK);
             arg.AbiInfo.ByteOffset = abiInfo.Segment(0).GetStackOffset();
+            JITDUMP("[PPC64LE HFA] Stack-only arg: NumSegments=%u, ByteOffset=%u, NumRegs=%u (before ByteSize set)\n",
+                    abiInfo.NumSegments, arg.AbiInfo.ByteOffset, arg.AbiInfo.NumRegs);
 #else
             // We only expect to see one stack segment in these cases.
             assert(abiInfo.NumSegments == 1);
@@ -2344,9 +2346,22 @@ void CallArgs::AddFinalArgsAndDetermineABIInfo(Compiler* comp, GenTreeCall* call
             }
         }
 
+#if defined(TARGET_POWERPC64)
+        if (varTypeIsStruct(argSigType) && arg.AbiInfo.GetRegNum() == REG_STK)
+        {
+            JITDUMP("[PPC64LE] After ByteSize set for stack struct: NumRegs=%u, ByteSize=%u, ArgType=%s\n",
+                    arg.AbiInfo.NumRegs, arg.AbiInfo.ByteSize, varTypeName(arg.AbiInfo.ArgType));
+        }
+#endif
+
         if (isHfaArg)
         {
             arg.AbiInfo.SetHfaType(hfaType, hfaSlots);
+#if defined(TARGET_POWERPC64)
+            JITDUMP("[PPC64LE HFA] After SetHfaType: NumRegs=%u, ByteSize=%u, RegNum=%s, GetStackByteSize()=%u\n",
+                    arg.AbiInfo.NumRegs, arg.AbiInfo.ByteSize, getRegName(arg.AbiInfo.GetRegNum()),
+                    arg.AbiInfo.GetStackByteSize());
+#endif
         }
     } // end foreach argument loop
 

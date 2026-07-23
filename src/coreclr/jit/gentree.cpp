@@ -1273,8 +1273,16 @@ void CallArgABIInformation::SetHfaType(var_types type, unsigned hfaSlots)
 //
 unsigned CallArgABIInformation::GetStackByteSize() const
 {
+#ifdef TARGET_POWERPC64
+    JITDUMP("[PPC64LE] GetStackByteSize called: IsSplit=%d, NumRegs=%u, ByteSize=%u, RegNum=%s\n",
+            IsSplit(), NumRegs, ByteSize, getRegName(GetRegNum()));
+#endif
+
     if (!IsSplit() && NumRegs > 0)
     {
+#ifdef TARGET_POWERPC64
+        JITDUMP("[PPC64LE] GetStackByteSize returning 0 (pure register arg)\n");
+#endif
         return 0;
     }
 
@@ -1288,6 +1296,10 @@ unsigned CallArgABIInformation::GetStackByteSize() const
     assert(ByteSize > TARGET_POINTER_SIZE * NumRegs);
 #endif
     const unsigned stackByteSize = ByteSize - TARGET_POINTER_SIZE * NumRegs;
+#ifdef TARGET_POWERPC64
+    JITDUMP("[PPC64LE] GetStackByteSize returning %u (ByteSize=%u - 8*NumRegs=%u)\n",
+            stackByteSize, ByteSize, TARGET_POINTER_SIZE * NumRegs);
+#endif
     return stackByteSize;
 }
 

@@ -421,7 +421,7 @@ typedef ptrdiff_t ssize_t;
 #endif // TARGET_LOONGARCH64
 
 #if defined(UNIX_AMD64_ABI) || !defined(TARGET_64BIT) || defined(TARGET_ARM64) || defined(TARGET_LOONGARCH64) ||       \
-    defined(TARGET_RISCV64)
+    defined(TARGET_RISCV64) || defined(TARGET_POWERPC64)
 #define FEATURE_PUT_STRUCT_ARG_STK 1
 #endif
 

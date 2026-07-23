@@ -458,9 +458,43 @@ int LinearScan::BuildPutArgStk(GenTreePutArgStk* argNode)
         }
         else
         {
+            // Check if this is an HFA struct - if so, we need float registers
+            bool isHfa = false;
+            ClassLayout* layout = nullptr;
+            
+            if (src->OperIs(GT_LCL_VAR, GT_LCL_FLD))
+            {
+                LclVarDsc* varDsc = compiler->lvaGetDesc(src->AsLclVarCommon()->GetLclNum());
+                layout = varDsc->GetLayout();
+            }
+            else if (src->OperIs(GT_BLK))
+            {
+                layout = src->AsBlk()->GetLayout();
+            }
+            
+            if (layout != nullptr)
+            {
+                CORINFO_CLASS_HANDLE structHnd = layout->GetClassHandle();
+                if (structHnd != NO_CLASS_HANDLE)
+                {
+                    var_types hfaType = TYP_UNDEF;
+                    unsigned hfaSlots = 0;
+                    isHfa = IsPpc64leHfaLikeStruct(compiler, structHnd, &hfaType, &hfaSlots);
+                }
+            }
+            
             // We can use a ld/std sequence so we need two internal registers for PPC64LE
-            buildInternalIntRegisterDefForNode(argNode);
-            buildInternalIntRegisterDefForNode(argNode);
+            // For HFA structs, use float registers; otherwise use integer registers
+            if (isHfa)
+            {
+                buildInternalFloatRegisterDefForNode(argNode);
+                buildInternalFloatRegisterDefForNode(argNode);
+            }
+            else
+            {
+                buildInternalIntRegisterDefForNode(argNode);
+                buildInternalIntRegisterDefForNode(argNode);
+            }
 
             assert(src->isContained());
 
