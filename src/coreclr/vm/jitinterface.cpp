@@ -12778,6 +12778,16 @@ static bool ShouldUseInterpreterFallback(MethodDesc* ftnDesc,const char* ftnName
         { "System.Runtime.InteropServices.SafeHandle","InternalRelease"},
         { "ManagedToUnmanagedOut[__Canon]","Free"},
 
+        { "System.Diagnostics.Tracing.EventProvider","Register"},
+        { "System.Diagnostics.Tracing.EventProviderImpl","Register"},
+	{ "System.WeakReference`1[__Canon]","Create"},
+       	{ "ComInfo","FromObject"},
+      	{ "System.ComAwareWeakReference","PossiblyComObject"},
+	{ "System.String","Create"},
+	{ "System.String","CopyStringContent"},
+	{ "System.Console","<get_IsInputRedirected"},
+	{ "System.ConsolePal","IsInputRedirectedCore"},
+	{ "System.Lazy`1[__Canon]","CreateValue"},
     };
 
     const size_t numInclusions = sizeof(jitInclusionList) / sizeof(jitInclusionList[0]);
