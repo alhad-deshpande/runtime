@@ -101,7 +101,7 @@ Start_Orphan_4:
 End_Orphan_4:
  ldc.i4.1
  ldc.i4.m1
- bgt.un Branch_0x8
+ blt.un Branch_0x8
 
  ldloc local_0x3
  br Branch_0x9
@@ -111,6 +111,7 @@ End_Orphan_4:
  ldc.r8 float64(0x5e0b433a28568d2c)
  Branch_0x9:
 
+//ldc.r8 0.0
  call float64 [mscorlib]System.Math::Cos(float64)
  blt Branch_0x4
 
