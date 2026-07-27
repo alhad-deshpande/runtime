@@ -4313,7 +4313,7 @@ public:
         for (unsigned i = 0; i < MAX_RET_REG_COUNT; ++i)
         {
             m_regType[i] = TYP_UNKNOWN;
-#if defined(TARGET_RISCV64) || defined(TARGET_LOONGARCH64)
+#if defined(TARGET_RISCV64) || defined(TARGET_LOONGARCH64) || defined(TARGET_POWERPC64)
             m_fieldOffset[i] = 0;
 #endif
         }
@@ -4418,14 +4418,14 @@ public:
     {
         assert(!IsMultiRegRetType());
         assert(m_regType[0] != TYP_UNKNOWN);
-#if defined(TARGET_RISCV64) || defined(TARGET_LOONGARCH64)
+#if defined(TARGET_RISCV64) || defined(TARGET_LOONGARCH64) || defined(TARGET_POWERPC64)
         return m_fieldOffset[0];
 #else
         return 0;
 #endif
     }
 
-#if defined(TARGET_RISCV64) || defined(TARGET_LOONGARCH64)
+#if defined(TARGET_RISCV64) || defined(TARGET_LOONGARCH64) || defined(TARGET_POWERPC64)
     unsigned GetReturnFieldOffset(unsigned index) const
     {
         assert(m_regType[index] != TYP_UNKNOWN);

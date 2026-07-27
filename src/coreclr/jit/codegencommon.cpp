@@ -7462,7 +7462,7 @@ void CodeGen::genStructReturn(GenTree* treeNode)
         LclVarDsc*     varDsc  = compiler->lvaGetDesc(lclNode);
         assert(varDsc->lvIsMultiRegRet);
 
-#if defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64)
+#if defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64) || defined(TARGET_POWERPC64)
         var_types type   = retTypeDesc.GetReturnRegType(0);
         unsigned  offset = retTypeDesc.GetReturnFieldOffset(0);
         regNumber toReg  = retTypeDesc.GetABIReturnReg(0, compiler->info.compCallConv);
@@ -7478,7 +7478,7 @@ void CodeGen::genStructReturn(GenTree* treeNode)
 
             GetEmitter()->emitIns_R_S(ins_Load(type), emitTypeSize(type), toReg, lclNode->GetLclNum(), offset);
         }
-#else // !TARGET_LOONGARCH64 && !TARGET_RISCV64
+#else // !TARGET_LOONGARCH64 && !TARGET_RISCV64 && !TARGET_POWERPC64
 
 #ifdef SWIFT_SUPPORT
         const uint32_t* offsets = nullptr;

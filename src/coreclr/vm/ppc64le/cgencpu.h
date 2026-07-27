@@ -48,7 +48,9 @@ EXTERN_C void SinglecastDelegateInvokeStub();
 #define CACHE_LINE_SIZE                         128  // ppc64le processors have 128-byte cache lines
 #define LOG2SLOT                                LOG2_PTRSIZE // LOG2_PTRSIZE is defined in src/coreclr/inc/stdmacros.h
 
-#define ENREGISTERED_PARAMTYPE_MAXSIZE          16   // --refer abi --?? why it is defined 8 size in s390x ?? bytes ( 2*pointer_size = 2*8 = 16 --> maximum size of structure can be passed in registers.)
+#define ENREGISTERED_PARAMTYPE_MAXSIZE          16   // bytes (2*pointer_size = 2*8 = 16 --> maximum size of structure passed in registers)
+#define ENREGISTERED_RETURNTYPE_MAXSIZE         16   // bytes (two GPRs: r3 and r4 can return up to 16 bytes)
+#define ENREGISTERED_RETURNTYPE_INTEGER_MAXSIZE 16   // bytes (structs up to 16 bytes are returned in r3/r4)
 #define CALLDESCR_ARGREGS                       1   // CallDescrWorker has ArgumentRegister parameter
 #define CALLDESCR_FPARGREGS                     1   // CallDescrWorker has FloatArgumentRegisters parameter
 

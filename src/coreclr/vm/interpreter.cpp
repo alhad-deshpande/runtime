@@ -121,7 +121,7 @@ InterpreterMethodInfo::InterpreterMethodInfo(CEEInfo* comp, CORINFO_METHOD_INFO*
     }
 #endif
 
-#if defined(UNIX_AMD64_ABI) || defined(HOST_LOONGARCH64) || defined(HOST_RISCV64)
+#if defined(UNIX_AMD64_ABI) || defined(HOST_LOONGARCH64) || defined(HOST_RISCV64) || defined(HOST_POWERPC64)
     // ...or it fits into two registers.
     if (hasRetBuff && getClassSize(methInfo->args.retTypeClass) <= 2 * sizeof(void*))
     {
@@ -134,12 +134,6 @@ InterpreterMethodInfo::InterpreterMethodInfo(CEEInfo* comp, CORINFO_METHOD_INFO*
         hasRetBuff = false;
     }
 #elif defined(HOST_S390X)
-    if (methInfo->args.retType == CORINFO_TYPE_VALUECLASS &&
-        isNativePrimitiveStructType(comp, methInfo->args.retTypeClass))
-    {
-        hasRetBuff = false;
-    }
-#elif defined(HOST_POWERPC64)
     if (methInfo->args.retType == CORINFO_TYPE_VALUECLASS &&
         isNativePrimitiveStructType(comp, methInfo->args.retTypeClass))
     {
@@ -2706,8 +2700,8 @@ EvalLoop:
                     //The Fixed Two slot return buffer address
                     memcpy(m_ilArgs-16, OpStackGet<void*>(0), sz);
                 }
-#elif defined(TARGET_RISCV64)
-                // Is it an struct contained in two slots
+#elif defined(TARGET_RISCV64) || defined(TARGET_POWERPC64)
+                // Is it a struct contained in two slots
                 else if (m_methInfo->m_returnType == CORINFO_TYPE_VALUECLASS
                         && sz == 16)
                 {
@@ -9889,7 +9883,7 @@ void Interpreter::DoCallWork(bool virtualCall, void* thisArg, CORINFO_RESOLVED_T
             HFAReturnArgSlots = (HFAReturnArgSlots + sizeof(ARG_SLOT) - 1) / sizeof(ARG_SLOT);
         }
     }
-#elif defined(UNIX_AMD64_ABI) || defined(TARGET_RISCV64)
+#elif defined(UNIX_AMD64_ABI) || defined(TARGET_RISCV64) || defined(TARGET_POWERPC64)
     unsigned HasTwoSlotBuf = sigInfo.retType == CORINFO_TYPE_VALUECLASS &&
         getClassSize(sigInfo.retTypeClass) == 16;
 #endif
@@ -9916,7 +9910,10 @@ void Interpreter::DoCallWork(bool virtualCall, void* thisArg, CORINFO_RESOLVED_T
 #elif defined(HOST_S390X)
     unsigned totalArgSlots = nSlots;
 #elif defined(HOST_POWERPC64)
-    unsigned totalArgSlots = nSlots;
+    // Reserve 4 extra ARG_SLOTs (32 bytes) before args when returning a 16-byte struct
+    // via an interpreted callee. The callee writes its 16-byte return value to m_ilArgs-32,
+    // so we need that space to be valid memory owned by the caller.
+    unsigned totalArgSlots = nSlots + (HasTwoSlotBuf ? 4 : 0);
 #else
 #error "unsupported platform"
 #endif
@@ -9936,6 +9933,15 @@ void Interpreter::DoCallWork(bool virtualCall, void* thisArg, CORINFO_RESOLVED_T
 #endif // defined(HOST_ARM)
         argTypes = (InterpreterType*)_alloca(nSlots * sizeof(InterpreterType));
     }
+#if defined(HOST_POWERPC64)
+    // When returning a 16-byte struct via an interpreted callee, the callee writes
+    // its return value to m_ilArgs-32 (4 ARG_SLOTs before the first argument).
+    // We reserved those 4 extra slots at the start of the buffer; now advance the
+    // args pointer past them so the actual arguments sit in the right place and
+    // args-4 (i.e. args-32 bytes) points to the reserved return-value buffer.
+    if (HasTwoSlotBuf)
+        args = args + 4;
+#endif // defined(HOST_POWERPC64)
     // Make sure that we don't scan any of these until we overwrite them with
     // the real types of the arguments.
     InterpreterType undefIt(CORINFO_TYPE_UNDEF);
@@ -10148,7 +10154,7 @@ void Interpreter::DoCallWork(bool virtualCall, void* thisArg, CORINFO_RESOLVED_T
     // This is the argument slot that will be used to hold the return value.
     // In UNIX_AMD64_ABI, return type may have need tow ARG_SLOTs.
     ARG_SLOT retVals[2] = {0, 0};
-#if !defined(HOST_ARM) && !defined(UNIX_AMD64_ABI) && !defined(TARGET_RISCV64)
+#if !defined(HOST_ARM) && !defined(UNIX_AMD64_ABI) && !defined(TARGET_RISCV64) && !defined(TARGET_POWERPC64)
     _ASSERTE (NUMBER_RETURNVALUE_SLOTS == 1);
 #endif
 
@@ -10419,6 +10425,13 @@ void Interpreter::DoCallWork(bool virtualCall, void* thisArg, CORINFO_RESOLVED_T
             bool b = CycleTimer::GetThreadCyclesS(&startCycles); _ASSERTE(b);
 #endif // INTERP_ILCYCLE_PROFILE
             retVals[0] = InterpretMethodBody(methInfo, true, reinterpret_cast<BYTE*>(args), NULL);
+#if defined(HOST_POWERPC64)
+            // If the callee returned a 16-byte struct it wrote the value to m_ilArgs-32,
+            // which is args-4 ARG_SLOTs = args-32 bytes.  Copy both slots into retVals
+            // so the code below (HasTwoSlotBuf branch) can push the struct onto the stack.
+            if (HasTwoSlotBuf)
+                memcpy(retVals, reinterpret_cast<BYTE*>(args) - 32, 16);
+#endif // defined(HOST_POWERPC64)
             pCscd = NULL;  // Nothing to cache.
         }
         else
@@ -10430,7 +10443,7 @@ void Interpreter::DoCallWork(bool virtualCall, void* thisArg, CORINFO_RESOLVED_T
             bool b = CycleTimer::GetThreadCyclesS(&startCycles); _ASSERTE(b);
 #endif // INTERP_ILCYCLE_PROFILE
 
-#if defined(UNIX_AMD64_ABI) || defined(TARGET_RISCV64)
+#if defined(UNIX_AMD64_ABI) || defined(TARGET_RISCV64) || defined(TARGET_POWERPC64)
             mdcs.CallTargetWorker(args, retVals, HasTwoSlotBuf ? 16: 8);
 #else
             mdcs.CallTargetWorker(args, retVals, 8);
@@ -10576,7 +10589,7 @@ void Interpreter::DoCallWork(bool virtualCall, void* thisArg, CORINFO_RESOLVED_T
                     {
                         OpStackSet<INT64>(m_curStackHt, GetSmallStructValue(&smallStructRetVal, retTypeSz));
                     }
-#if defined(UNIX_AMD64_ABI) || defined(TARGET_RISCV64)
+#if defined(UNIX_AMD64_ABI) || defined(TARGET_RISCV64) || defined(TARGET_POWERPC64)
                     else if (HasTwoSlotBuf)
                     {
                         void* dst = LargeStructOperandStackPush(16);

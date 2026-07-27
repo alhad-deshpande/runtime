@@ -112,9 +112,10 @@ LOCAL_LABEL(NoFloatArguments):
 	bctrl
 
 LOCAL_LABEL(CallDescrWorkerInternalReturnAddress):
-    // Check expected return value type.
-    ld %r4, 32(%r1)
-    lwz %r0, CallDescrData__fpReturnSize(%r4)
+    // Load pCallDescrData into r5 (not r4) so that the integer return registers
+    // r3 and r4 are preserved intact for the ReturnsInt store below.
+    ld %r5, 32(%r1)
+    lwz %r0, CallDescrData__fpReturnSize(%r5)
     cmpdi %r0, 0
     beq      LOCAL_LABEL(ReturnsInt)
     cmpdi %r0, 4
@@ -125,35 +126,36 @@ LOCAL_LABEL(CallDescrWorkerInternalReturnAddress):
     // Store double-precision floating-point value.
 
 LOCAL_LABEL(ReturnsDouble):
-    stfd     %f1,CallDescrData__returnValue(%r4)
+    stfd     %f1,CallDescrData__returnValue(%r5)
     b       LOCAL_LABEL(Epilog)
 
     // Store single-precision floating-point value.
 
 LOCAL_LABEL(ReturnsFloat):
-    stfs     %f1,CallDescrData__returnValue(%r4)
+    stfs     %f1,CallDescrData__returnValue(%r5)
     b       LOCAL_LABEL(Epilog)
 
-    // Store integer return value.
+    // Store integer return value (also handles 16-byte struct returned in r3+r4).
 
 LOCAL_LABEL(ReturnsInt):
-    std     %r3,CallDescrData__returnValue(%r4)
+    std     %r3,CallDescrData__returnValue(%r5)
+    std     %r4,CallDescrData__returnValue+8(%r5)
     // fall through
 
 LOCAL_LABEL(Epilog):
 
-	lwa %r5, CallDescrData__numStackSlots(%r4)
-	li %r6, 2
-	divd %r6, %r5, %r6
-	mulli %r6, %r6, 2
-	sub %r6, %r5, %r6
-	cmpdi %r6, 0
+	lwa %r6, CallDescrData__numStackSlots(%r5)
+	li %r7, 2
+	divd %r7, %r6, %r7
+	mulli %r7, %r7, 2
+	sub %r7, %r6, %r7
+	cmpdi %r7, 0
 	beq LOCAL_LABEL(NO_STACK_PADDING_EPILOG)
-	addic %r5, %r5, 1
+	addic %r6, %r6, 1
 
 LOCAL_LABEL(NO_STACK_PADDING_EPILOG):
-	mulli %r5, %r5, 8
-	addic %r6, %r5, 112
+	mulli %r6, %r6, 8
+	addic %r6, %r6, 112
 	
 	add   %r1, %r1, %r6
 

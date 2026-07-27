@@ -2242,11 +2242,6 @@ void ArgIteratorTemplate<ARGITERATOR_BASE>::ComputeReturnFlags()
                 break;
         }
 #endif
-#if defined(TARGET_POWERPC64)
-            //_ASSERTE_MSG(false, "Unsupported arch POWERPC64.");
-	    _ASSERTE(!thValueType.IsNull());
-#endif
-
         // Value types are returned using return buffer by default
         flags |= RETURN_HAS_RET_BUFFER;
         break;
