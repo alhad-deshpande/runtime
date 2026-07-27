@@ -3262,6 +3262,32 @@ private:
 
     size_t emitSizeOfInsDsc(instrDesc* id) const;
 
+    // Describes which instrDesc subtype was allocated for an INS_addi instruction.
+    // Each emitter function that emits INS_addi calls a different allocator, so the
+    // concrete descriptor type cannot be recovered from the instruction opcode alone.
+    // This enum enumerates every possible allocation outcome; emitSizeOfInsDsc uses
+    // the flags that each allocator stamps onto the descriptor to pick the right case.
+    //
+    //  Caller          Allocator                         Concrete type          Flags stamped
+    //  --------------- --------------------------------- ---------------------- ------------------------------
+    //  emitIns_R_S     emitNewInstrLclVarPair (small cns) instrDescLclVarPair   idIsLclVarPair=1, idIsLargeCns=0
+    //  emitIns_R_S     emitNewInstrLclVarPair (large cns) instrDescLclVarPairCns idIsLclVarPair=1, idIsLargeCns=1
+    //  emitIns_R_R_I   emitNewInstrSmall                  instrDesc (small)     idIsSmallDsc=1
+    //  emitIns_R_R_I   emitNewInstrCns (large cns)        instrDescCns           idIsLargeCns=1, idIsLclVarPair=0
+    //  emitIns_R_L     emitNewInstrJmp                    instrDescJmp           none of the above; fmt=IF_RI_1C
+    //  emitIns_R_R_C   emitNewInstrCns (cns=0, small)     instrDesc              none of the above; fmt=IF_NONE
+    enum addiInsDscKind
+    {
+        ADDI_DSC_SMALL,             // emitIns_R_R_I  small imm  -> instrDesc (small)    idIsSmallDsc=1
+        ADDI_DSC_LCLVAR_PAIR,       // emitIns_R_S    small imm  -> instrDescLclVarPair  idIsLclVarPair=1, idIsLargeCns=0
+        ADDI_DSC_LCLVAR_PAIR_CNS,   // emitIns_R_S    large imm  -> instrDescLclVarPairCns idIsLclVarPair=1, idIsLargeCns=1
+        ADDI_DSC_CNS,               // emitIns_R_R_I  large imm  -> instrDescCns          idIsLargeCns=1, idIsLclVarPair=0
+        ADDI_DSC_JMP,               // emitIns_R_L               -> instrDescJmp           fmt=IF_RI_1C, no other flags
+        ADDI_DSC_PLAIN,             // emitIns_R_R_C             -> instrDesc              fmt=IF_NONE, no other flags
+    };
+
+    static addiInsDscKind addiClassifyInsDsc(const instrDesc* id);
+
     /************************************************************************/
     /*        The following keeps track of stack-based GC values            */
     /************************************************************************/

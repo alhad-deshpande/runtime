@@ -469,6 +469,46 @@ void CodeGen::genCodeForTreeNode(GenTree* treeNode)
 	    genTableBasedSwitch(treeNode);
 	    break;
 
+        case GT_START_PREEMPTGC:
+            // We are about to enter preemptive GC mode (native call). Kill all
+            // callee-saved GC-ref/byref register liveness and define a temp label
+            // so that GC liveness info is propagated to subsequent emitter calls.
+            gcInfo.gcMarkRegSetNpt(RBM_INT_CALLEE_SAVED);
+            genDefineTempLabel(genCreateTempLabel());
+            break;
+
+        case GT_RETURNTRAP:
+            genCodeForReturnTrap(treeNode->AsOp());
+            break;
+
+        case GT_PINVOKE_PROLOG:
+            // Verify that no live GC refs exist in non-argument registers at the
+            // PInvoke call boundary. Argument registers holding managed refs are
+            // the only permitted survivors at this point.
+            noway_assert(((gcInfo.gcRegGCrefSetCur | gcInfo.gcRegByrefSetCur) &
+                          ~fullIntArgRegMask(compiler->info.compCallConv)) == 0);
+#ifdef PSEUDORANDOM_NOP_INSERTION
+            // The runtime requires predictable codegen at PInvoke boundaries for
+            // safe-point patching.
+            GetEmitter()->emitDisableRandomNops();
+#endif // PSEUDORANDOM_NOP_INSERTION
+            break;
+
+        case GT_LABEL:
+            // Capture the return address of the following native call into targetReg.
+            // This is stored into InlinedCallFrame.m_pCallerReturnAddress by the
+            // surrounding GT_STORE_LCL_FLD node.
+            // emitIns_R_L emits: bcl 20,31,$+4  (get PC into LR)
+            //                    mflr targetReg  (move LR to targetReg)
+            //                    addi targetReg, targetReg, <label_offset>
+            genPendingCallLabel = genCreateTempLabel();
+            GetEmitter()->emitIns_R_L(INS_addi, EA_PTRSIZE, genPendingCallLabel, targetReg);
+            break;
+
+        case GT_PHYSREG:
+            genCodeForPhysReg(treeNode->AsPhysReg());
+            break;
+
 	default:
 	    printf("ERROR: Unhandled tree node operation: %s (oper=%d)\n",
 	                  GenTree::OpName(treeNode->gtOper), treeNode->gtOper);
@@ -2180,8 +2220,21 @@ void CodeGen::genRangeCheck(GenTree* oper)
 //
 void CodeGen::genCodeForPhysReg(GenTreePhysReg* tree)
 {
-    //_ASSERTE("!NYI");
-    abort();
+    assert(tree->OperIs(GT_PHYSREG));
+
+    var_types targetType = tree->TypeGet();
+    regNumber targetReg  = tree->GetRegNum();
+
+    // If the physical source register differs from the LSRA-assigned target
+    // register, emit a move.  If they are the same, no instruction is needed.
+    if (targetReg != tree->gtSrcReg)
+    {
+        GetEmitter()->emitIns_Mov(ins_Copy(targetType), emitActualTypeSize(targetType),
+                                  targetReg, tree->gtSrcReg, /* canSkip */ false);
+        genTransferRegGCState(targetReg, tree->gtSrcReg);
+    }
+
+    genProduceReg(tree);
 }
 
 //---------------------------------------------------------------------
@@ -2204,6 +2257,45 @@ void CodeGen::genCodeForNullCheck(GenTreeIndir* tree)
     GetEmitter()->emitInsLoadStoreOp(ins_Load(tree->TypeGet()), emitActualTypeSize(tree), REG_R0, tree);
 }
 
+//------------------------------------------------------------------------
+// genCodeForReturnTrap: Produce code for a GT_RETURNTRAP node.
+//
+// Arguments:
+//    tree - the GT_RETURNTRAP node
+//
+// Notes:
+//    Emits a conditional call to CORINFO_HELP_STOP_FOR_GC when the GC trap
+//    flag (g_TrapReturningThreads) is non-zero.  This is required after every
+//    return from native code so that a pending GC can collect before the
+//    managed thread resumes.
+//
+//    PPC64LE instruction sequence:
+//      cmpwi  data_reg, 0      ; compare trap value against zero
+//      beq    skipLabel        ; if zero, GC is not waiting — skip helper
+//      <genEmitHelperCall>     ; call CORINFO_HELP_STOP_FOR_GC
+//    skipLabel:
+//
+void CodeGen::genCodeForReturnTrap(GenTreeOp* tree)
+{
+    assert(tree->OperGet() == GT_RETURNTRAP);
+
+    GenTree* data = tree->gtOp1;
+    genConsumeRegs(data);
+
+    // Compare the trap value against zero using a word compare.
+    // The trap flag is an int32 so EA_4BYTE / cmpwi is correct.
+    GetEmitter()->emitIns_R_I(INS_cmpwi, EA_4BYTE, data->GetRegNum(), 0);
+
+    BasicBlock* skipLabel = genCreateTempLabel();
+
+    // Branch over the helper call if the trap is not set.
+    inst_JMP(EJ_eq, skipLabel);
+
+    // Emit the call to the EE helper that stops for GC (or other reasons).
+    genEmitHelperCall(CORINFO_HELP_STOP_FOR_GC, 0, EA_UNKNOWN);
+
+    genDefineTempLabel(skipLabel);
+}
 //------------------------------------------------------------------------
 // genCodeForShift: Generates the code sequence for a GenTree node that
 // represents a bit shift or rotate operation (<<, >>, >>>, rol, ror).

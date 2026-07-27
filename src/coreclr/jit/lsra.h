@@ -1177,7 +1177,7 @@ private:
                         unsigned hfaSlots = 0;
                         
                         // Check if it's an HFA struct (up to 8 float/double fields = 64 bytes max)
-                        if (IsPpc64leHfaLikeStruct(compiler, typeHnd, &hfaType, &hfaSlots))
+			if (typeHnd != NO_CLASS_HANDLE && IsPpc64leHfaLikeStruct(compiler, typeHnd, &hfaType, &hfaSlots))
                         {
                             // Override type to HFA element type (TYP_FLOAT or TYP_DOUBLE)
                             JITDUMP("[PPC64LE HFA DEBUG] getDefType: %s for V%02u, overriding type from %s to %s (hfaSlots=%u)\n",

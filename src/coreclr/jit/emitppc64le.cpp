@@ -94,6 +94,26 @@ const emitJumpKind emitReverseJumpKinds[] = {
  *  Return the allocated size (in bytes) of the given instruction descriptor.
  */
 
+// Classify an INS_addi instrDesc by the flags stamped during allocation.
+/*static*/ emitter::addiInsDscKind emitter::addiClassifyInsDsc(const instrDesc* id)
+{
+    assert(id->idIns() == INS_addi);
+
+    if (id->idIsSmallDsc())
+        return ADDI_DSC_SMALL;
+
+    if (id->idIsLclVarPair())
+        return id->idIsLargeCns() ? ADDI_DSC_LCLVAR_PAIR_CNS : ADDI_DSC_LCLVAR_PAIR;
+
+    if (id->idIsLargeCns())
+        return ADDI_DSC_CNS;
+
+    // Neither small nor lclVarPair nor largeCns: distinguish emitIns_R_L from
+    // emitIns_R_R_C by the instruction format.  emitIns_R_L explicitly sets
+    // IF_RI_1C; emitIns_R_R_C never calls idInsFmt(), leaving it at IF_NONE.
+    return (id->idInsFmt() == IF_RI_1C) ? ADDI_DSC_JMP : ADDI_DSC_PLAIN;
+}
+
 size_t emitter::emitSizeOfInsDsc(instrDesc* id) const
 {
     // First check if the small descriptor flag is set
@@ -105,6 +125,24 @@ size_t emitter::emitSizeOfInsDsc(instrDesc* id) const
         id->idIns() == INS_blt || id->idIns() == INS_bge || id->idIns() == INS_bgt || id->idIns() == INS_ble)
     {
         return sizeof(instrDescJmp);
+    }
+
+    // INS_addi is emitted by four different functions that each call a different
+    // allocator, so the descriptor subtype cannot be inferred from the opcode alone.
+    // addiClassifyInsDsc() reads the flags stamped by the allocator to identify the
+    // concrete type; the switch below maps each kind to its sizeof().
+    if (id->idIns() == INS_addi)
+    {
+        switch (addiClassifyInsDsc(id))
+        {
+            case ADDI_DSC_SMALL:           return SMALL_IDSC_SIZE;           // instrDesc (small)
+            case ADDI_DSC_LCLVAR_PAIR:     return sizeof(instrDescLclVarPair);
+            case ADDI_DSC_LCLVAR_PAIR_CNS: return sizeof(instrDescLclVarPairCns);
+            case ADDI_DSC_CNS:             return sizeof(instrDescCns);
+            case ADDI_DSC_JMP:             return sizeof(instrDescJmp);
+            case ADDI_DSC_PLAIN:           return sizeof(instrDesc);
+            default:                       unreached();
+        }
     }
 
     // Check if this is a call instruction

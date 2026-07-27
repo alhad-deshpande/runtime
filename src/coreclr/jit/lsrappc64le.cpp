@@ -1185,6 +1185,26 @@ int LinearScan::BuildNode(GenTree* tree)
 		          assert(dstCount == 0);
 		          break;
 	
+	       case GT_START_PREEMPTGC:
+	           // GT_START_PREEMPTGC kills GC refs in callee-saved registers before the
+	           // native call.  It has no operands or result; we only need to record the
+	           // kill set so LSRA knows those intervals are no longer live.
+	           srcCount = 0;
+	           assert(dstCount == 0);
+	           BuildKills(tree, RBM_NONE);
+	           break;
+
+	       case GT_RETURNTRAP:
+	           // GT_RETURNTRAP conditionally calls CORINFO_HELP_STOP_FOR_GC.
+	           // It consumes one integer source (the trap flag value) and produces
+	           // no result, but it kills all caller-trash registers via the helper call.
+	           BuildUse(tree->gtGetOp1());
+	           srcCount = 1;
+	           assert(dstCount == 0);
+	           killMask = compiler->compHelperCallKillSet(CORINFO_HELP_STOP_FOR_GC);
+	           BuildKills(tree, killMask);
+	           break;
+
 		     default:
 		     {
 		     printf("LSRA BuildNode: Unhandled operation: %s (oper=%d)\n",
