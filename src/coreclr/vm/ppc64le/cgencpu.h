@@ -420,15 +420,26 @@ typedef DPTR(ThisPtrRetBufPrecode) PTR_ThisPtrRetBufPrecode;
 
 inline BOOL ClrFlushInstructionCache(LPCVOID pCodeAddr, size_t sizeOfCode, bool hasCodeExecutedBefore = false)
 {
-    //TODO TARGET_POWERPC64  -> need to implement FlushInstructionCache in pal debug.cpp
-    //if (hasCodeExecutedBefore)
-    //{
-    //    FlushInstructionCache(GetCurrentProcess(), pCodeAddr, sizeOfCode);
-    //}
-    //else
-    //{
-    //    MemoryBarrier();
-    //}
+    // On PPC64LE the D-cache and I-cache are not coherent.  After writing new code we must:
+    //   1. flush each dcache line to memory (dcbst)
+    //   2. heavy-weight sync / hwsync (sync 0) — orders the dcbst stores
+    //   3. invalidate each icache line (icbi)
+    //   4. instruction-sync barrier (isync) — ensures refetch from memory
+    const size_t cacheLineSize = 128; // PPC64LE L1 cache line is 128 bytes
+    BYTE* p   = (BYTE*)((uintptr_t)pCodeAddr & ~(cacheLineSize - 1));
+    BYTE* end = (BYTE*)pCodeAddr + sizeOfCode;
+
+    for (BYTE* line = p; line < end; line += cacheLineSize)
+    {
+        __asm__ volatile("dcbst 0, %0" :: "r"(line) : "memory");
+    }
+    __asm__ volatile("sync 0" ::: "memory");  // hwsync — L=0
+    for (BYTE* line = p; line < end; line += cacheLineSize)
+    {
+        __asm__ volatile("icbi 0, %0" :: "r"(line) : "memory");
+    }
+    __asm__ volatile("isync" ::: "memory");
+
     return TRUE;
 }
 

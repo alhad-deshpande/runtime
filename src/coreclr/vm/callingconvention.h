@@ -2038,27 +2038,21 @@ int ArgIteratorTemplate<ARGITERATOR_BASE>::GetNextOffset()
 	    break;
 
 	case ELEMENT_TYPE_VALUETYPE:
-	    // If the size is bigger than 8, or if the size is NOT a power of 2, then
-	    // the argument is passed by reference.
-	    if (argSize > 0 )
+	    if (argSize > 0)
 	    {
-		if (isFloatHfa)
+		if (isFloatHfa || thValueType.IsHFA())
 		{
-			_ASSERTE("FLOAT HFA DETECTED in GetNextOffset()");
+		    // All-float/double structs (HFA) are passed in f1-f13 per slot, then on stack.
+		    // Each FP slot also shadows one GPR (advancing m_idxGenReg).
+		    cFPRegs = argSize / sizeof(TADDR);
+		    if (argSize % sizeof(TADDR) != 0) cFPRegs++;
 		}
-		else if (thValueType.IsHFA())
+		else
 		{
-			_ASSERTE("HFA DETECTED in GetNextOffset()");
+		    gRegs = argSize / sizeof(TADDR);
+		    if (argSize % sizeof(TADDR) != 0) gRegs++;
 		}
-		gRegs = argSize/sizeof(TADDR);
-		if(argSize % sizeof(TADDR) != 0) gRegs++;
 	    }
-	    /*else if (argSize > ENREGISTERED_PARAMTYPE_MAXSIZE)
-	    {
-		//_ASSERTE("argSize > ENREGISTERED_PARAMTYPE_MAXSIZE  GetNextOffset()");
-		//argSize = sizeof(TADDR);
-		//gRegs = 1;
-	    }*/
 	    break;
 
 	default:
@@ -2068,25 +2062,47 @@ int ArgIteratorTemplate<ARGITERATOR_BASE>::GetNextOffset()
 
     if (cFPRegs)
     {
-	if (m_idxFPReg < 13)
-	{
-	    int argOfs = TransitionBlock::GetOffsetOfFloatArgumentRegisters() + m_idxFPReg * 8;
-	    m_idxFPReg += cFPRegs;
-	    if (m_idxGenReg < 8)
-	    {
-		m_idxGenReg += cFPRegs;
-	    }
-	    return argOfs;
-	}
+ if (m_idxFPReg < 13)
+ {
+     int argOfs = TransitionBlock::GetOffsetOfFloatArgumentRegisters() + m_idxFPReg * 8;
+     int fpRegsUsed = cFPRegs;
+     if (m_idxFPReg + fpRegsUsed > 13)
+     {
+  // FP arg splits across FP registers and stack: advance stack for the overflow portion.
+  int fpOverflow = (m_idxFPReg + fpRegsUsed) - 13;
+  m_ofsStack += fpOverflow * sizeof(TADDR);
+  fpRegsUsed = 13 - m_idxFPReg;
+     }
+     m_idxFPReg += fpRegsUsed;
+     // Each FP argument also shadows a GPR slot per the PPC64LE ABI.
+     int shadow = cFPRegs;
+     if (m_idxGenReg + shadow > 8)
+  shadow = 8 - m_idxGenReg;
+     if (shadow > 0)
+  m_idxGenReg += shadow;
+     return argOfs;
+ }
+ // All FP regs exhausted: fall through to stack, but still shadow GPR if available.
+ if (m_idxGenReg < 8)
+     m_idxGenReg++;
     }
-    else
+    else if (gRegs > 0)
     {
-	if (m_idxGenReg < 8)
-	{
-	    int argOfs = TransitionBlock::GetOffsetOfArgumentRegisters() + m_idxGenReg * 8;
-	    m_idxGenReg += gRegs;
-	    return argOfs;
-	}
+ if (m_idxGenReg < 8)
+ {
+     int argOfs = TransitionBlock::GetOffsetOfArgumentRegisters() + m_idxGenReg * 8;
+     int regsUsed = gRegs;
+     if (m_idxGenReg + regsUsed > 8)
+     {
+  // Struct splits across registers and stack: the portion that doesn't fit
+  // in registers spills onto the stack.
+  int overflowSlots = (m_idxGenReg + regsUsed) - 8;
+  m_ofsStack += overflowSlots * sizeof(TADDR);
+  regsUsed = 8 - m_idxGenReg;
+     }
+     m_idxGenReg += regsUsed;
+     return argOfs;
+ }
     }
 
     int argOfs = TransitionBlock::GetOffsetOfArgs() + m_ofsStack;
