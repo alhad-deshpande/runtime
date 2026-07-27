@@ -12676,7 +12676,7 @@ static bool ShouldUseInterpreterFallback(MethodDesc* ftnDesc,const char* ftnName
 	{ "System.Reflection.Missing",".ctor"},
 	{ "<>c",".cctor"},
 	{ "<>c",".ctor"},
-	//{ "System.RuntimeType",".cctor"},
+	{ "System.RuntimeType",".cctor"},
         { "System.RuntimeTypeHandle",".ctor"},
         { "System.Runtime.CompilerServices.TypeHandle",".ctor"},
 	{ "System.BitConverter",".cctor"},

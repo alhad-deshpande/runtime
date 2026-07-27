@@ -439,7 +439,13 @@ void CodeGen::genCodeForTreeNode(GenTree* treeNode)
 	case GT_COPY:
 	    // This is handled at the time we call genConsumeReg() on the GT_COPY
 	    break;
-	
+
+	case GT_RELOAD:
+	    // do nothing - reload is just a marker.
+	    // The parent node will call genConsumeReg on this which will trigger the unspill of this node's child
+	    // into the register specified in this node.
+	    break;
+
 	case GT_NULLCHECK:
 	    genCodeForNullCheck(treeNode->AsIndir());
 	    break;
