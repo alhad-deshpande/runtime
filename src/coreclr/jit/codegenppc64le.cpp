@@ -4483,6 +4483,11 @@ int CodeGenInterface::genTotalFrameSize() const
                          TEMP_STORAGE_SIZE;
 
     assert(totalFrameSize >= 0);
+
+    totalFrameSize =
+        static_cast<int>(roundUp(static_cast<unsigned>(totalFrameSize), STACK_ALIGN));
+
+    assert((totalFrameSize % STACK_ALIGN) == 0);
     return totalFrameSize;
 }
 

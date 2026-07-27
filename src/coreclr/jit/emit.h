@@ -2729,8 +2729,7 @@ private:
     // instruction group depends on the instruction mix as well as DEBUG/non-DEBUG build type. See the
     // EMITTER_STATS output for various statistics related to this.
     //
-
-#if defined(TARGET_ARMARCH) || defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64)
+#if defined(TARGET_ARMARCH) || defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64) || defined(TARGET_POWERPC64)
 // ARM32/64, LoongArch and RISC-V can require a bigger prolog instruction group. One scenario
 // is where a function uses all the incoming integer and single-precision floating-point arguments,
 // and must store them all to the frame on entry. If the frame is very large, we generate
@@ -2749,8 +2748,7 @@ private:
 #else
 #define SC_IG_BUFFER_NUM_SMALL_DESCS 14
 #define SC_IG_BUFFER_NUM_LARGE_DESCS 50
-#endif // !(TARGET_ARMARCH || TARGET_LOONGARCH64 || TARGET_RISCV64)
-
+#endif // !(TARGET_ARMARCH || TARGET_LOONGARCH64 || TARGET_RISCV64 || TARGET_POWERPC64)
     size_t emitIGbuffSize;
 
     insGroup* emitIGlist; // first  instruction group

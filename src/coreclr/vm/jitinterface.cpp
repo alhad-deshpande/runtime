@@ -12648,7 +12648,8 @@ static bool ShouldUseInterpreterFallback(MethodDesc* ftnDesc,const char* ftnName
        "GetConstructor",
        "GetCharCountCommon",
        "GetCharsCommon",
-       "StartsWith"
+       "StartsWith",
+       "Memmove"
     };
 
     struct JitInclusionEntry
