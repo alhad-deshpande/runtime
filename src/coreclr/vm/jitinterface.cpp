@@ -12670,7 +12670,13 @@ static bool ShouldUseInterpreterFallback(MethodDesc* ftnDesc,const char* ftnName
        "GetPrime",
        "get_IsGenericType",
        "CallRefConstructor",
-
+      
+       "Resize",
+       "Ctor",
+       "set_Length",
+       "Copy",
+       "get_HasComponentSize",
+       "GetModuleType",
     };
 
     struct JitInclusionEntry
