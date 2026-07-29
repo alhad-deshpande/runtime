@@ -79,8 +79,39 @@ void Compiler::unwindEndEpilog()
 
 void Compiler::unwindAllocStack(unsigned size)
 {
-    //_ASSERTE(!"NYI");
-    //TODO: JK, no-op for minimal frameless bring-up
+    // PPC64LE managed JIT uses ARM64-style compact unwind records,
+    // not DWARF CFI. PPC64LE stack frames are 16-byte aligned. Encode
+    // the exact frame allocation in units of 16 bytes so the unwinder can recover:
+    //
+    //     caller SP = current SP + size
+    //
+    assert(size != 0);
+    assert((size % 16) == 0);
+
+    UnwindInfo* pu = &funCurrentFunc()->uwi;
+    unsigned    x  = size / 16;
+
+    if (x <= 0x1F)
+    {
+        // alloc_s: 000xxxxx
+        pu->AddCode(static_cast<BYTE>(x));
+    }
+    else if (x <= 0x7FF)
+    {
+        // alloc_m: 11000xxx | xxxxxxxx
+        pu->AddCode(static_cast<BYTE>(0xC0 | (x >> 8)),
+                    static_cast<BYTE>(x));
+    }
+    else
+    {
+        // alloc_l: 11100000 | xxxxxxxx | xxxxxxxx | xxxxxxxx
+        noway_assert(x <= 0xFFFFFF);
+
+        pu->AddCode(0xE0,
+                    static_cast<BYTE>(x >> 16),
+                    static_cast<BYTE>(x >> 8),
+                    static_cast<BYTE>(x));
+    }
 }
 
 void Compiler::unwindSetFrameReg(regNumber reg, unsigned offset)
