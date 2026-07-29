@@ -12651,7 +12651,20 @@ static bool ShouldUseInterpreterFallback(MethodDesc* ftnDesc,const char* ftnName
        "StartsWith",
        "Memmove",
        "IsPrime",
-       "GetNativeTypeHandle"
+       "GetNativeTypeHandle",
+
+       "get_CategoriesValues",
+       "get_CategoryCasingLevel3Index",
+       "get_CategoryCasingLevel2Index",
+       "get_CategoryCasingLevel1Index",
+       "TypeHandleOf",
+
+       "get_IsSimple",
+       "get_LookedForSatelliteContractVersion",
+       "get_MethodHandle",
+       "get_FallbackLocation",
+       "get_NameIndexToNumericData"
+
     };
 
     struct JitInclusionEntry
@@ -12862,6 +12875,24 @@ static bool ShouldUseInterpreterFallback(MethodDesc* ftnDesc,const char* ftnName
 	{ "Settings","get_PredefinedCulturesOnly"},
 	{ "System.ReadOnlySpan`1[Char]","get_Empty"},
 	{ "System.Globalization.IcuLocaleData","get_LocalesNamesIndexes"},
+
+	{ "System.ConsolePal","get_OutputEncoding"},
+	{ "System.Console","<get_IsOutputRedirected>g__EnsureInitialized|36_0"},
+
+	{ "System.Reflection.RuntimeCustomAttributeData","GetCustomAttributeRecords"},
+	{ "System.Reflection.MetadataImport","GetSigOfMethodDef"},
+	{ "System.Globalization.CultureData","GetLocaleInfoCore"},
+	{ "RuntimeTypeCache","GetEnclosingType"},
+	{ "System.Text.Ascii","GetIndexOfFirstNonAsciiByte"},
+	{ "System.ModuleHandle","GetRuntimeModule"},
+	{ "System.Reflection.RuntimeAssembly","GetNativeHandle"},
+
+	{ "System.Reflection.RuntimeMethodInfo","GetParametersAsSpan"},
+	{ "System.Text.ASCIIEncoding","GetCharCount"},
+	{ "System.Reflection.RuntimeMethodInfo","GetMethodImplementationFlags"},
+	{ "RuntimeTypeCache","GetMethod"},
+	{ "<GetEnumerator>d__5","System.IDisposable.Dispose"},
+	{ "System.Collections.Generic.Dictionary`2[__Canon,ConsoleKeyInfo]","GetEnumerator"},
     };
 
     const size_t numInclusions = sizeof(jitInclusionList) / sizeof(jitInclusionList[0]);
