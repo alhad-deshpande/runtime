@@ -96,13 +96,44 @@ void Compiler::unwindSaveReg(regNumber reg, unsigned offset)
     //TODO: JK, no-op for minimal frameless bring-up
 }
 
+void Compiler::unwindNop()
+{
+    UnwindInfo* pu = &funCurrentFunc()->uwi;
+
+#ifdef DEBUG
+    if (verbose)
+    {
+        printf("unwindNop: adding NOP\n");
+    }
+#endif
+
+    INDEBUG(pu->uwiAddingNOP = true);
+
+    // nop: 11100011 -- this instruction has no unwind effect.
+    pu->AddCode(0xE3);
+
+    INDEBUG(pu->uwiAddingNOP = false);
+}
+
 // The instructions between the last captured "current state" and the current instruction
 // are in the prolog but have no effect for unwinding. Emit the appropriate NOP unwind codes
 // for them.
 void Compiler::unwindPadding()
 {
-    // TODO-PPC64: Implement unwind padding for PPC64LE
-    // For now, this is a no-op similar to other unwind functions
+#if defined(FEATURE_CFI_SUPPORT)
+    if (generateCFIUnwindCodes())
+    {
+        return;
+    }
+#endif // FEATURE_CFI_SUPPORT
+
+    UnwindInfo* pu = &funCurrentFunc()->uwi;
+    GetEmitter()->emitUnwindNopPadding(pu->GetCurrentEmitterLocation(), this);
+}
+
+void Compiler::unwindReturn(regNumber reg)
+{
+    // Nothing to encode. The trailing "end" opcode terminates the epilog sequence.
 }
 
 #endif // defined(TARGET_POWERPC64)
