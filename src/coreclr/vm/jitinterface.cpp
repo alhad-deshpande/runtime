@@ -12663,7 +12663,13 @@ static bool ShouldUseInterpreterFallback(MethodDesc* ftnDesc,const char* ftnName
        "get_LookedForSatelliteContractVersion",
        "get_MethodHandle",
        "get_FallbackLocation",
-       "get_NameIndexToNumericData"
+       "get_NameIndexToNumericData",
+
+       "CreateSpan",
+       "get_Primes",
+       "GetPrime",
+       "get_IsGenericType",
+       "CallRefConstructor",
 
     };
 
