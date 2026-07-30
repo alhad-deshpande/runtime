@@ -258,7 +258,18 @@ ep_rt_init (void)
 	extern CrstStatic _ep_rt_coreclr_config_lock;
 
 	_ep_rt_coreclr_config_lock_handle.lock = &_ep_rt_coreclr_config_lock;
+#ifdef TARGET_POWERPC64
+	// On PPC64LE the interpreter dispatches JIT-compiled methods in cooperative GC mode.
+	// CrstBase::Enter() normally toggles preemptive<->cooperative around the OS lock,
+	// but when called from inside an EX_TRY block that already snapshotted cooperative
+	// mode, the CLRException::HandlerState::CleanupTry() later tries to re-enter
+	// cooperative mode even though the thread is already there — triggering the
+	// !m_fPreemptiveGCDisabled assert.  CRST_UNSAFE_ANYMODE disables the GC-mode
+	// toggle in CrstBase::Enter() so the saved/current modes never diverge.
+	_ep_rt_coreclr_config_lock_handle.lock->InitNoThrow (CrstEventPipe, (CrstFlags)(CRST_REENTRANCY | CRST_TAKEN_DURING_SHUTDOWN | CRST_HOST_BREAKABLE | CRST_UNSAFE_ANYMODE));
+#else
 	_ep_rt_coreclr_config_lock_handle.lock->InitNoThrow (CrstEventPipe, (CrstFlags)(CRST_REENTRANCY | CRST_TAKEN_DURING_SHUTDOWN | CRST_HOST_BREAKABLE));
+#endif
 
 	if (CLRConfig::GetConfigValue (CLRConfig::INTERNAL_EventPipeProcNumbers) != 0) {
 #ifndef TARGET_UNIX

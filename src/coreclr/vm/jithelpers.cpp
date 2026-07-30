@@ -4804,6 +4804,15 @@ EXTERN_C void JIT_PInvokeEnd(InlinedCallFrame* pFrame);
 // Forward declaration
 EXTERN_C void STDCALL ReversePInvokeBadTransition();
 
+#ifdef TARGET_POWERPC64
+// Sentinel stored in ReversePInvokeFrame::currentThread when the GC-mode enter
+// transition was skipped because the thread was already in cooperative mode (i.e.
+// the stub was dispatched directly from the interpreter).  Valid Thread pointers
+// are pointer-aligned so bit 0 is always 0; the sentinel has bit 0 set, making
+// it unambiguously distinguishable from any real Thread pointer or NULL.
+#define REVERSE_PINVOKE_COOP_ENTERED_SENTINEL  ((Thread*)1)
+#endif // TARGET_POWERPC64
+
 #ifndef FEATURE_EH_FUNCLETS
 EXCEPTION_HANDLER_DECL(FastNExportExceptHandler);
 #endif
@@ -4817,11 +4826,26 @@ NOINLINE static void JIT_ReversePInvokeEnterRare(ReversePInvokeFrame* frame, voi
     if (thread == NULL)
         CREATETHREAD_IF_NULL_FAILFAST(thread, W("Failed to setup new thread during reverse P/Invoke"));
 
-#ifndef FEATURE_INTERPRETER   // FIXME TARGET_S390X and TARGET_POWERPC64!!!
-    // Verify the current thread isn't in COOP mode.
+    // On PPC64LE the interpreter runs in cooperative mode and may dispatch JIT-compiled
+    // Reverse P/Invoke stubs directly.  If the thread is already in cooperative mode we
+    // must not call ReversePInvokeBadTransition (false positive) and must not call
+    // DisablePreemptiveGC() either — that fires !m_fPreemptiveGCDisabled (threads.h:1260).
+    // Store the sentinel so the matching exit helpers know to skip the transition too,
+    // preserving the cooperative mode the interpreter expects.
+#ifdef TARGET_POWERPC64
+    if (thread->PreemptiveGCDisabled())
+    {
+        // Thread is already in cooperative mode — the interpreter dispatched this
+        // JIT-compiled Reverse P/Invoke stub directly.  Store sentinel and bail.
+        frame->currentThread = REVERSE_PINVOKE_COOP_ENTERED_SENTINEL;
+        return;
+    }
+    // Thread is in preemptive mode: correct for a true unmanaged→managed transition.
+    // Fall through to disable preemptive GC below.
+#else
     if (thread->PreemptiveGCDisabled())
         ReversePInvokeBadTransition();
-#endif
+#endif // TARGET_POWERPC64
 
     frame->currentThread = thread;
 
@@ -4952,6 +4976,15 @@ HCIMPLEND_RAW
 HCIMPL1_RAW(void, JIT_ReversePInvokeExitTrackTransitions, ReversePInvokeFrame* frame)
 {
     _ASSERTE(frame != NULL);
+
+#ifdef TARGET_POWERPC64
+    // If the corresponding enter was a no-op because the thread was already in
+    // cooperative mode (interpreter-dispatched call), skip the exit transition too
+    // so we do not incorrectly switch the thread back to preemptive mode.
+    if (frame->currentThread == REVERSE_PINVOKE_COOP_ENTERED_SENTINEL)
+        return;
+#endif // TARGET_POWERPC64
+
     _ASSERTE(frame->currentThread == GetThread());
 
     // Manually inline the fast path in Thread::EnablePreemptiveGC().
@@ -4975,6 +5008,15 @@ HCIMPLEND_RAW
 HCIMPL1_RAW(void, JIT_ReversePInvokeExit, ReversePInvokeFrame* frame)
 {
     _ASSERTE(frame != NULL);
+
+#ifdef TARGET_POWERPC64
+    // If the corresponding enter was a no-op because the thread was already in
+    // cooperative mode (interpreter-dispatched call), skip the exit transition too
+    // so we do not incorrectly switch the thread back to preemptive mode.
+    if (frame->currentThread == REVERSE_PINVOKE_COOP_ENTERED_SENTINEL)
+        return;
+#endif // TARGET_POWERPC64
+
     _ASSERTE(frame->currentThread == GetThread());
 
     // Manually inline the fast path in Thread::EnablePreemptiveGC().
