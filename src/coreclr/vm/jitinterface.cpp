@@ -12677,7 +12677,12 @@ static bool ShouldUseInterpreterFallback(MethodDesc* ftnDesc,const char* ftnName
        "Copy",
        "get_HasComponentSize",
        "GetModuleType",
-       "IL_STUB_PInvoke"
+       "IL_STUB_PInvoke",
+
+       "Disable",
+       "IndexOfNullCharacter",
+       "IsWhiteSpaceLatin1",
+       "WidenFourAsciiBytesToUtf16AndWriteToBuffer",
     };
 
     struct JitInclusionEntry
