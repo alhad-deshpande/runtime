@@ -12683,6 +12683,7 @@ static bool ShouldUseInterpreterFallback(MethodDesc* ftnDesc,const char* ftnName
        "IndexOfNullCharacter",
        "IsWhiteSpaceLatin1",
        "WidenFourAsciiBytesToUtf16AndWriteToBuffer",
+       "GetSpanDataFrom"
     };
 
     struct JitInclusionEntry

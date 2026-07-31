@@ -8412,8 +8412,11 @@ public:
             reg     = REG_T5;
             regMask = RBM_T5;
 #elif defined(TARGET_POWERPC64)
-            reg     = REG_R12; // TODO POWERPC64
-            regMask = RBM_R12;
+            // r11 is the VSD indirection-cell register on PPC64LE, matching the ARM64
+            // convention.  The JIT puts the cell address in r11; the dispatch stubs must
+            // not clobber r11 so it survives into ResolveWorkerAsmStub.
+            reg     = REG_R11;
+            regMask = RBM_R11;
 #else
 #error Unsupported or unset target architecture
 #endif
