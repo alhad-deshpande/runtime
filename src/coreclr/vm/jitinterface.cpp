@@ -12687,7 +12687,14 @@ static bool ShouldUseInterpreterFallback(MethodDesc* ftnDesc,const char* ftnName
        "get_Text",
        "IndexOfOrdinalIgnoreCase",
        "GetDeclaringType",
-       "GetIntroducedMethods"
+       "GetIntroducedMethods",
+
+        "CreateDefaultEqualityComparer",
+ 	"GetParameters",
+	"TryParseGuid",
+	"CreateInstanceForAnotherGenericParameter",
+	"get_MetadataImport",
+
     };
 
     struct JitInclusionEntry
@@ -13177,6 +13184,8 @@ static bool ShouldUseInterpreterFallback(MethodDesc* ftnDesc,const char* ftnName
         { "System.Diagnostics.DebugProvider",".cctor"},
         { "System.Diagnostics.Debug","Assert"},
         { "Sys","InitializeTerminalAndSignalHandling"},
+
+	{ "System.Reflection.MetadataEnumResult","get_Item"},
 
     };
 
