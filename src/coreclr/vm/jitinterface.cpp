@@ -12695,6 +12695,12 @@ static bool ShouldUseInterpreterFallback(MethodDesc* ftnDesc,const char* ftnName
 	"CreateInstanceForAnotherGenericParameter",
 	"get_MetadataImport",
 
+       "get_Item",
+       "Alloc",
+       "AppendLiteral",
+       "ComputeStringHash",
+       "ToString",
+       "ToStringAndClear"
     };
 
     struct JitInclusionEntry
