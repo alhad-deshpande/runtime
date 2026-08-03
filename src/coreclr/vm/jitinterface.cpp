@@ -13254,6 +13254,16 @@ static bool ShouldUseInterpreterFallback(MethodDesc* ftnDesc,const char* ftnName
         { "System.MemoryExtensions","SequenceEqual"},
         { "System.Runtime.InteropServices.MemoryMarshal","GetArrayDataReference"},
 
+        { "System.Runtime.CompilerServices.CastHelpers", "IsInstanceOfAny" },
+        { "System.Diagnostics.Tracing.EventSource", ".ctor" },
+        { "System.Diagnostics.Tracing.NativeRuntimeEventSource", ".ctor" },
+        { "System.Diagnostics.Tracing.NativeRuntimeEventSource", ".cctor" },
+
+        { "System.Guid","DecodeByte"},
+        { "System.Number","TryInt32ToHexStr"},
+        { "System.Int32","System.Numerics.INumberBase<System.Int32>.IsZero"},
+        { "System.Int32","TryFormat"},
+
     };
 
     const size_t numInclusions = sizeof(jitInclusionList) / sizeof(jitInclusionList[0]);
