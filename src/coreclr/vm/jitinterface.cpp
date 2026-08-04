@@ -13264,6 +13264,20 @@ static bool ShouldUseInterpreterFallback(MethodDesc* ftnDesc,const char* ftnName
         { "System.Int32","System.Numerics.INumberBase<System.Int32>.IsZero"},
         { "System.Int32","TryFormat"},
 
+	{ "System.Int16","System.Numerics.IEqualityOperators<System.Int16,System.Int16,System.Boolean>.op_Equality"},
+	{ "System.Char","IsBetween"},
+        { "MemberInfoCache`1[__Canon]","Populate"},
+	{ "Enumerator[__Canon]", "Dispose"},
+	{ "Program","Main"},
+
+        { "Microsoft.Win32.SafeHandles.SafeFileHandle",".ctor"},
+        { "System.Activator","CreateInstance"},
+        { "Microsoft.Win32.SafeHandles.SafeFileHandle",".ctor"},
+        { "System.IO.PersistedFiles","GetHomeDirectory"},
+        { "System.String","Concat"},
+        { "System.Number",".cctor"},
+        { "System.Runtime.InteropServices.MemoryMarshal","AsBytes"},
+
     };
 
     const size_t numInclusions = sizeof(jitInclusionList) / sizeof(jitInclusionList[0]);
