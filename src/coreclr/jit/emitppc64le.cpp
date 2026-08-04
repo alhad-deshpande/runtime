@@ -1648,35 +1648,35 @@ void emitter::emitIns_R(instruction ins, emitAttr attr, regNumber reg, insOpts o
 void emitter::emitIns_R_L(instruction ins, emitAttr attr, BasicBlock* dst, regNumber reg)
 {
     assert(dst->HasFlag(BBF_HAS_LABEL));
-    
+
     // Step 1: Emit bcl 20, 31, $+4 to get current PC into LR
     emitIns(INS_bcl);
-    
+
     // Step 2: Emit mflr to move LR to target register
     emitIns_R(INS_mflr, attr, reg);
-    
+
     // Step 3: Emit addi instruction with label reference
     // The offset will be calculated during emitJumpDistBind when label addresses are known
     // Use emitNewInstrJmp() to get a large descriptor that supports idAddr()
     instrDescJmp* id = emitNewInstrJmp();
-    
+
     // emitNewInstrJmp() sets the size (incorrectly) to EA_1BYTE
     // Override it to EA_PTRSIZE so the descriptor is not treated as small
     // This allows access to idAddr() which requires a large descriptor
     id->idOpSize(EA_PTRSIZE);
-    
+
     id->idIns(INS_addi);
     id->idReg1(reg);  // Destination register
     id->idReg2(reg);  // Source register (same as destination)
     id->idInsFmt(IF_RI_1C);
     id->idjShort = false;
-    
+
     // Store the target BasicBlock label
     id->idAddr()->iiaBBlabel = dst;
-    
+
     // The target needs to be relocated if in different regions
     id->idjKeepLong = emitComp->fgInDifferentRegions(emitComp->compCurBB, dst);
-    
+
 #ifdef DEBUG
     // Mark this as a catch return if applicable
     if (emitComp->compCurBB->KindIs(BBJ_EHCATCHRET))
@@ -1684,15 +1684,15 @@ void emitter::emitIns_R_L(instruction ins, emitAttr attr, BasicBlock* dst, regNu
         id->idDebugOnlyInfo()->idCatchRet = true;
     }
 #endif // DEBUG
-    
+
     // Record the jump's IG and offset within it
     id->idjIG   = emitCurIG;
     id->idjOffs = emitCurIGsize;
-    
+
     // Append this jump to this IG's jump list so offset gets calculated
     id->idjNext      = emitCurIGjmpList;
     emitCurIGjmpList = id;
-    
+
     appendToCurIG(id);
 }
 

@@ -84,6 +84,225 @@ target_ssize_t CodeGen::genStackPointerConstantAdjustmentLoopWithProbe(ssize_t s
 }
 
 //------------------------------------------------------------------------
+// genLclHeap: Generate code for localloc (GT_LCLHEAP).
+//
+// Arguments:
+//    tree - the GT_LCLHEAP node
+//
+// PPC64LE ELFv2 localloc frame layout:
+//
+//   BEFORE:
+//     caller_SP - 0    ← grandparent backchain
+//     caller_SP - 8    ← saved old r31
+//     caller_SP - 16   ← top of our frame / localloc anchor
+//     r31 = r1 = caller_SP - totalFrameSize  (frame base)
+//     r1 + 0 .. r1 + totalFrameSize  ← entire frame
+//
+//   AFTER localloc(allocSize):
+//     new_r1 = old_r1 - allocSize  (SP shifted down)
+//     new_r1 + 0 .. +totalFrameSize  ← frame COPIED down by allocSize
+//     new_r1 + totalFrameSize ..      ← localloc block (zeroed)  ← targetReg
+//                  .. + allocSize
+//     caller_SP - 16                 ← top of localloc block
+//
+// r31 is loaded with caller_SP for backchain writes, then restored to new r1.
+// The epilog restores r31 from the callee-save area slot, not from the register.
+//
+void CodeGen::genLclHeap(GenTree* tree)
+{
+    assert(tree->OperGet() == GT_LCLHEAP);
+    assert(compiler->compLocallocUsed);
+
+    emitter*  emit      = GetEmitter();
+    GenTree*  size      = tree->AsOp()->gtOp1;
+    regNumber targetReg = tree->GetRegNum();
+    var_types type      = genActualType(size->gtType);
+    emitAttr  easz      = emitTypeSize(type);
+
+    noway_assert((genActualType(size->gtType) == TYP_INT) || (genActualType(size->gtType) == TYP_I_IMPL));
+    noway_assert(isFramePointerUsed());
+    noway_assert(genStackLevel == 0);
+
+    const int   totalFrameSize = genTotalFrameSize();
+    BasicBlock* endLabel       = nullptr;
+
+    // -----------------------------------------------------------------------
+    // Step 1: r31 ← caller_SP (= 0(r1)).
+    // r31 is clobbered here; the epilog restores it from the callee-save slot.
+    // We use r31 to hold caller_SP so we can write the correct ELFv2 backchain
+    // (0(new_r1) = caller_SP) after every SP decrement.
+    // -----------------------------------------------------------------------
+    emit->emitIns_R_R_I(INS_ld, EA_PTRSIZE, REG_FP, REG_SPBASE, 0);
+
+    // -----------------------------------------------------------------------
+    // Step 2: determine allocSize (aligned to STACK_ALIGN)
+    // -----------------------------------------------------------------------
+    size_t    amount = 0;
+    regNumber regCnt = REG_NA; // holds allocSize for non-constant path
+
+    if (size->IsCnsIntOrI())
+    {
+        assert(size->isContained());
+        amount = size->AsIntCon()->gtIconVal;
+        if (amount == 0)
+        {
+            // Zero size: return pointer = caller_SP - 16 (top of localloc area).
+            genInstrWithConstant(INS_addi, EA_PTRSIZE, targetReg, REG_FP, -16, rsGetRsvdReg());
+            goto BAILOUT;
+        }
+        amount = AlignUp(amount, STACK_ALIGN);
+    }
+    else
+    {
+        genConsumeRegAndCopy(size, targetReg);
+        endLabel = genCreateTempLabel();
+        emit->emitIns_R_I(INS_cmpdi, easz, targetReg, 0);
+        inst_JMP(EJ_eq, endLabel);
+
+        regCnt = internalRegisters.Extract(tree);
+        inst_Mov(type, regCnt, targetReg, /* canSkip */ true);
+        // Round up to STACK_ALIGN (16): add 15, then clear the bottom 4 bits.
+        // andi. only has a 16-bit unsigned immediate and cannot encode ~0xF correctly
+        // as a 64-bit mask.  Use srdi+sldi instead: shift right 4 then shift left 4
+        // zeroes bits 63:60 (IBM numbering) = clears the bottom 4 bits (LE LSBs).
+        emit->emitIns_R_R_I(INS_addi, EA_PTRSIZE, regCnt, regCnt, STACK_ALIGN - 1);
+        emit->emitIns_R_R_I(INS_srdi, EA_PTRSIZE, regCnt, regCnt, 4); // regCnt >>= 4
+        emit->emitIns_R_R_I(INS_sldi, EA_PTRSIZE, regCnt, regCnt, 4); // regCnt <<= 4 (bottom 4 bits cleared)
+    }
+
+    // -----------------------------------------------------------------------
+    // Step 3: move SP down by allocSize and immediately write backchain.
+    //   new_r1 = old_r1 - allocSize
+    //   0(new_r1) = caller_SP  (held in r31)
+    // -----------------------------------------------------------------------
+    if (size->IsCnsIntOrI())
+    {
+        genInstrWithConstant(INS_addi, EA_PTRSIZE, REG_SPBASE, REG_SPBASE,
+                             -(ssize_t)amount, rsGetRsvdReg());
+    }
+    else
+    {
+        // subf r1, regCnt, r1  →  r1 = r1 - regCnt
+        emit->emitIns_R_R_R(INS_subf, EA_PTRSIZE, REG_SPBASE, regCnt, REG_SPBASE);
+    }
+    emit->emitIns_R_R_I(INS_std, EA_PTRSIZE, REG_FP, REG_SPBASE, 0);
+
+    // -----------------------------------------------------------------------
+    // Step 4: copy old frame contents to new position.
+    //
+    //   src  = r31 - frameSize + 8   (old r1 + 8, skip the backchain word)
+    //   dst  = r1  + 8               (new r1 + 8)
+    //   count = frameSize - 8 bytes, 8 bytes at a time
+    //
+    // After copy, dst points to r1 + 8 + (frameSize - 8) = r1 + frameSize
+    //           = (caller_SP - frameSize - allocSize) + frameSize
+    //           = caller_SP - allocSize
+    //
+    // Step 5: zero localloc block [caller_SP - 16 - allocSize .. caller_SP - 16).
+    //   targetReg = r31 - 16 - allocSize  = caller_SP - 16 - allocSize  ✓
+    //
+    // r13 = loop counter,  r0 = 8-byte scratch
+    // -----------------------------------------------------------------------
+    {
+        const int copyBytes = totalFrameSize - 24;
+
+        regNumber regSrc = internalRegisters.Extract(tree);
+        regNumber regDst = internalRegisters.Extract(tree);
+        regNumber ctr    = rsGetRsvdReg();
+
+        // regSrc = r31 - frameSize + 8
+        genInstrWithConstant(INS_addi, EA_PTRSIZE, regSrc, REG_FP,
+                             -(ssize_t)(totalFrameSize - 8), rsGetRsvdReg());
+
+        // regDst = r1 + 8
+        genInstrWithConstant(INS_addi, EA_PTRSIZE, regDst, REG_SPBASE,
+                             8, rsGetRsvdReg());
+
+        // Copy loop: frameSize - 24 bytes (guarded — skip if nothing to copy).
+        if (copyBytes > 0)
+        {
+            instGen_Set_Reg_To_Imm(EA_PTRSIZE, ctr, copyBytes);
+            BasicBlock* copyLoop = genCreateTempLabel();
+            genDefineTempLabel(copyLoop);
+            emit->emitIns_R_R_I(INS_ld,   EA_PTRSIZE, REG_R0, regSrc, 0);
+            emit->emitIns_R_R_I(INS_std,  EA_PTRSIZE, REG_R0, regDst, 0);
+            emit->emitIns_R_R_I(INS_addi, EA_PTRSIZE, regSrc, regSrc,  8);
+            emit->emitIns_R_R_I(INS_addi, EA_PTRSIZE, regDst, regDst,  8);
+            emit->emitIns_R_R_I(INS_addi, EA_PTRSIZE, ctr,    ctr,    -8);
+            emit->emitIns_R_I(INS_cmpdi,  EA_PTRSIZE, ctr, 0);
+            inst_JMP(EJ_gt, copyLoop);
+        }
+
+        // -----------------------------------------------------------------------
+        // Step 5: zero [caller_SP - 16 - allocSize .. caller_SP - 16).
+        //   targetReg = r31 - 16 - allocSize
+        // -----------------------------------------------------------------------
+        instGen_Set_Reg_To_Zero(EA_PTRSIZE, REG_R0);
+
+        if (size->IsCnsIntOrI())
+        {
+            // targetReg = r31 - 16 - amount  (r31 = caller_SP)
+            genInstrWithConstant(INS_addi, EA_PTRSIZE, targetReg, REG_FP,
+                                 -(ssize_t)(16 + amount), rsGetRsvdReg());
+
+            if (amount <= compiler->getUnrollThreshold(Compiler::UnrollKind::Memset))
+            {
+                for (ssize_t off = 0; off < (ssize_t)amount; off += REGSIZE_BYTES)
+                    emit->emitIns_R_R_I(INS_std, EA_PTRSIZE, REG_R0, targetReg, off);
+            }
+            else
+            {
+                // Use regDst as the walking pointer for the zero loop.
+                emit->emitIns_Mov(INS_mov, EA_PTRSIZE, regDst, targetReg, /* canSkip */ false);
+                instGen_Set_Reg_To_Imm(EA_PTRSIZE, ctr, amount);
+                BasicBlock* zeroLoop = genCreateTempLabel();
+                genDefineTempLabel(zeroLoop);
+                emit->emitIns_R_R_I(INS_std,  EA_PTRSIZE, REG_R0, regDst, 0);
+                emit->emitIns_R_R_I(INS_addi, EA_PTRSIZE, regDst, regDst,  8);
+                emit->emitIns_R_R_I(INS_addi, EA_PTRSIZE, ctr,    ctr,    -8);
+                emit->emitIns_R_I(INS_cmpdi,  EA_PTRSIZE, ctr, 0);
+                inst_JMP(EJ_gt, zeroLoop);
+            }
+        }
+        else
+        {
+            // allocSize = old_r1 - new_r1 = (r31 - totalFrameSize) - r1
+            // targetReg = r31 - 16 - allocSize
+            //           = r31 - 16 - ((r31 - totalFrameSize) - r1)
+            //           = r1 + totalFrameSize - 16
+            genInstrWithConstant(INS_addi, EA_PTRSIZE, targetReg, REG_SPBASE,
+                                 (ssize_t)(totalFrameSize - 16), rsGetRsvdReg());
+
+            // allocSize = old_r1 - r1 = (r31 - totalFrameSize) - r1
+            genInstrWithConstant(INS_addi, EA_PTRSIZE, ctr, REG_FP,
+                                 -(ssize_t)totalFrameSize, rsGetRsvdReg());
+            emit->emitIns_R_R_R(INS_subf, EA_PTRSIZE, ctr, REG_SPBASE, ctr);
+
+            emit->emitIns_Mov(INS_mov, EA_PTRSIZE, regDst, targetReg, /* canSkip */ false);
+            BasicBlock* zeroLoop = genCreateTempLabel();
+            genDefineTempLabel(zeroLoop);
+            emit->emitIns_R_R_I(INS_std,  EA_PTRSIZE, REG_R0, regDst, 0);
+            emit->emitIns_R_R_I(INS_addi, EA_PTRSIZE, regDst, regDst,  8);
+            emit->emitIns_R_R_I(INS_addi, EA_PTRSIZE, ctr,    ctr,    -8);
+            emit->emitIns_R_I(INS_cmpdi,  EA_PTRSIZE, ctr, 0);
+            inst_JMP(EJ_gt, zeroLoop);
+        }
+    }
+
+BAILOUT:
+    // r31 currently holds caller_SP (loaded at Step 1).
+    // Restore r31 = new frame base (= new r1) so that FP-relative locals are correct.
+    // Do NOT write r31 into -8(r31): that slot holds the saved original r31 written
+    // by the prolog and must not be clobbered — the epilog reloads r31 from it.
+    GetEmitter()->emitIns_Mov(INS_mov, EA_PTRSIZE, REG_FP, REG_SPBASE, /* canSkip */ false);
+
+    if (endLabel != nullptr)
+        genDefineTempLabel(endLabel);
+
+    genProduceReg(tree);
+}
+
+//------------------------------------------------------------------------
 // genSetRegToConst: Generate code to set a register 'targetReg' of type 'targetType'
 //    to the constant specified by the constant (GT_CNS_INT or GT_CNS_DBL) in 'tree'.
 //
@@ -509,12 +728,16 @@ void CodeGen::genCodeForTreeNode(GenTree* treeNode)
             genCodeForPhysReg(treeNode->AsPhysReg());
             break;
 
-	default:
-	    printf("ERROR: Unhandled tree node operation: %s (oper=%d)\n",
-	                  GenTree::OpName(treeNode->gtOper), treeNode->gtOper);
-	           printf("Tree node details: type=%s, flags=0x%x\n",
-	                  varTypeName(treeNode->TypeGet()), treeNode->gtFlags);
-	    abort();
+        case GT_LCLHEAP:
+            genLclHeap(treeNode);
+            break;
+
+        default:
+            printf("ERROR: Unhandled tree node operation: %s (oper=%d)\n",
+                   GenTree::OpName(treeNode->gtOper), treeNode->gtOper);
+            printf("Tree node details: type=%s, flags=0x%x\n",
+                   varTypeName(treeNode->TypeGet()), treeNode->gtFlags);
+            abort();
     }
 }
 
@@ -779,24 +1002,39 @@ void CodeGen::genCodeForNegNot(GenTree* tree)
 //
 void CodeGen::genSetGSSecurityCookie(regNumber initReg, bool* pInitRegZeroed)
 {
-    //_ASSERTE("!NYI");
-    //abort();
     assert(compiler->compGeneratingProlog);
 
     if (!compiler->getNeedsGSSecurityCookie())
     {
-        return;  // No GS cookie needed for this function
+        return;
     }
 
-    // For now, minimal implementation
-    // Full implementation would:
-    // 1. Load the GS cookie value from a global location
-    // 2. Store it to the GS cookie stack slot
-    // TODO: Implement full GS cookie support when needed
+    if (compiler->opts.IsOSR() && compiler->info.compPatchpointInfo->HasSecurityCookie())
+    {
+        // Cookie was already initialised on the original frame.
+        return;
+    }
 
-    // For simple functions without buffers, this won't be called
-    return;
+    emitter* emit = GetEmitter();
 
+    if (compiler->gsGlobalSecurityCookieAddr == nullptr)
+    {
+        // Compile-time constant: load the value and store it to the stack slot.
+        noway_assert(compiler->gsGlobalSecurityCookieVal != 0);
+        instGen_Set_Reg_To_Imm(EA_PTRSIZE, initReg, compiler->gsGlobalSecurityCookieVal);
+        emit->emitIns_S_R(INS_std, EA_PTRSIZE, initReg, compiler->lvaGSSecurityCookie, 0);
+    }
+    else
+    {
+        // NGen / R2R: the cookie lives at a runtime address; load the pointer,
+        // dereference it, then store the value to the stack slot.
+        instGen_Set_Reg_To_Imm(EA_HANDLE_CNS_RELOC, initReg,
+                               (ssize_t)compiler->gsGlobalSecurityCookieAddr);
+        emit->emitIns_R_R_I(INS_ld, EA_PTRSIZE, initReg, initReg, 0);
+        emit->emitIns_S_R(INS_std, EA_PTRSIZE, initReg, compiler->lvaGSSecurityCookie, 0);
+    }
+
+    *pInitRegZeroed = false;
 }
 
 //------------------------------------------------------------------------
@@ -805,8 +1043,45 @@ void CodeGen::genSetGSSecurityCookie(regNumber initReg, bool* pInitRegZeroed)
 //
 void CodeGen::genEmitGSCookieCheck(bool pushReg)
 {
-    //_ASSERTE("!NYI");
-    abort();
+    noway_assert(compiler->gsGlobalSecurityCookieAddr || compiler->gsGlobalSecurityCookieVal);
+
+    assert(GetEmitter()->emitGCDisabled());
+
+    // We need two temporary registers to load the GS cookie values and compare them.
+    // We can't use any argument registers if 'pushReg' is true (meaning we have a JMP
+    // call). They should be callee-trash registers with nothing interesting at this point.
+    // LSRA has no IR node for this check so it cannot allocate registers for us.
+    regNumber regGSConst = REG_GSCOOKIE_TMP_0; // R11
+    regNumber regGSValue = REG_GSCOOKIE_TMP_1; // R12
+
+    if (compiler->gsGlobalSecurityCookieAddr == nullptr)
+    {
+        // Compile-time constant cookie: load the value directly.
+        instGen_Set_Reg_To_Imm(EA_PTRSIZE, regGSConst, compiler->gsGlobalSecurityCookieVal);
+    }
+    else
+    {
+        // NGen / R2R case: cookie lives at a runtime address; load the pointer then
+        // dereference it.
+        instGen_Set_Reg_To_Imm(EA_HANDLE_CNS_RELOC, regGSConst,
+                               (ssize_t)compiler->gsGlobalSecurityCookieAddr);
+        GetEmitter()->emitIns_R_R_I(INS_ld, EA_PTRSIZE, regGSConst, regGSConst, 0);
+        regSet.verifyRegUsed(regGSConst);
+    }
+
+    // Load this method's saved GS cookie from the stack frame.
+    GetEmitter()->emitIns_R_S(INS_ld, EA_PTRSIZE, regGSValue, compiler->lvaGSSecurityCookie, 0);
+
+    // Compare: if equal the cookie is intact, jump past the failure call.
+    BasicBlock* gsCheckBlk = genCreateTempLabel();
+    GetEmitter()->emitIns_R_R(INS_cmpd, EA_PTRSIZE, regGSConst, regGSValue);
+    inst_JMP(EJ_eq, gsCheckBlk);
+
+    // Cookie mismatch — call the fast-fail helper.  regGSConst is free to use
+    // as the call target scratch register.
+    genEmitHelperCall(CORINFO_HELP_FAIL_FAST, 0, EA_UNKNOWN, regGSConst);
+
+    genDefineTempLabel(gsCheckBlk);
 }
 
 //---------------------------------------------------------------------
@@ -4075,7 +4350,16 @@ void CodeGen::genFnEpilog(BasicBlock* block)
     regMaskTP regsToRestoreMask = regSet.rsGetModifiedCalleeSavedRegsMask();
 
     int totalFrameSize = genTotalFrameSize();
-    int localFrameSize = compiler->compLclFrameSize + 96;
+
+    // Must exactly match the localFrameSize calculation in genPushCalleeSavedRegisters.
+    const int LINKAGE_AREA_SIZE    = 32;
+    const int PARAM_SAVE_AREA_SIZE = 64;
+    int paramSaveArea = PARAM_SAVE_AREA_SIZE;
+    if (compiler->info.compArgsCount > 0 && compiler->compArgSize > PARAM_SAVE_AREA_SIZE)
+    {
+        paramSaveArea = compiler->compArgSize;
+    }
+    int localFrameSize = LINKAGE_AREA_SIZE + paramSaveArea + compiler->compLclFrameSize;
 
     if (compiler->lvaPSPSym != BAD_VAR_NUM)
     {
@@ -4135,9 +4419,21 @@ void CodeGen::genFnEpilog(BasicBlock* block)
         }
     }
 
-    emit->emitIns_R_R_I(INS_addi, EA_PTRSIZE, REG_SPBASE, REG_SPBASE, totalFrameSize);
-    compiler->unwindAllocStack(totalFrameSize);
+    // Restore r1 to caller_SP.
+    if (compiler->compLocallocUsed)
+    {
+        // ld r1, 0(r1): r1 = caller_SP (ELFv2 backchain written by genLclHeap at 0(new_r1))
+        // The backchain word holds the value of caller_SP, so a single load is sufficient.
+        emit->emitIns_R_R_I(INS_ld, EA_PTRSIZE, REG_SPBASE, REG_SPBASE, 0);
+        compiler->unwindAllocStack(totalFrameSize);
+    }
+    else
+    {
+        emit->emitIns_R_R_I(INS_addi, EA_PTRSIZE, REG_SPBASE, REG_SPBASE, totalFrameSize);
+        compiler->unwindAllocStack(totalFrameSize);
+    }
 
+    // r1 is now caller_SP. Restore r31 from -8(r1) = caller_SP - 8.
     emit->emitIns_R_R_I(INS_ld, EA_PTRSIZE, REG_FP, REG_SPBASE, FP_backchain_save_offset);
     compiler->unwindSaveReg(REG_FP, FP_backchain_save_offset);
 

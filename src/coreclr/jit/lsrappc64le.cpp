@@ -1205,21 +1205,85 @@ int LinearScan::BuildNode(GenTree* tree)
 	           BuildKills(tree, killMask);
 	           break;
 
-		     default:
-		     {
-		     printf("LSRA BuildNode: Unhandled operation: %s (oper=%d)\n",
-		                   GenTree::OpName(tree->OperGet()), tree->OperGet());
-		          	     
-		     _ASSERTE(!"NYI");
-		     }
-    }
+	       case GT_LCLHEAP:
+	           assert(dstCount == 1);
+	           srcCount = BuildLclHeap(tree);
+	           break;
 
-    // We need to be sure that we've set srcCount and dstCount appropriately
-    assert((dstCount < 2) || tree->IsMultiRegNode());
-    assert(isLocalDefUse == (tree->IsValue() && tree->IsUnusedValue()));
-    assert(!tree->IsValue() || (dstCount != 0));
-    assert(dstCount == tree->GetRegisterDstCount(compiler));
-    return srcCount;
+	       default:
+	       {
+	           printf("LSRA BuildNode: Unhandled operation: %s (oper=%d)\n",
+	                  GenTree::OpName(tree->OperGet()), tree->OperGet());
+	           _ASSERTE(!"NYI");
+	       }
+	   }
+
+	   // We need to be sure that we've set srcCount and dstCount appropriately
+	   assert((dstCount < 2) || tree->IsMultiRegNode());
+	   assert(isLocalDefUse == (tree->IsValue() && tree->IsUnusedValue()));
+	   assert(!tree->IsValue() || (dstCount != 0));
+	   assert(dstCount == tree->GetRegisterDstCount(compiler));
+	   return srcCount;
+}
+
+//------------------------------------------------------------------------
+// BuildLclHeap: Set the NodeInfo for a GT_LCLHEAP.
+//
+// Arguments:
+//    tree      - The GT_LCLHEAP node
+//
+// Return Value:
+//    The number of sources consumed by this node.
+//
+// Notes:
+//    Temp register requirements mirror the ARM64 implementation.
+//
+//  Size?                   Init Memory?    # temp regs
+//   0                          -               0
+//   const and <=UnrollLimit    -               0
+//   const and <PageSize        No              0
+//   >UnrollLimit               Yes             0
+//   Non-const                  Yes             0
+//   Non-const                  No              2
+//
+int LinearScan::BuildLclHeap(GenTree* tree)
+{
+	   int srcCount = 0;
+
+	   // genLclHeap register requirements:
+	   //
+	   //   Constant size (non-zero):
+	   //     2 internal regs — regSrc (copy source pointer) + regDst (copy dest / zero pointer)
+	   //
+	   //   Non-constant size:
+	   //     3 internal regs — regCnt (aligned allocSize) + regSrc + regDst
+	   //     1 source        — the size operand
+	   //
+	   // rsGetRsvdReg() (r13) is used as the loop counter; r0 is the copy scratch.
+	   // Neither needs an LSRA allocation.
+	   GenTree* size = tree->gtGetOp1();
+	   if (size->IsCnsIntOrI())
+	   {
+	       assert(size->isContained());
+	       size_t sizeVal = size->AsIntCon()->gtIconVal;
+	       if (sizeVal != 0)
+	       {
+	           buildInternalIntRegisterDefForNode(tree); // regSrc
+	           buildInternalIntRegisterDefForNode(tree); // regDst
+	       }
+	   }
+	   else
+	   {
+	       srcCount = 1;
+	       buildInternalIntRegisterDefForNode(tree); // regCnt (aligned allocSize)
+	       buildInternalIntRegisterDefForNode(tree); // regSrc
+	       buildInternalIntRegisterDefForNode(tree); // regDst
+	       BuildUse(size);
+	   }
+
+	   buildInternalRegisterUses();
+	   BuildDef(tree);
+	   return srcCount;
 }
 
 #ifdef FEATURE_HW_INTRINSICS
