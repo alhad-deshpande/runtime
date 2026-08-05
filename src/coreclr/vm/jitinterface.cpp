@@ -13283,7 +13283,16 @@ static bool ShouldUseInterpreterFallback(MethodDesc* ftnDesc,const char* ftnName
 
 	{ "System.Activator","CreateInstance,"},
 	{ "Microsoft.Win32.SafeHandles.SafeFileHandle",".ctor"},
-        { "System.Number","<TryFormatInt32>g__TryFormatInt32Slow|19_0"},	
+        { "System.Number","<TryFormatInt32>g__TryFormatInt32Slow|19_0"},
+	{ "System.Enum","InternalGetCorElementType"},
+	{ "System.Enum","ToStringInlined"},
+	{ "System.Enum","AssertValidGenerics"},
+	{ "System.Enum","GetEnumInfo"},
+	{ "System.Enum",".cctor"},
+	{ "System.Enum","<GetEnumInfo>g__InitializeEnumInfo|5_0"},
+	{ "EnumInfo`1[UInt32]","Create"},
+	{ "System.Reflection.MetadataImport","EnumCustomAttributes"},
+	{ "<PrivateImplementationDetails>","InlineArrayAsSpan"},
 
     };
 
