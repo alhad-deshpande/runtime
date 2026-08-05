@@ -12700,7 +12700,8 @@ static bool ShouldUseInterpreterFallback(MethodDesc* ftnDesc,const char* ftnName
        "AppendLiteral",
        "ComputeStringHash",
        "ToString",
-       "ToStringAndClear"
+       "ToStringAndClear",
+       "GetEnvironmentVariableCore"
     };
 
     struct JitInclusionEntry

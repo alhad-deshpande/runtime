@@ -201,35 +201,37 @@ void CodeGen::genLclHeap(GenTree* tree)
     // Step 5: zero localloc block [caller_SP - 16 - allocSize .. caller_SP - 16).
     //   targetReg = r31 - 16 - allocSize  = caller_SP - 16 - allocSize  ✓
     //
-    // r13 = loop counter,  r0 = 8-byte scratch
+    // r0 = 8-byte copy/zero scratch (not LSRA-allocated)
     // -----------------------------------------------------------------------
     {
         const int copyBytes = totalFrameSize - 24;
 
+        // Constant path:     Extract regCtr, regSrc, regDst  (3 regs)
+        // Non-constant path: regCnt already extracted in Step 2; then regCtr, regSrc, regDst
+        regNumber regCtr = internalRegisters.Extract(tree); // loop counter (NOT r13/TLS)
         regNumber regSrc = internalRegisters.Extract(tree);
         regNumber regDst = internalRegisters.Extract(tree);
-        regNumber ctr    = rsGetRsvdReg();
 
-        // regSrc = r31 - frameSize + 8
+        // regSrc = old_r1 + 8  (r31=caller_SP, r31-(totalFrameSize-8)=old_r1+8)
         genInstrWithConstant(INS_addi, EA_PTRSIZE, regSrc, REG_FP,
-                             -(ssize_t)(totalFrameSize - 8), rsGetRsvdReg());
+                             -(ssize_t)(totalFrameSize - 8), REG_R0);
 
-        // regDst = r1 + 8
+        // regDst = new_r1 + 8
         genInstrWithConstant(INS_addi, EA_PTRSIZE, regDst, REG_SPBASE,
-                             8, rsGetRsvdReg());
+                             8, REG_R0);
 
-        // Copy loop: frameSize - 24 bytes (guarded — skip if nothing to copy).
+        // Copy loop: copyBytes = totalFrameSize - 24, 8 bytes per iteration.
         if (copyBytes > 0)
         {
-            instGen_Set_Reg_To_Imm(EA_PTRSIZE, ctr, copyBytes);
+            instGen_Set_Reg_To_Imm(EA_PTRSIZE, regCtr, copyBytes);
             BasicBlock* copyLoop = genCreateTempLabel();
             genDefineTempLabel(copyLoop);
             emit->emitIns_R_R_I(INS_ld,   EA_PTRSIZE, REG_R0, regSrc, 0);
             emit->emitIns_R_R_I(INS_std,  EA_PTRSIZE, REG_R0, regDst, 0);
-            emit->emitIns_R_R_I(INS_addi, EA_PTRSIZE, regSrc, regSrc,  8);
-            emit->emitIns_R_R_I(INS_addi, EA_PTRSIZE, regDst, regDst,  8);
-            emit->emitIns_R_R_I(INS_addi, EA_PTRSIZE, ctr,    ctr,    -8);
-            emit->emitIns_R_I(INS_cmpdi,  EA_PTRSIZE, ctr, 0);
+            emit->emitIns_R_R_I(INS_addi, EA_PTRSIZE, regSrc, regSrc,   8);
+            emit->emitIns_R_R_I(INS_addi, EA_PTRSIZE, regDst, regDst,   8);
+            emit->emitIns_R_R_I(INS_addi, EA_PTRSIZE, regCtr, regCtr,  -8);
+            emit->emitIns_R_I(INS_cmpdi,  EA_PTRSIZE, regCtr, 0);
             inst_JMP(EJ_gt, copyLoop);
         }
 
@@ -243,7 +245,7 @@ void CodeGen::genLclHeap(GenTree* tree)
         {
             // targetReg = r31 - 16 - amount  (r31 = caller_SP)
             genInstrWithConstant(INS_addi, EA_PTRSIZE, targetReg, REG_FP,
-                                 -(ssize_t)(16 + amount), rsGetRsvdReg());
+                                 -(ssize_t)(16 + amount), regCtr);
 
             if (amount <= compiler->getUnrollThreshold(Compiler::UnrollKind::Memset))
             {
@@ -252,39 +254,41 @@ void CodeGen::genLclHeap(GenTree* tree)
             }
             else
             {
-                // Use regDst as the walking pointer for the zero loop.
                 emit->emitIns_Mov(INS_mov, EA_PTRSIZE, regDst, targetReg, /* canSkip */ false);
-                instGen_Set_Reg_To_Imm(EA_PTRSIZE, ctr, amount);
+                instGen_Set_Reg_To_Imm(EA_PTRSIZE, regCtr, (ssize_t)amount);
                 BasicBlock* zeroLoop = genCreateTempLabel();
                 genDefineTempLabel(zeroLoop);
                 emit->emitIns_R_R_I(INS_std,  EA_PTRSIZE, REG_R0, regDst, 0);
-                emit->emitIns_R_R_I(INS_addi, EA_PTRSIZE, regDst, regDst,  8);
-                emit->emitIns_R_R_I(INS_addi, EA_PTRSIZE, ctr,    ctr,    -8);
-                emit->emitIns_R_I(INS_cmpdi,  EA_PTRSIZE, ctr, 0);
+                emit->emitIns_R_R_I(INS_addi, EA_PTRSIZE, regDst, regDst,   8);
+                emit->emitIns_R_R_I(INS_addi, EA_PTRSIZE, regCtr, regCtr,  -8);
+                emit->emitIns_R_I(INS_cmpdi,  EA_PTRSIZE, regCtr, 0);
                 inst_JMP(EJ_gt, zeroLoop);
             }
         }
         else
         {
-            // allocSize = old_r1 - new_r1 = (r31 - totalFrameSize) - r1
-            // targetReg = r31 - 16 - allocSize
-            //           = r31 - 16 - ((r31 - totalFrameSize) - r1)
-            //           = r1 + totalFrameSize - 16
+            // Localloc block layout (non-constant allocSize):
+            //   start = new_r1 + (totalFrameSize - 16) = r1 + (totalFrameSize - 16)
+            //   end   = r31 - 16 = caller_SP - 16
+            //   size  = (r31 - 16) - start = allocSize
+            //
+            // targetReg = r1 + (totalFrameSize - 16)  (start of block, returned to caller)
             genInstrWithConstant(INS_addi, EA_PTRSIZE, targetReg, REG_SPBASE,
-                                 (ssize_t)(totalFrameSize - 16), rsGetRsvdReg());
+                                 (ssize_t)(totalFrameSize - 16), REG_R0);
 
-            // allocSize = old_r1 - r1 = (r31 - totalFrameSize) - r1
-            genInstrWithConstant(INS_addi, EA_PTRSIZE, ctr, REG_FP,
-                                 -(ssize_t)totalFrameSize, rsGetRsvdReg());
-            emit->emitIns_R_R_R(INS_subf, EA_PTRSIZE, ctr, REG_SPBASE, ctr);
+            // regCtr = (r31 - 16) - targetReg = allocSize
+            // Step 1: regCtr = r31 - 16
+            emit->emitIns_R_R_I(INS_addi, EA_PTRSIZE, regCtr, REG_FP, -16);
+            // Step 2: regCtr = regCtr - targetReg  (subf D,A,B → D=B-A)
+            emit->emitIns_R_R_R(INS_subf, EA_PTRSIZE, regCtr, targetReg, regCtr);
 
             emit->emitIns_Mov(INS_mov, EA_PTRSIZE, regDst, targetReg, /* canSkip */ false);
             BasicBlock* zeroLoop = genCreateTempLabel();
             genDefineTempLabel(zeroLoop);
             emit->emitIns_R_R_I(INS_std,  EA_PTRSIZE, REG_R0, regDst, 0);
-            emit->emitIns_R_R_I(INS_addi, EA_PTRSIZE, regDst, regDst,  8);
-            emit->emitIns_R_R_I(INS_addi, EA_PTRSIZE, ctr,    ctr,    -8);
-            emit->emitIns_R_I(INS_cmpdi,  EA_PTRSIZE, ctr, 0);
+            emit->emitIns_R_R_I(INS_addi, EA_PTRSIZE, regDst, regDst,   8);
+            emit->emitIns_R_R_I(INS_addi, EA_PTRSIZE, regCtr, regCtr,  -8);
+            emit->emitIns_R_I(INS_cmpdi,  EA_PTRSIZE, regCtr, 0);
             inst_JMP(EJ_gt, zeroLoop);
         }
     }
@@ -295,7 +299,7 @@ BAILOUT:
     // Do NOT write r31 into -8(r31): that slot holds the saved original r31 written
     // by the prolog and must not be clobbered — the epilog reloads r31 from it.
     GetEmitter()->emitIns_Mov(INS_mov, EA_PTRSIZE, REG_FP, REG_SPBASE, /* canSkip */ false);
-
+    GetEmitter()->emitIns_R_R_I(INS_std,  EA_PTRSIZE, REG_FP, REG_SPBASE, -8);
     if (endLabel != nullptr)
         genDefineTempLabel(endLabel);
 

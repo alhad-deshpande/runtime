@@ -1253,14 +1253,14 @@ int LinearScan::BuildLclHeap(GenTree* tree)
 	   // genLclHeap register requirements:
 	   //
 	   //   Constant size (non-zero):
-	   //     2 internal regs — regSrc (copy source pointer) + regDst (copy dest / zero pointer)
+	   //     3 internal regs — regCtr (loop counter) + regSrc + regDst
 	   //
 	   //   Non-constant size:
-	   //     3 internal regs — regCnt (aligned allocSize) + regSrc + regDst
+	   //     4 internal regs — regCnt (aligned allocSize) + regCtr + regSrc + regDst
 	   //     1 source        — the size operand
 	   //
-	   // rsGetRsvdReg() (r13) is used as the loop counter; r0 is the copy scratch.
-	   // Neither needs an LSRA allocation.
+	   // r13 is reserved for TLS in the PPC64LE Linux ABI and must NOT be used.
+	   // r0 is the 8-byte copy/zero scratch (not LSRA-allocated).
 	   GenTree* size = tree->gtGetOp1();
 	   if (size->IsCnsIntOrI())
 	   {
@@ -1268,6 +1268,7 @@ int LinearScan::BuildLclHeap(GenTree* tree)
 	       size_t sizeVal = size->AsIntCon()->gtIconVal;
 	       if (sizeVal != 0)
 	       {
+	           buildInternalIntRegisterDefForNode(tree); // regCtr (loop counter)
 	           buildInternalIntRegisterDefForNode(tree); // regSrc
 	           buildInternalIntRegisterDefForNode(tree); // regDst
 	       }
@@ -1276,6 +1277,7 @@ int LinearScan::BuildLclHeap(GenTree* tree)
 	   {
 	       srcCount = 1;
 	       buildInternalIntRegisterDefForNode(tree); // regCnt (aligned allocSize)
+	       buildInternalIntRegisterDefForNode(tree); // regCtr (loop counter)
 	       buildInternalIntRegisterDefForNode(tree); // regSrc
 	       buildInternalIntRegisterDefForNode(tree); // regDst
 	       BuildUse(size);
