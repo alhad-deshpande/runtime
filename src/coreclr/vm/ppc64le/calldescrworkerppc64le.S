@@ -108,10 +108,13 @@ LOCAL_LABEL(NoFloatArguments):
 
     // Call target function.
     ld %r12, CallDescrData__pTarget(%r11)
-	mtctr %r12
-	bctrl
+ mtctr %r12
+ bctrl
 
 LOCAL_LABEL(CallDescrWorkerInternalReturnAddress):
+    // ELFv2 ABI: restore TOC (r2) from the saved slot so that any runtime
+    // code running after the JIT'd callee returns sees the correct GOT/TOC.
+    ld %r2, 24(%r1)
     // Load pCallDescrData into r5 (not r4) so that the integer return registers
     // r3 and r4 are preserved intact for the ReturnsInt store below.
     ld %r5, 32(%r1)

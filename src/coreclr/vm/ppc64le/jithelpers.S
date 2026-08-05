@@ -34,6 +34,9 @@ LEAF_END JIT_PatchedCodeStart, _TEXT
 //   r7  : trashed
 //
 LEAF_ENTRY JIT_CheckedWriteBarrier, _TEXT
+	// ELFv2 ABI: called from JIT'd code with r12 = function address; establish our TOC.
+	addis %r2, %r12, (.TOC.-JIT_CheckedWriteBarrier)@ha
+	addi  %r2, %r2,  (.TOC.-JIT_CheckedWriteBarrier)@l
 	// Check if destination is in the GC heap
 	// Load g_lowest_address
 	addis %r5, %r2, g_lowest_address@toc@ha
@@ -47,8 +50,8 @@ LEAF_ENTRY JIT_CheckedWriteBarrier, _TEXT
 	cmpld %r3, %r5
 	bge LOCAL_LABEL(NotInHeap)
 	
-	// In heap, call JIT_WriteBarrier
-	b JIT_WriteBarrier
+	// In heap, call JIT_WriteBarrier (r2 already correct, use local entry)
+	b LOCAL_LABEL(JIT_WriteBarrier_LocalEntry)
 
 LOCAL_LABEL(NotInHeap):
 	// Not in heap, just do the store
@@ -75,6 +78,11 @@ LEAF_END_MARKED JIT_CheckedWriteBarrier, _TEXT
 //   r7  : trashed
 //
 LEAF_ENTRY JIT_WriteBarrier, _TEXT
+	// ELFv2 ABI: called from JIT'd code with r12 = function address; establish our TOC.
+	addis %r2, %r12, (.TOC.-JIT_WriteBarrier)@ha
+	addi  %r2, %r2,  (.TOC.-JIT_WriteBarrier)@l
+LOCAL_LABEL(JIT_WriteBarrier_LocalEntry):
+	// Local entry point for intra-DSO calls where r2 is already correct.
 	// Store the value
 	std %r4, 0(%r3)
 
@@ -216,6 +224,9 @@ LEAF_END JIT_PatchedCodeLast, _TEXT
 // Exit:
 //   r3, r4 are incremented by SIZEOF(LPVOID) = 8
 LEAF_ENTRY JIT_ByRefWriteBarrier, _TEXT
+	// ELFv2 ABI: called from JIT'd code with r12 = function address; establish our TOC.
+	addis %r2, %r12, (.TOC.-JIT_ByRefWriteBarrier)@ha
+	addi  %r2, %r2,  (.TOC.-JIT_ByRefWriteBarrier)@l
 	// Load the value from source address
 	ld %r5, 0(%r4)
 	
@@ -243,7 +254,8 @@ LEAF_ENTRY JIT_ByRefWriteBarrier, _TEXT
 	// Call JIT_WriteBarrier (not CheckedWriteBarrier to avoid double check)
 	// This will write the value and handle GC bookkeeping
 	// It will also increment r3 by 8
-	bl JIT_WriteBarrier
+	// Use local entry to skip TOC setup (r2 already correct from our prolog).
+	bl LOCAL_LABEL(JIT_WriteBarrier_LocalEntry)
 	
 	// Increment source pointer
 	addi %r4, %r7, 8
@@ -263,7 +275,11 @@ LEAF_END_MARKED JIT_ByRefWriteBarrier, _TEXT
 // __declspec(naked) void F_CALL_CONV JIT_WriteBarrier_Callable(Object **dst, Object* val)
 //.balign 16
 LEAF_ENTRY  JIT_WriteBarrier_Callable, _TEXT
+	// ELFv2 ABI: establish TOC before jumping — r12 here is JIT_WriteBarrier_Callable,
+	// not JIT_WriteBarrier, so we must set r2 from our own anchor before the branch.
+	addis %r2, %r12, (.TOC.-JIT_WriteBarrier_Callable)@ha
+	addi  %r2, %r2,  (.TOC.-JIT_WriteBarrier_Callable)@l
 	// Arguments are already in r3 (dst) and r4 (val)
-	// Just jump to JIT_WriteBarrier
-	b JIT_WriteBarrier
+	// Jump to local entry, skipping JIT_WriteBarrier's redundant TOC-setup.
+	b LOCAL_LABEL(JIT_WriteBarrier_LocalEntry)
 LEAF_END JIT_WriteBarrier_Callable, _TEXT

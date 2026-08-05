@@ -32,9 +32,11 @@
 //   arg r6 = flags  (low 2 bits of r11)
 //-----------------------------------------------------------------------------
 NESTED_ENTRY ResolveWorkerAsmStub, _TEXT, NoHandler
+	std %r2, 24(%r1)                             // save caller's r2 (may be JIT TOC)
+	addis %r2, %r12, (.TOC.-ResolveWorkerAsmStub)@ha  // establish libcoreclr.so TOC
+	addi  %r2, %r2,  (.TOC.-ResolveWorkerAsmStub)@l
 	mflr %r0
 	std %r0, 16(%r1)
-	std %r2, 24(%r1)
 	std %r31, -8(%r1)
 	stdu %r1, -496(%r1)
 	.cfi_def_cfa_offset 496
@@ -111,7 +113,7 @@ NESTED_ENTRY ResolveWorkerAsmStub, _TEXT, NoHandler
 	mr      %r5, %r10               // arg3: token  = r10
 
 	bl      C_FUNC(VSD_ResolveWorker) // r3 = target PC
-	mr      %r12, %r3                   // move target to r12
+	mr      %r12, %r3                 // move target to r12 (r2 unchanged: intra-DSO bl)
 
 //Epiloge
 	ld %r3, 32(%r1)

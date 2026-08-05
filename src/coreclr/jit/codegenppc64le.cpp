@@ -147,7 +147,7 @@ void CodeGen::genLclHeap(GenTree* tree)
         if (amount == 0)
         {
             // Zero size: return pointer = caller_SP - 16 (top of localloc area).
-            genInstrWithConstant(INS_addi, EA_PTRSIZE, targetReg, REG_FP, -16, rsGetRsvdReg());
+            genInstrWithConstant(INS_addi, EA_PTRSIZE, targetReg, REG_FP, -16, REG_R0);
             goto BAILOUT;
         }
         amount = AlignUp(amount, STACK_ALIGN);
@@ -178,7 +178,7 @@ void CodeGen::genLclHeap(GenTree* tree)
     if (size->IsCnsIntOrI())
     {
         genInstrWithConstant(INS_addi, EA_PTRSIZE, REG_SPBASE, REG_SPBASE,
-                             -(ssize_t)amount, rsGetRsvdReg());
+                             -(ssize_t)amount, REG_R0);
     }
     else
     {
@@ -3546,6 +3546,13 @@ void CodeGen::genCallInstruction(GenTreeCall* call)
                     REG_R12,  // Always use R12 for indirect calls
                     call->IsFastTailCall());
         // clang-format on
+
+        // ELFv2 ABI: restore TOC pointer (r2) from our saved slot after any non-tail
+        // inter-module call that may have clobbered r2.
+        if (!call->IsFastTailCall())
+        {
+            GetEmitter()->emitIns_R_R_I(INS_ld, EA_PTRSIZE, REG_R2, REG_SPBASE, 24 /* R2_save_offset */);
+        }
     }
     else
     {
@@ -3610,6 +3617,13 @@ void CodeGen::genCallInstruction(GenTreeCall* call)
                         REG_R12,  // Always use R12 for indirect calls
                         call->IsFastTailCall());
             // clang-format on
+
+            // ELFv2 ABI: restore TOC pointer (r2) from our saved slot after any non-tail
+            // inter-module call that may have clobbered r2.
+            if (!call->IsFastTailCall())
+            {
+                GetEmitter()->emitIns_R_R_I(INS_ld, EA_PTRSIZE, REG_R2, REG_SPBASE, 24 /* R2_save_offset */);
+            }
         }
         else
         {
@@ -3674,6 +3688,13 @@ void CodeGen::genCallInstruction(GenTreeCall* call)
                         REG_R12,  // ireg - call through CTR
                         call->IsFastTailCall());
             // clang-format on
+
+            // ELFv2 ABI: restore TOC pointer (r2) from our saved slot after any non-tail
+            // inter-module call that may have clobbered r2.
+            if (!call->IsFastTailCall())
+            {
+                GetEmitter()->emitIns_R_R_I(INS_ld, EA_PTRSIZE, REG_R2, REG_SPBASE, 24 /* R2_save_offset */);
+            }
         }
     }
 }
@@ -5049,6 +5070,10 @@ void CodeGen::genEmitHelperCall(unsigned helper, int argSize, emitAttr retSize, 
                                REG_NA, 0, 0,                         /* xreg, xmul, disp */
                                false                                 /* isJump */
     );
+
+    // ELFv2 ABI: restore TOC pointer (r2) from our saved slot after the helper call.
+    // Helper functions live in the runtime and may use a different TOC from the JIT'd code.
+    GetEmitter()->emitIns_R_R_I(INS_ld, EA_PTRSIZE, REG_R2, REG_SPBASE, 24 /* R2_save_offset */);
 
     // Mark all registers that are killed by this helper call
     regMaskTP killMask = compiler->compHelperCallKillSet((CorInfoHelpFunc)helper);
