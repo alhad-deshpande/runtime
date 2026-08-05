@@ -12701,7 +12701,9 @@ static bool ShouldUseInterpreterFallback(MethodDesc* ftnDesc,const char* ftnName
        "ComputeStringHash",
        "ToString",
        "ToStringAndClear",
-       "GetEnvironmentVariableCore"
+       "GetEnvironmentVariableCore",
+
+
     };
 
     struct JitInclusionEntry
@@ -13278,6 +13280,10 @@ static bool ShouldUseInterpreterFallback(MethodDesc* ftnDesc,const char* ftnName
         { "System.String","Concat"},
         { "System.Number",".cctor"},
         { "System.Runtime.InteropServices.MemoryMarshal","AsBytes"},
+
+	{ "System.Activator","CreateInstance,"},
+	{ "Microsoft.Win32.SafeHandles.SafeFileHandle",".ctor"},
+        { "System.Number","<TryFormatInt32>g__TryFormatInt32Slow|19_0"},	
 
     };
 
