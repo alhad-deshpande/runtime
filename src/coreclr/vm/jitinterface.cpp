@@ -13293,6 +13293,7 @@ static bool ShouldUseInterpreterFallback(MethodDesc* ftnDesc,const char* ftnName
 	{ "EnumInfo`1[UInt32]","Create"},
 	{ "System.Reflection.MetadataImport","EnumCustomAttributes"},
 	{ "<PrivateImplementationDetails>","InlineArrayAsSpan"},
+	{ "System.Collections.Generic.Dictionary`2[Char,__Canon]",".ctor" }
 
     };
 

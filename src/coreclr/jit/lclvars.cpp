@@ -7607,14 +7607,23 @@ int Compiler::lvaAllocateTemps(int stkOffs, bool mustDoubleAlign)
             {
                 // Calculate 'pad' as the number of bytes to align up 'stkOffs' to be a multiple of TARGET_POINTER_SIZE
                 // In practice this is really just a fancy way of writing 4. (as all stack locations are at least 4-byte
-                // aligned). Note stkOffs is always negative, so (stkOffs % TARGET_POINTER_SIZE) yields a negative
-                // value.
+                // aligned). Note stkOffs is always negative (positive on PPC64LE), so (stkOffs % TARGET_POINTER_SIZE)
+                // yields a negative (positive on PPC64LE) value.
                 //
+#ifdef TARGET_POWERPC64
+                // PPC64LE: stkOffs grows upward (positive), so align upward.
+                int alignPad = (int)AlignmentPad((unsigned)stkOffs, TARGET_POINTER_SIZE);
+#else
                 int alignPad = (int)AlignmentPad((unsigned)-stkOffs, TARGET_POINTER_SIZE);
+#endif
 
                 spillTempSize += alignPad;
                 lvaIncrementFrameSize(alignPad);
+#ifdef TARGET_POWERPC64
+                stkOffs += alignPad;
+#else
                 stkOffs -= alignPad;
+#endif
 
                 noway_assert((stkOffs % TARGET_POINTER_SIZE) == 0);
             }
