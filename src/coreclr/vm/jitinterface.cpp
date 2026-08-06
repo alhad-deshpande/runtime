@@ -12702,6 +12702,7 @@ static bool ShouldUseInterpreterFallback(MethodDesc* ftnDesc,const char* ftnName
        "ToString",
        "ToStringAndClear",
        "GetEnvironmentVariableCore",
+       "SequenceEqual"
 
 
     };

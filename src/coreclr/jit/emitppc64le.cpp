@@ -1089,7 +1089,7 @@ void emitter::emitIns_R_R_I(instruction ins,
         // DS-form: 14-bit aligned (must be multiple of 4)
         fitsInImmediate = ((imm & 0x3) == 0) && (imm >= -32768) && (imm <= 32764);
     }
-    else if (ins == INS_lwz || ins == INS_lbz || ins == INS_lhz || 
+    else if (ins == INS_lwz || ins == INS_lbz || ins == INS_lhz || ins == INS_lha ||
              ins == INS_stw || ins == INS_stb || ins == INS_sth ||
              ins == INS_lfs || ins == INS_lfd || ins == INS_stfs || ins == INS_stfd)
     {
@@ -1105,55 +1105,63 @@ void emitter::emitIns_R_R_I(instruction ins,
     // If immediate doesn't fit, use a temporary register
     // IMPORTANT: Only do this for load/store instructions!
     bool isLoadStore = (ins == INS_ld || ins == INS_lwa || ins == INS_std ||
-                        ins == INS_lwz || ins == INS_lbz || ins == INS_lhz ||
+                        ins == INS_lwz || ins == INS_lbz || ins == INS_lhz || ins == INS_lha ||
                         ins == INS_stw || ins == INS_stb || ins == INS_sth ||
                         ins == INS_lfs || ins == INS_lfd || ins == INS_stfs || ins == INS_stfd);
     
     if (!fitsInImmediate && isLoadStore)
     {
-        // Use R0 as temporary register for address calculation
-        regNumber tempReg = REG_R0;
-        
-        // Manually emit: lis r0, imm_high
+        // Large offset: synthesise the address in a non-R0 scratch register, then
+        // emit the load/store with a 0 displacement from that register.
+        //
+        // We MUST NOT use REG_R0 as the base register for D-form / DS-form
+        // load/store instructions: on PowerPC, rA=0 means "use 0 as address"
+        // (not "use the value in GPR0").  Pick REG_R12 as the scratch; it is
+        // caller-saved and never live across an instruction sequence.
+        regNumber scratchReg = REG_R12;
+
+        // lis scratchReg, imm@ha  (high-adjusted 16 bits)
+        ssize_t immHa  = (ssize_t)(((imm + 0x8000) >> 16) & 0xFFFF);
+        ssize_t immLo  = (ssize_t)(imm & 0xFFFF);           // low 16 bits
+
         instrDesc* id1 = emitNewInstrSmall(EA_PTRSIZE);
         id1->idIns(INS_lis);
-        id1->idReg1(tempReg);
-        id1->idSmallCns((imm >> 16) & 0xFFFF);
-        id1->idInsFmt(IF_RI_1B);  // lis format
+        id1->idReg1(scratchReg);
+        id1->idSmallCns(immHa);
+        id1->idInsFmt(IF_RI_1B);
         dispIns(id1);
         appendToCurIG(id1);
-        
-        // Manually emit: ori r0, r0, imm_low (if needed)
-        if ((imm & 0xFFFF) != 0)
+
+        // ori scratchReg, scratchReg, imm@l  (only if low bits are non-zero)
+        if (immLo != 0)
         {
             instrDesc* id2 = emitNewInstrSmall(EA_PTRSIZE);
             id2->idIns(INS_ori);
-            id2->idReg1(tempReg);
-            id2->idReg2(tempReg);
-            id2->idSmallCns(imm & 0xFFFF);
-            id2->idInsFmt(IF_RI_1D);  // ori format
+            id2->idReg1(scratchReg);
+            id2->idReg2(scratchReg);
+            id2->idSmallCns(immLo);
+            id2->idInsFmt(IF_RI_1D);
             dispIns(id2);
             appendToCurIG(id2);
         }
-        
-        // Manually emit: add r0, base_reg, r0
+
+        // add scratchReg, base_reg, scratchReg
         instrDesc* id3 = emitNewInstr(EA_PTRSIZE);
         id3->idIns(INS_add);
-        id3->idReg1(tempReg);
+        id3->idReg1(scratchReg);
         id3->idReg2(reg2);
-        id3->idReg3(tempReg);
-        id3->idInsFmt(IF_RR_2A);  // add format
+        id3->idReg3(scratchReg);
+        id3->idInsFmt(IF_RR_2A);
         dispIns(id3);
         appendToCurIG(id3);
-        
-        // Manually emit: load/store with 0 offset from temp register
+
+        // ins reg1, 0(scratchReg)  — displacement is 0, so always fits
         instrDesc* id4 = emitNewInstrSmall(attr);
         id4->idIns(ins);
         id4->idReg1(reg1);
-        id4->idReg2(tempReg);
+        id4->idReg2(scratchReg);   // scratchReg != REG_R0, so rA≠0 is safe
         id4->idSmallCns(0);
-        
-        // Set format based on instruction
+
         insFormat fmt4 = IF_NONE;
         switch (ins)
         {
@@ -1161,15 +1169,20 @@ void emitter::emitIns_R_R_I(instruction ins,
             case INS_lwa:  fmt4 = IF_LS_2E; break;
             case INS_std:  fmt4 = IF_LS_2D; break;
             case INS_lwz:  fmt4 = IF_LS_2A; break;
+            case INS_lbz:  fmt4 = IF_LS_2A; break;
+            case INS_lhz:  fmt4 = IF_LS_2A; break;
+            case INS_lha:  fmt4 = IF_LS_2A; break;
             case INS_stw:  fmt4 = IF_LS_2B; break;
+            case INS_stb:  fmt4 = IF_LS_2B; break;
+            case INS_sth:  fmt4 = IF_LS_2B; break;
             case INS_lfs:  fmt4 = IF_LS_2G; break;
             case INS_lfd:  fmt4 = IF_LS_2H; break;
             case INS_stfs: fmt4 = IF_LS_2I; break;
             case INS_stfd: fmt4 = IF_LS_2J; break;
-            default:       fmt4 = IF_LS_2A; break;  // Default
+            default:       fmt4 = IF_LS_2A; break;
         }
         id4->idInsFmt(fmt4);
-        
+
         dispIns(id4);
         appendToCurIG(id4);
         return;
@@ -1929,9 +1942,32 @@ void emitter::emitInsLoadStoreOp(instruction ins, emitAttr attr, regNumber dataR
             }
             else
             {
-                // GT_LEA with no index: load/store dataReg from/to [memBase + offset]
-                // emitIns_R_R_I handles large offsets internally via its fallback path
-                emitIns_R_R_I(ins, attr, dataReg, memBase->GetRegNum(), offset);
+                if ((offset >= -32768) && (offset <= 32764))
+                {
+                    // Small offset: direct D-form / DS-form instruction
+                    emitIns_R_R_I(ins, attr, dataReg, memBase->GetRegNum(), offset);
+                }
+                else
+                {
+                    // Large offset: use pre-allocated internal register as scratch so we
+                    // never clobber an arbitrary caller-saved register.
+                    regNumber tmpReg = codeGen->internalRegisters.GetSingle(indir);
+
+                    // tmpReg = offset@ha (high-adjusted upper 16 bits)
+                    ssize_t offHa = (ssize_t)(((offset + 0x8000) >> 16) & 0xFFFF);
+                    ssize_t offLo = (ssize_t)(offset & 0xFFFF);
+                    emitIns_R_I(INS_lis, EA_PTRSIZE, tmpReg, offHa);
+                    if (offLo != 0)
+                    {
+                        emitIns_R_R_I(INS_ori, EA_PTRSIZE, tmpReg, tmpReg, offLo);
+                    }
+
+                    // tmpReg = memBase + tmpReg
+                    emitIns_R_R_R(INS_add, EA_PTRSIZE, tmpReg, memBase->GetRegNum(), tmpReg);
+
+                    // load/store dataReg from/to [tmpReg + 0]
+                    emitIns_R_R_I(ins, attr, dataReg, tmpReg, 0);
+                }
             }
         }
     }
@@ -2435,20 +2471,25 @@ size_t emitter::emitOutputInstr(insGroup* ig, instrDesc* id, BYTE** dp)
            ppc_stdu (dstRW, id->idReg1(), emitGetInsSC(id), id->idReg2());
            break;
        case INS_b:
-           // b target - Unconditional Branch
+           // b target - Unconditional Branch (I-form: 24-bit LI field, word offset)
            {
-               instrDescJmp* jmp = (instrDescJmp*)id;
-               int offset = (int)jmp->idjOffs / 4; // Convert bytes to instructions
-               ppc_b (dstRW, offset);
+               instrDescJmp* jmp  = (instrDescJmp*)id;
+               // idjOffs holds the signed byte distance as a 30-bit unsigned bitfield.
+               // Sign-extend to 32 bits, convert bytes→words, then mask to 24 bits so
+               // the negative value cannot corrupt the opcode bits in ppc_b.
+               int dist   = ((int)(jmp->idjOffs << 2)) >> 2; // sign-extend 30→32
+               int li     = (dist / 4) & 0x00FFFFFF;         // 24-bit word offset
+               ppc_b(dstRW, li);
            }
            break;
 
        case INS_beq:
-           // beq target - Branch if Equal
+           // beq target - Branch if Equal (B-form: 14-bit BD field, word offset)
            {
                instrDescJmp* jmp = (instrDescJmp*)id;
-               int offset = (int)jmp->idjOffs / 4; // Convert bytes to instructions
-               ppc_bc (dstRW, PPC_BR_TRUE, PPC_BR_EQ, offset);
+               int dist = ((int)(jmp->idjOffs << 2)) >> 2;
+               int bd   = (dist / 4) & 0x00003FFF;           // 14-bit word offset
+               ppc_bc(dstRW, PPC_BR_TRUE, PPC_BR_EQ, bd);
            }
            break;
 
@@ -2456,8 +2497,9 @@ size_t emitter::emitOutputInstr(insGroup* ig, instrDesc* id, BYTE** dp)
            // bne target - Branch if Not Equal
            {
                instrDescJmp* jmp = (instrDescJmp*)id;
-               int offset = (int)jmp->idjOffs / 4;
-               ppc_bc (dstRW, PPC_BR_FALSE, PPC_BR_EQ, offset);
+               int dist = ((int)(jmp->idjOffs << 2)) >> 2;
+               int bd   = (dist / 4) & 0x00003FFF;
+               ppc_bc(dstRW, PPC_BR_FALSE, PPC_BR_EQ, bd);
            }
            break;
 
@@ -2465,8 +2507,9 @@ size_t emitter::emitOutputInstr(insGroup* ig, instrDesc* id, BYTE** dp)
            // blt target - Branch if Less Than
            {
                instrDescJmp* jmp = (instrDescJmp*)id;
-               int offset = (int)jmp->idjOffs / 4;
-               ppc_bc (dstRW, PPC_BR_TRUE, PPC_BR_LT, offset);
+               int dist = ((int)(jmp->idjOffs << 2)) >> 2;
+               int bd   = (dist / 4) & 0x00003FFF;
+               ppc_bc(dstRW, PPC_BR_TRUE, PPC_BR_LT, bd);
            }
            break;
 
@@ -2474,8 +2517,9 @@ size_t emitter::emitOutputInstr(insGroup* ig, instrDesc* id, BYTE** dp)
            // bge target - Branch if Greater Than or Equal
            {
                instrDescJmp* jmp = (instrDescJmp*)id;
-               int offset = (int)jmp->idjOffs / 4;
-               ppc_bc (dstRW, PPC_BR_FALSE, PPC_BR_LT, offset);
+               int dist = ((int)(jmp->idjOffs << 2)) >> 2;
+               int bd   = (dist / 4) & 0x00003FFF;
+               ppc_bc(dstRW, PPC_BR_FALSE, PPC_BR_LT, bd);
            }
            break;
 
@@ -2483,8 +2527,9 @@ size_t emitter::emitOutputInstr(insGroup* ig, instrDesc* id, BYTE** dp)
            // bgt target - Branch if Greater Than
            {
                instrDescJmp* jmp = (instrDescJmp*)id;
-               int offset = (int)jmp->idjOffs / 4;
-               ppc_bc (dstRW, PPC_BR_TRUE, PPC_BR_GT, offset);
+               int dist = ((int)(jmp->idjOffs << 2)) >> 2;
+               int bd   = (dist / 4) & 0x00003FFF;
+               ppc_bc(dstRW, PPC_BR_TRUE, PPC_BR_GT, bd);
            }
            break;
 
@@ -2492,8 +2537,9 @@ size_t emitter::emitOutputInstr(insGroup* ig, instrDesc* id, BYTE** dp)
            // ble target - Branch if Less Than or Equal
            {
                instrDescJmp* jmp = (instrDescJmp*)id;
-               int offset = (int)jmp->idjOffs / 4;
-               ppc_bc (dstRW, PPC_BR_FALSE, PPC_BR_GT, offset);
+               int dist = ((int)(jmp->idjOffs << 2)) >> 2;
+               int bd   = (dist / 4) & 0x00003FFF;
+               ppc_bc(dstRW, PPC_BR_FALSE, PPC_BR_GT, bd);
            }
            break;
 
@@ -3169,8 +3215,10 @@ void emitter::emitJumpDistBind()
             }
         }
         
-        // Store the distance in the jump descriptor
-        jmp->idjOffs = (unsigned short)jmpDist;
+        // Store the distance in the jump descriptor.
+        // idjOffs is a 30-bit unsigned bitfield; store the raw signed bits so
+        // emitOutputInstr can sign-extend them back to a full NATIVE_OFFSET.
+        jmp->idjOffs = (unsigned)jmpDist;
         
 #ifdef DEBUG
         if (emitComp->verbose)
