@@ -1255,20 +1255,12 @@ void CodeGen::genPutArgStk(GenTreePutArgStk* treeNode)
 
             unsigned srcSize = layout->GetSize();
 
-            // If we have an HFA we can't have any GC pointers,
-            // if not then the max size for the struct is 16 bytes
+            // HFA structs cannot contain GC pointers.
+            // Non-HFA structs of any size may be passed by value on the stack per PPC64LE ELFv2 ABI.
             if (compiler->IsHfa(layout->GetClassHandle()))
             {
                 noway_assert(!layout->HasGCPtr());
             }
-            else
-            {
-                noway_assert(srcSize <= 2 * TARGET_POINTER_SIZE);
-            }
-
-            // PPC64LE ELFv2 ABI: structs of any size can be passed by value on stack
-            // No size limit for pass-by-value, so don't assert on MAX_PASS_MULTIREG_BYTES
-            // (MAX_PASS_MULTIREG_BYTES only limits what fits in registers, not total struct size)
 
             unsigned dstSize = treeNode->GetStackByteSize();
 

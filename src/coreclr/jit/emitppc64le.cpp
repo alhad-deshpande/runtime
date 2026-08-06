@@ -1721,9 +1721,28 @@ bool emitter::emitInsIsCompare(instruction ins)
 //
 bool emitter::emitInsIsLoad(instruction ins)
 {
-    //TODO POWERPC64 vikas
-    //_ASSERTE(!"NYI POWERPC64");
-    return false;
+    switch (ins)
+    {
+        case INS_lbz:
+        case INS_lhz:
+        case INS_lha:
+        case INS_lwz:
+        case INS_lwa:
+        case INS_ld:
+        case INS_lfs:
+        case INS_lfd:
+        case INS_lbzx:
+        case INS_lhzx:
+        case INS_lhax:
+        case INS_lwzx:
+        case INS_lwax:
+        case INS_ldx:
+        case INS_lfsx:
+        case INS_lfdx:
+            return true;
+        default:
+            return false;
+    }
 }
 
 //------------------------------------------------------------------------
@@ -1731,9 +1750,53 @@ bool emitter::emitInsIsLoad(instruction ins)
 //
 bool emitter::emitInsIsStore(instruction ins)
 {
-    //TODO POWERPC64 vikas
-    //_ASSERTE(!"NYI POWERPC64");
-    return false;
+    switch (ins)
+    {
+        case INS_stb:
+        case INS_sth:
+        case INS_stw:
+        case INS_std:
+        case INS_stdu:
+        case INS_stfs:
+        case INS_stfd:
+        case INS_stbx:
+        case INS_sthx:
+        case INS_stwx:
+        case INS_stdx:
+        case INS_stfsx:
+        case INS_stfdx:
+            return true;
+        default:
+            return false;
+    }
+}
+
+//------------------------------------------------------------------------
+// ins_IndexedFormOf: Map a D-form (displacement) load/store instruction to
+//                   its X-form (indexed, base+index) counterpart.
+//
+static instruction ins_IndexedFormOf(instruction ins)
+{
+    switch (ins)
+    {
+        case INS_lbz:  return INS_lbzx;
+        case INS_lhz:  return INS_lhzx;
+        case INS_lha:  return INS_lhax;
+        case INS_lwz:  return INS_lwzx;
+        case INS_lwa:  return INS_lwax;
+        case INS_ld:   return INS_ldx;
+        case INS_lfs:  return INS_lfsx;
+        case INS_lfd:  return INS_lfdx;
+        case INS_stb:  return INS_stbx;
+        case INS_sth:  return INS_sthx;
+        case INS_stw:  return INS_stwx;
+        case INS_std:  return INS_stdx;
+        case INS_stfs: return INS_stfsx;
+        case INS_stfd: return INS_stfdx;
+        default:
+            assert(!"ins_IndexedFormOf: unsupported instruction");
+            return ins;
+    }
 }
 
 //------------------------------------------------------------------------
@@ -1783,35 +1846,111 @@ void emitter::emitInsLoadStoreOp(instruction ins, emitAttr attr, regNumber dataR
 
     if (addr->isContained())
     {
-	// WORKAROUND: Contained address case not yet implemented
-        // This typically occurs with complex address calculations or global variables
-        // TODO: Implement proper contained address handling
-        printf("WARNING: Skipping contained address load/store\n");
-        return;
+        assert(addr->OperIs(GT_LCL_ADDR, GT_LEA));
+
+        int   offset = 0;
+        DWORD lsl    = 0;
+
+        if (addr->OperGet() == GT_LEA)
+        {
+            offset = addr->AsAddrMode()->Offset();
+            if (addr->AsAddrMode()->gtScale > 0)
+            {
+                assert(isPow2(addr->AsAddrMode()->gtScale));
+                BitScanForward(&lsl, addr->AsAddrMode()->gtScale);
+            }
+        }
+
+        GenTree* memBase = indir->Base();
+
+        if (indir->HasIndex())
+        {
+            GenTree* index = indir->Index();
+
+            if (offset != 0)
+            {
+                regNumber tmpReg = codeGen->internalRegisters.GetSingle(indir);
+
+                emitAttr addType = varTypeIsGC(memBase) ? EA_BYREF : EA_PTRSIZE;
+
+                if (lsl > 0)
+                {
+                    // tmpReg = base + index*scale
+                    emitIns_R_R_I(INS_sldi, addType, tmpReg, index->GetRegNum(), lsl);
+                    emitIns_R_R_R(INS_add, addType, tmpReg, memBase->GetRegNum(), tmpReg);
+                }
+                else
+                {
+                    // tmpReg = base + index
+                    emitIns_R_R_R(INS_add, addType, tmpReg, memBase->GetRegNum(), index->GetRegNum());
+                }
+
+                noway_assert(emitInsIsLoad(ins) || (tmpReg != dataReg));
+
+                // load/store dataReg from/to [tmpReg + offset]
+                // emitIns_R_R_I handles large offsets internally via its fallback path
+                emitIns_R_R_I(ins, attr, dataReg, tmpReg, offset);
+            }
+            else // offset == 0
+            {
+                if (lsl > 0)
+                {
+                    // tmpReg = index << lsl, then indexed load/store: ins dataReg, base, tmpReg
+                    regNumber tmpReg  = codeGen->internalRegisters.GetSingle(indir);
+                    emitAttr  addType = varTypeIsGC(memBase) ? EA_BYREF : EA_PTRSIZE;
+                    emitIns_R_R_I(INS_sldi, addType, tmpReg, index->GetRegNum(), lsl);
+
+                    instruction insX = ins_IndexedFormOf(ins);
+                    emitIns_R_R_R(insX, attr, dataReg, memBase->GetRegNum(), tmpReg);
+                }
+                else
+                {
+                    // load/store dataReg from/to [base + index]
+                    instruction insX = ins_IndexedFormOf(ins);
+                    emitIns_R_R_R(insX, attr, dataReg, memBase->GetRegNum(), index->GetRegNum());
+                }
+            }
+        }
+        else // no index register
+        {
+            if (addr->OperIs(GT_LCL_ADDR))
+            {
+                GenTreeLclVarCommon* varNode = addr->AsLclVarCommon();
+                unsigned             lclNum  = varNode->GetLclNum();
+                unsigned             lclOffs = varNode->GetLclOffs();
+                if (emitInsIsStore(ins))
+                {
+                    emitIns_S_R(ins, attr, dataReg, lclNum, lclOffs);
+                }
+                else
+                {
+                    emitIns_R_S(ins, attr, dataReg, lclNum, lclOffs);
+                }
+            }
+            else
+            {
+                // GT_LEA with no index: load/store dataReg from/to [memBase + offset]
+                // emitIns_R_R_I handles large offsets internally via its fallback path
+                emitIns_R_R_I(ins, attr, dataReg, memBase->GetRegNum(), offset);
+            }
+        }
     }
-    else
+    else // addr is not contained, so it was evaluated into a register
     {
 #ifdef DEBUG
         if (addr->OperIs(GT_LCL_ADDR))
         {
+            // If the local var is a gcref or byref, the local var better be untracked, because we have
+            // no logic here to track local variable lifetime changes, like we do in the contained case
+            // above. E.g., for a `std r0,[r1]` for byref `r1` to local `V01`, we won't store the local
+            // `V01` and so the emitter can't update the GC lifetime for `V01` if this is a variable birth.
             LclVarDsc* varDsc = emitComp->lvaGetDesc(addr->AsLclVarCommon());
             assert(!varDsc->lvTracked);
         }
 #endif // DEBUG
 
-        // Then load/store dataReg from/to [addrReg] with offset 0
-        // IMPORTANT: In PowerPC, R0 as base register means "address 0", not "contents of R0"
-        // This is a PowerPC ISA quirk that must be handled carefully
- regNumber baseReg = addr->GetRegNum();
-        if (baseReg == REG_R0)
-        {
-     // Move address from R0 to R9 to avoid PowerPC ISA quirk
-            // where R0 as base register means "address 0" instead of "contents of R0"
-            emitIns_R_R(INS_mov, EA_PTRSIZE, REG_R9, REG_R0);
-            baseReg = REG_R9;
-        }
-
-        emitIns_R_R_I(ins, attr, dataReg, baseReg, 0);
+        // load/store dataReg from/to [addrReg + 0]
+        emitIns_R_R_I(ins, attr, dataReg, addr->GetRegNum(), 0);
     }
 }
 /*****************************************************************************
@@ -2520,11 +2659,13 @@ size_t emitter::emitOutputInstr(insGroup* ig, instrDesc* id, BYTE** dp)
             break;
 
         case INS_lfsx:
-            ppc_lfsx(dstRW, id->idReg1(), id->idReg2(), id->idReg3());
+            // FP load indexed: fD is a float reg, rA/rB are integer regs
+            ppc_lfsx(dstRW, id->idReg1() - REG_F0, id->idReg2(), id->idReg3());
             break;
 
         case INS_lfdx:
-            ppc_lfdx(dstRW, id->idReg1(), id->idReg2(), id->idReg3());
+            // FP load indexed: fD is a float reg, rA/rB are integer regs
+            ppc_lfdx(dstRW, id->idReg1() - REG_F0, id->idReg2(), id->idReg3());
             break;
 
         case INS_stbx:
@@ -2544,11 +2685,13 @@ size_t emitter::emitOutputInstr(insGroup* ig, instrDesc* id, BYTE** dp)
             break;
 
         case INS_stfsx:
-            ppc_stfsx(dstRW, id->idReg1(), id->idReg2(), id->idReg3());
+            // FP store indexed: fS is a float reg, rA/rB are integer regs
+            ppc_stfsx(dstRW, id->idReg1() - REG_F0, id->idReg2(), id->idReg3());
             break;
 
         case INS_stfdx:
-            ppc_stfdx(dstRW, id->idReg1(), id->idReg2(), id->idReg3());
+            // FP store indexed: fS is a float reg, rA/rB are integer regs
+            ppc_stfdx(dstRW, id->idReg1() - REG_F0, id->idReg2(), id->idReg3());
             break;
 
        default:
