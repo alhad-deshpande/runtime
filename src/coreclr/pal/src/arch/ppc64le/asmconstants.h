@@ -82,8 +82,10 @@
 #define CONTEXT_MSR           CONTEXT_NIP+8
 #define CONTEXT_CTR           CONTEXT_MSR+8
 #define CONTEXT_LINK          CONTEXT_CTR+8
+// Xer and Ccr are DWORD (4-byte) fields in the C struct; they share an 8-byte
+// aligned slot.  Offsets still advance by 4 to match the struct layout.
 #define CONTEXT_XER           CONTEXT_LINK+8
-#define CONTEXT_CCR           CONTEXT_XER+8
-#define CONTEXT_Size          CONTEXT_CCR+8
+#define CONTEXT_CCR           CONTEXT_XER+4
+#define CONTEXT_Size          CONTEXT_CCR+4
 
 #endif

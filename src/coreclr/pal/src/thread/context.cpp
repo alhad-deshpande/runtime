@@ -268,9 +268,7 @@ typedef int __ptrace_request;
     ASSIGN_REG(Ctr) \
     ASSIGN_REG(Link) \
     ASSIGN_REG(Xer) \
-    ASSIGN_REG(Ccr) \
-    ASSIGN_REG(R31) \
-    ASSIGN_REG(R1)
+    ASSIGN_REG(Ccr)
 
 #define ASSIGN_INTEGER_REGS \
     ASSIGN_REG(R0)      \
@@ -278,7 +276,6 @@ typedef int __ptrace_request;
     ASSIGN_REG(R2)      \
     ASSIGN_REG(R3)      \
     ASSIGN_REG(R4)      \
-    ASSIGN_REG(R5)      \
     ASSIGN_REG(R5)      \
     ASSIGN_REG(R6)      \
     ASSIGN_REG(R7)      \
@@ -304,7 +301,8 @@ typedef int __ptrace_request;
     ASSIGN_REG(R27)     \
     ASSIGN_REG(R28)     \
     ASSIGN_REG(R29)     \
-    ASSIGN_REG(R30)
+    ASSIGN_REG(R30)     \
+    ASSIGN_REG(R31)
 
 #else
 #error "Don't know how to assign registers on this architecture"
