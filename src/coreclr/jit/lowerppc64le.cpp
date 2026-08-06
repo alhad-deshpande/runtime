@@ -307,8 +307,10 @@ void Lowering::LowerBlockStore(GenTreeBlk* blkNode)
         else if (blkNode->IsZeroingGcPointersOnHeap())
         {
             blkNode->gtBlkOpKind = GenTreeBlk::BlkOpKindLoop;
-            // On PPC64LE we can use R0 for zero
-            src->SetContained();
+            // NOTE: unlike ARM64 (which has REG_ZR), PPC64LE has no hardware zero
+            // register. The fill value must remain in an allocated GP register so
+            // that genCodeForInitBlkLoop can call genConsumeReg() on it.
+            // Do NOT call src->SetContained() here.
         }
         else
         {

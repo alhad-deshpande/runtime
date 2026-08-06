@@ -13294,7 +13294,26 @@ static bool ShouldUseInterpreterFallback(MethodDesc* ftnDesc,const char* ftnName
 	{ "EnumInfo`1[UInt32]","Create"},
 	{ "System.Reflection.MetadataImport","EnumCustomAttributes"},
 	{ "<PrivateImplementationDetails>","InlineArrayAsSpan"},
-	{ "System.Collections.Generic.Dictionary`2[Char,__Canon]",".ctor" }
+	{ "System.Collections.Generic.Dictionary`2[Char,__Canon]",".ctor" },
+	//{ "Enumerator[__Canon]","MoveNext"},
+	{ "EnumInfo`1[UInt32]",".ctor"},
+	{ "System.Enum","AreSorted"},
+	{ "System.Enum","AreSequentialFromZero"},
+	{ "System.Enum","GetNameInlined"},
+	{ "System.Reflection.MetadataImport","Enum"},
+	{ "System.RuntimeType","get_MetadataToken"},
+	{ "System.Reflection.CustomAttribute","GetAttributeUsage"},
+	{ "System.RuntimeType","IsDefined"},
+	{ "System.Reflection.CustomAttribute","IsDefined"},
+	{ "System.RuntimeType","GetElementType"},
+	{ "System.Reflection.PseudoCustomAttribute",".cctor"},
+	{ "System.Reflection.PseudoCustomAttribute","CreatePseudoCustomAttributeHashSet"},
+	{ "System.Collections.Generic.HashSet`1[__Canon]",".ctor"},
+	{ "System.Collections.Generic.HashSet`1[__Canon]","Initialize"},
+	//{ "System.Threading.Interlocked","ReadMemoryBarrier"},
+	{ "System.Reflection.PseudoCustomAttribute","VerifyPseudoCustomAttribute"},
+	{ "System.RuntimeType","get_BaseType"},
+	{ "System.RuntimeType","GetBaseType"},
 
     };
 

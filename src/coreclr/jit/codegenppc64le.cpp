@@ -2818,10 +2818,76 @@ void CodeGen::genJumpTable(GenTree* treeNode)
 // Arguments:
 //    initBlkNode - the GT_STORE_BLK node
 //
+// Code shape (PPC64LE ELFv2):
+//
+//    std     zeroReg, 0(dstReg)          ; zero first word + null-check dstReg
+//    [if size > 8:]
+//      li/lis offsetReg, <size - 8>
+//    .LOOP:
+//      stdx    zeroReg, dstReg, offsetReg ; *(dstReg + offsetReg) = 0
+//      addi    offsetReg, offsetReg, -8
+//      cmpdi   cr0, offsetReg, 0
+//      bne     cr0, .LOOP
+//
+// The loop counts down from (size - 8) to 0, stepping by 8 bytes.
+// The first 8 bytes are zeroed before the loop as a null-check; the loop
+// body then covers bytes [8 .. size-8] (inclusive) working backwards.
+//
 void CodeGen::genCodeForInitBlkLoop(GenTreeBlk* initBlkNode)
 {
-    //_ASSERTE("!NYI");
-    abort();
+    GenTree* const dstNode = initBlkNode->Addr();
+    genConsumeReg(dstNode);
+    const regNumber dstReg = dstNode->GetRegNum();
+
+    // The fill value may be wrapped in a GT_INIT_VAL node (which is contained).
+    // Unwrap it to get the actual fill value node that holds the allocated register.
+    GenTree* zeroNode = initBlkNode->Data();
+    if (zeroNode->OperIs(GT_INIT_VAL))
+    {
+        assert(zeroNode->isContained());
+        zeroNode = zeroNode->gtGetOp1();
+    }
+    genConsumeReg(zeroNode);
+    const regNumber zeroReg = zeroNode->GetRegNum();
+
+    if (initBlkNode->IsVolatile())
+    {
+        // Issue a full memory barrier before a volatile initBlock operation.
+        // PPC64LE ELFv2: use 'sync' (hwsync) for a heavyweight full barrier.
+        instGen_MemoryBarrier();
+    }
+
+    const unsigned size = initBlkNode->GetLayout()->GetSize();
+    assert((size >= TARGET_POINTER_SIZE) && ((size % TARGET_POINTER_SIZE) == 0));
+
+    // The loop is reversed (counting down from size-8 to 0).
+    // We zero the first word *before* entering the loop so that a null dstReg
+    // causes an AV immediately rather than at "null + large_offset" on the
+    // first loop iteration.
+    GetEmitter()->emitIns_R_R_I(INS_std, EA_PTRSIZE, zeroReg, dstReg, 0);
+
+    if (size > TARGET_POINTER_SIZE)
+    {
+        // Keep dstReg live across stores so GC can track the interior pointer.
+        gcInfo.gcMarkRegPtrVal(dstReg, dstNode->TypeGet());
+
+        const regNumber offsetReg = internalRegisters.GetSingle(initBlkNode);
+        instGen_Set_Reg_To_Imm(EA_PTRSIZE, offsetReg, size - TARGET_POINTER_SIZE);
+
+        BasicBlock* loop = genCreateTempLabel();
+        genDefineTempLabel(loop);
+
+        // stdx  zeroReg, dstReg, offsetReg  =>  MEM[dstReg + offsetReg] = zeroReg
+        GetEmitter()->emitIns_R_R_R(INS_stdx, EA_PTRSIZE, zeroReg, dstReg, offsetReg);
+        // addi  offsetReg, offsetReg, -8
+        GetEmitter()->emitIns_R_R_I(INS_addi, EA_PTRSIZE, offsetReg, offsetReg, -TARGET_POINTER_SIZE);
+        // cmpdi cr0, offsetReg, 0
+        GetEmitter()->emitIns_R_I(INS_cmpdi, EA_PTRSIZE, offsetReg, 0);
+        // bne   cr0, .LOOP
+        inst_JMP(EJ_ne, loop);
+
+        gcInfo.gcMarkRegSetNpt(genRegMask(dstReg));
+    }
 }
 
 //----------------------------------------------------------------------------------
