@@ -12709,7 +12709,11 @@ static bool ShouldUseInterpreterFallback(MethodDesc* ftnDesc,const char* ftnName
        "ToStringAndClear",
        "GetEnvironmentVariableCore",
        "SequenceEqual",
-       "get_IsPrimitive"
+       "get_IsPrimitive",
+       "TryGetSwitch",
+       "IsATty",
+       "GetEncodingFromCharset",
+       "IsValidCodePoint",
     };
 
     struct JitInclusionEntry
@@ -13320,6 +13324,14 @@ static bool ShouldUseInterpreterFallback(MethodDesc* ftnDesc,const char* ftnName
 	{ "System.RuntimeType","get_BaseType"},
 	{ "System.RuntimeType","GetBaseType"},
 	//{"System.Runtime.CompilerServices.DefaultInterpolatedStringHandler","AppendFormatted"},
+
+        { "System.Runtime.CompilerServices.CastHelpers","ChkCastClassSpecial"},
+        { "System.GC","RunFinalizers"},
+        { "System.Runtime.Loader.AssemblyLoadContext","OnProcessExit"},
+        { "MemberInfoCache`1[__Canon]","Insert"},
+	{ "ComInfo","FromObjectSlow"},
+	{ "System.Collections.Generic.Dictionary`2[Guid,__Canon]",".ctor"},
+	{ "DatabaseFactory","ReadDatabase"},
 
     };
 
