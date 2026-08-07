@@ -6501,16 +6501,16 @@ void Compiler::lvaAssignVirtualFrameOffsetsToLocals()
         }
     }
 
-#if defined(TARGET_ARMARCH) || defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64)
+#if defined(TARGET_ARMARCH) || defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64) || defined(TARGET_POWERPC64)
     if (lvaPSPSym != BAD_VAR_NUM)
     {
-        // On ARM/ARM64, if we need a PSPSym we allocate it early since funclets
-        // will need to have it at the same caller-SP relative offset so anything
-        // allocated before this will also leak into the funclet's frame.
+        // On ARM/ARM64/RISC-V64/LoongArch64/PPC64LE, if we need a PSPSym we allocate it
+        // early since funclets will need to have it at the same caller-SP relative offset
+        // so anything allocated before this will also leak into the funclet's frame.
         noway_assert(codeGen->isFramePointerUsed()); // We need an explicit frame pointer
         stkOffs = lvaAllocLocalAndSetVirtualOffset(lvaPSPSym, TARGET_POINTER_SIZE, stkOffs);
     }
-#endif // TARGET_ARMARCH || TARGET_LOONGARCH64 || TARGET_RISCV64
+#endif // TARGET_ARMARCH || TARGET_LOONGARCH64 || TARGET_RISCV64 || TARGET_POWERPC64
 
     if (mustDoubleAlign)
     {

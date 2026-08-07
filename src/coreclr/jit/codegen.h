@@ -477,7 +477,41 @@ protected:
 
     FuncletFrameInfoDsc genFuncletInfo;
 
-#endif // TARGET_ARM, TARGET_ARM64, TARGET_AMD64, TARGET_LOONGARCH64, TARGET_RISCV64
+#elif defined(TARGET_POWERPC64)
+
+    // A set of information that is used by funclet prolog and epilog generation.
+    // It is collected once, before funclet prologs and epilogs are generated,
+    // and used by all funclet prologs and epilogs, which must all be the same.
+    //
+    // PPC64LE ELFv2 ABI notes:
+    //   LR, FP (r31), and R2 (TOC) are saved in the *caller's* linkage area at
+    //   caller-SP-relative offsets (+16, -8, +24) before stdu allocates the frame.
+    //   These offsets are ABI constants and are not stored here.
+    //   fiSP_to_FPLR_save_delta is therefore not needed (contrast with ARM64 where
+    //   FP/LR are saved inside the funclet's own frame at a variable offset).
+    //
+    //   PPC64LE has no negative-SP addressing, so all slot offsets are positive
+    //   SP-relative values.  fiCallerSP_to_PSP_slot_delta is read directly from
+    //   the main function's PSPSym lclvar placement (lvaGetCallerSPRelativeOffset)
+    //   so the funclet and main frame always agree on the PSP slot location.
+    //   fiSP_to_PSP_slot_delta is then derived as funcletFrameSize + fiCallerSP_to_PSP_slot_delta.
+    struct FuncletFrameInfoDsc
+    {
+        regMaskTP fiSaveRegs;                // Set of callee-saved registers saved in the funclet prolog (includes LR)
+        int fiFunction_CallerSP_to_FP_delta; // Delta between caller SP and the frame pointer in the parent function
+                                             // (negative); used to recompute CallerSP from FP for PSP setup
+        int fiSP_to_CalleeSaved_delta;       // Offset from funclet SP to first callee-saved slot (positive);
+                                             // always equals the 32-byte ELFv2 mandatory linkage area
+        int fiSP_to_PSP_slot_delta;          // PSP slot offset from funclet SP (positive);
+                                             // = funcletFrameSize + fiCallerSP_to_PSP_slot_delta
+        int fiCallerSP_to_PSP_slot_delta;    // PSP slot offset from Caller SP (negative);
+                                             // authoritative value from lvaGetCallerSPRelativeOffset(lvaPSPSym)
+        int fiSpDelta;                       // Total funclet frame size, negated (negative)
+    };
+
+    FuncletFrameInfoDsc genFuncletInfo;
+
+#endif // TARGET_ARM, TARGET_ARM64, TARGET_AMD64, TARGET_LOONGARCH64, TARGET_RISCV64, TARGET_POWERPC64
 
 #if defined(TARGET_XARCH)
 

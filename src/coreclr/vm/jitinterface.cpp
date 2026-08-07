@@ -12702,8 +12702,7 @@ static bool ShouldUseInterpreterFallback(MethodDesc* ftnDesc,const char* ftnName
        "ToString",
        "ToStringAndClear",
        "GetEnvironmentVariableCore",
-       "SequenceEqual"
-
+       "SequenceEqual",
 
     };
 
@@ -13314,6 +13313,7 @@ static bool ShouldUseInterpreterFallback(MethodDesc* ftnDesc,const char* ftnName
 	{ "System.Reflection.PseudoCustomAttribute","VerifyPseudoCustomAttribute"},
 	{ "System.RuntimeType","get_BaseType"},
 	{ "System.RuntimeType","GetBaseType"},
+	//{"System.Runtime.CompilerServices.DefaultInterpolatedStringHandler","AppendFormatted"},
 
     };
 

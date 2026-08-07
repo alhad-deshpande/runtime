@@ -1055,8 +1055,8 @@ void CodeGen::genEmitGSCookieCheck(bool pushReg)
     // We can't use any argument registers if 'pushReg' is true (meaning we have a JMP
     // call). They should be callee-trash registers with nothing interesting at this point.
     // LSRA has no IR node for this check so it cannot allocate registers for us.
-    regNumber regGSConst = REG_GSCOOKIE_TMP_0; // R11
-    regNumber regGSValue = REG_GSCOOKIE_TMP_1; // R12
+    regNumber regGSConst = REG_GSCOOKIE_TMP_0; // R12 — call-target scratch, not an arg reg, not VSD cell
+    regNumber regGSValue = REG_GSCOOKIE_TMP_1; // R11 — frame-loaded value only, dead after cmpd
 
     if (compiler->gsGlobalSecurityCookieAddr == nullptr)
     {
@@ -1557,7 +1557,7 @@ void CodeGen::genPutArgSplit(GenTreePutArgSplit* treeNode)
 
                 // Emit store instructions to store the registers produced by the GT_FIELD_LIST into the outgoing
                 // argument area
-                emit->emitIns_S_R(ins_Store(type), emitActualTypeSize(type), fieldReg, varNumOut, offset);
+                emit->emitIns_S_R(ins_Store(type), emitTypeSize(type), fieldReg, varNumOut, offset);
             }
             else
             {
@@ -2200,7 +2200,7 @@ void CodeGen::genCodeForStoreLclVar(GenTreeLclVar* lclNode)
             inst_set_SV_var(lclNode);
 
             instruction ins  = ins_Store(targetType);
-            emitAttr    attr = emitActualTypeSize(targetType);
+            emitAttr    attr = emitTypeSize(targetType);
 
             // For HFA structs, if dataReg is a float register, we need to use float store instructions
             // even though targetType might be TYP_LONG
@@ -2336,7 +2336,7 @@ void CodeGen::genCodeForStoreLclFld(GenTreeLclFld* tree)
     }
 
     instruction ins  = ins_Store(storeType);
-    emitAttr    attr = emitActualTypeSize(storeType);
+    emitAttr    attr = emitTypeSize(storeType);
 
     emit->emitIns_S_R(ins, attr, dataReg, varNum, offset);
 
@@ -2421,7 +2421,7 @@ void CodeGen::genCodeForLclVar(GenTreeLclVar* tree)
         assert(targetType != TYP_STRUCT);
 
         instruction ins  = ins_Load(targetType);
-        emitAttr    attr = emitActualTypeSize(targetType);
+        emitAttr    attr = emitTypeSize(targetType);
 
         GetEmitter()->emitIns_R_S(ins, attr, tree->GetRegNum(), varNum, 0);
         genProduceReg(tree);
@@ -5743,8 +5743,149 @@ void CodeGen::genZeroInitFrameUsingBlockInit(int untrLclHi, int untrLclLo, regNu
 
 void CodeGen::genFuncletProlog(BasicBlock* block)
 {
-    //_ASSERTE("!NYI");
-    abort();
+#ifdef DEBUG
+    if (verbose)
+    {
+        printf("*************** In genFuncletProlog()\n");
+    }
+#endif
+
+    assert(block != nullptr);
+    assert(block->HasFlag(BBF_FUNCLET_BEG));
+
+    ScopedSetVariable<bool> _setGeneratingProlog(&compiler->compGeneratingProlog, true);
+
+    gcInfo.gcResetForBB();
+
+    compiler->unwindBegProlog();
+
+    bool isFilter  = (block->bbCatchTyp == BBCT_FILTER);
+
+    regMaskTP maskArgRegsLiveIn;
+    if (isFilter)
+    {
+        // On entry to a filter: r3 = exception object, r4 = CallerSP of the containing function
+        maskArgRegsLiveIn = RBM_R3 | RBM_R4;
+    }
+    else if ((block->bbCatchTyp == BBCT_FINALLY) || (block->bbCatchTyp == BBCT_FAULT))
+    {
+        maskArgRegsLiveIn = RBM_NONE;
+    }
+    else
+    {
+        // catch: r3 = exception object
+        maskArgRegsLiveIn = RBM_R3;
+    }
+
+    // --------------------------------------------------------------------------
+    // Build the funclet frame.  The layout is identical to the main function's
+    // ELFv2 frame:
+    //
+    //   caller_SP  (= funclet entry r1)
+    //     -8(caller_SP)  : saved FP (r31)          }  written before stdu,
+    //     +16(caller_SP) : saved LR                }  into the *caller's*
+    //     +24(caller_SP) : saved R2/TOC            }  linkage area
+    //   ---  stdu atomically writes back-chain and decrements r1 ---
+    //   [funclet_SP + fiSpDelta + frameSize - 1] .. [funclet_SP + fiSP_to_CalleeSaved_delta]
+    //                  : callee-saved int regs r14-r31 (ascending order)
+    //                  : callee-saved float regs f14-f31 (ascending order)
+    //   [funclet_SP + fiSP_to_PSP_slot_delta]
+    //                  : PSP slot (written after unwindEndProlog)
+    // --------------------------------------------------------------------------
+
+    // These are the same ABI-fixed offsets used by the main prolog/epilog.
+    constexpr int FP_backchain_save_offset = -8;   // relative to caller-SP
+    constexpr int LR_save_offset           = 16;   // relative to caller-SP
+    constexpr int R2_save_offset           = 24;   // relative to caller-SP
+
+    emitter* emit = GetEmitter();
+    int      funcletFrameSize = -genFuncletInfo.fiSpDelta; // positive value
+    assert(funcletFrameSize > 0);
+    assert((funcletFrameSize % STACK_ALIGN) == 0);
+
+    regMaskTP maskSaveRegsInt   = genFuncletInfo.fiSaveRegs & RBM_INT_CALLEE_SAVED;
+    regMaskTP maskSaveRegsFloat = genFuncletInfo.fiSaveRegs & RBM_ALLFLOAT;
+
+    // --- Save LR, FP, R2 into the caller's linkage area (pre-frame-allocation) ---
+    emit->emitIns_R_R_I(INS_std, EA_PTRSIZE, REG_R2, REG_SPBASE, R2_save_offset);
+    emit->emitIns_R(INS_mflr, EA_PTRSIZE, REG_R0);
+    emit->emitIns_R_R_I(INS_std, EA_PTRSIZE, REG_R0, REG_SPBASE, LR_save_offset);
+    emit->emitIns_R_R_I(INS_std, EA_PTRSIZE, REG_FP, REG_SPBASE, FP_backchain_save_offset);
+
+    // --- Allocate the frame: stdu writes the back-chain and updates r1 ---
+    emit->emitIns_R_R_I(INS_stdu, EA_PTRSIZE, REG_SPBASE, REG_SPBASE, -funcletFrameSize);
+    compiler->unwindAllocStack(funcletFrameSize);
+
+    // --- Establish FP = SP (bottom of frame) ---
+    emit->emitIns_Mov(INS_mov, EA_PTRSIZE, REG_FP, REG_SPBASE, /* canSkip */ false);
+
+    // --- Save callee-saved integer registers (r14-r31, ascending) ---
+    int offset = genFuncletInfo.fiSP_to_CalleeSaved_delta;
+    for (int regNum = REG_R14; regNum <= REG_R31; regNum++)
+    {
+        regNumber reg     = (regNumber)regNum;
+        regMaskTP regMask = genRegMask(reg);
+        if ((maskSaveRegsInt & regMask) != RBM_NONE)
+        {
+            emit->emitIns_R_R_I(INS_std, EA_PTRSIZE, reg, REG_SPBASE, offset);
+            compiler->unwindSaveReg(reg, offset);
+            offset += REGSIZE_BYTES;
+        }
+    }
+
+    // --- Save callee-saved float registers (f14-f31, ascending) ---
+    for (int regNum = REG_F14; regNum <= REG_F31; regNum++)
+    {
+        regNumber reg     = (regNumber)regNum;
+        regMaskTP regMask = genRegMask(reg);
+        if ((maskSaveRegsFloat & regMask) != RBM_NONE)
+        {
+            emit->emitIns_R_R_I(INS_stfd, EA_8BYTE, reg, REG_SPBASE, offset);
+            compiler->unwindSaveReg(reg, offset);
+            offset += REGSIZE_BYTES;
+        }
+    }
+
+    compiler->unwindSetFrameReg(REG_FPBASE, FP_backchain_save_offset);
+
+    // This is the end of the OS-reported prolog for unwinding purposes.
+    compiler->unwindEndProlog();
+
+    // --- Set up PSPSym (not part of OS prolog; not reversed in epilog) ---
+    // If there is no PSPSym (NativeAOT ABI) we are done.
+    if (compiler->lvaPSPSym != BAD_VAR_NUM)
+    {
+        if (isFilter)
+        {
+            // On filter entry r4 = CallerSP of the dynamically-containing function/funclet.
+            // Load the "real" CallerSP of the main function from the PSP stored in that frame,
+            // then store it to our own PSP slot and re-establish FP.
+            // r5 is used as scratch (it is volatile and not live on entry to a filter).
+            genInstrWithConstant(INS_ld,   EA_PTRSIZE, REG_R4, REG_R4, genFuncletInfo.fiCallerSP_to_PSP_slot_delta,
+                                 REG_R5, false);
+            regSet.verifyRegUsed(REG_R4);
+
+            genInstrWithConstant(INS_std,  EA_PTRSIZE, REG_R4, REG_SPBASE, genFuncletInfo.fiSP_to_PSP_slot_delta,
+                                 REG_R5, false);
+
+            // re-establish FP: fp = CallerSP + Function_CallerSP_to_FP_delta
+            genInstrWithConstant(INS_addi, EA_PTRSIZE, REG_FPBASE, REG_R4,
+                                 genFuncletInfo.fiFunction_CallerSP_to_FP_delta, REG_R5, false);
+        }
+        else
+        {
+            // Non-filter: the VM has re-established FP on entry.
+            // Compute CallerSP from FP using the delta captured at compile time,
+            // then store it into our PSP slot.
+            // r5 is scratch (volatile, not live on funclet entry).
+            genInstrWithConstant(INS_addi, EA_PTRSIZE, REG_R5, REG_FPBASE,
+                                 -genFuncletInfo.fiFunction_CallerSP_to_FP_delta, REG_R0, false);
+            regSet.verifyRegUsed(REG_R5);
+
+            genInstrWithConstant(INS_std,  EA_PTRSIZE, REG_R5, REG_SPBASE, genFuncletInfo.fiSP_to_PSP_slot_delta,
+                                 REG_R0, false);
+        }
+    }
 }
 
 /*****************************************************************************
@@ -5756,8 +5897,85 @@ void CodeGen::genFuncletProlog(BasicBlock* block)
 
 void CodeGen::genFuncletEpilog()
 {
-    //_ASSERTE("!NYI");
-    abort();
+#ifdef DEBUG
+    if (verbose)
+    {
+        printf("*************** In genFuncletEpilog()\n");
+    }
+#endif
+
+    ScopedSetVariable<bool> _setGeneratingEpilog(&compiler->compGeneratingEpilog, true);
+
+    compiler->unwindBegEpilog();
+
+    // These are the same ABI-fixed offsets used by the main prolog/epilog.
+    constexpr int FP_backchain_save_offset = -8;   // relative to caller-SP
+    constexpr int LR_save_offset           = 16;   // relative to caller-SP
+    constexpr int R2_save_offset           = 24;   // relative to caller-SP
+
+    emitter* emit = GetEmitter();
+    int      funcletFrameSize = -genFuncletInfo.fiSpDelta; // positive value
+    assert(funcletFrameSize > 0);
+
+    regMaskTP maskRestoreRegsInt   = genFuncletInfo.fiSaveRegs & RBM_INT_CALLEE_SAVED;
+    regMaskTP maskRestoreRegsFloat = genFuncletInfo.fiSaveRegs & RBM_ALLFLOAT;
+
+    // --- Restore callee-saved float registers (f31 down to f14, reverse of save) ---
+    // First, advance 'offset' past the int saves to find where floats begin.
+    int offset = genFuncletInfo.fiSP_to_CalleeSaved_delta;
+    for (int regNum = REG_R14; regNum <= REG_R31; regNum++)
+    {
+        if ((maskRestoreRegsInt & genRegMask((regNumber)regNum)) != RBM_NONE)
+        {
+            offset += REGSIZE_BYTES;
+        }
+    }
+    // 'offset' now points just past the last int save = start of float saves.
+    // Restore floats highest-numbered first (matching save order in reverse).
+    for (int regNum = REG_F31; regNum >= REG_F14; regNum--)
+    {
+        regNumber reg     = (regNumber)regNum;
+        regMaskTP regMask = genRegMask(reg);
+        if ((maskRestoreRegsFloat & regMask) != RBM_NONE)
+        {
+            offset -= REGSIZE_BYTES;
+            emit->emitIns_R_R_I(INS_lfd, EA_8BYTE, reg, REG_SPBASE, offset);
+            compiler->unwindSaveReg(reg, offset);
+        }
+    }
+
+    // --- Restore callee-saved integer registers (r31 down to r14) ---
+    for (int regNum = REG_R31; regNum >= REG_R14; regNum--)
+    {
+        regNumber reg     = (regNumber)regNum;
+        regMaskTP regMask = genRegMask(reg);
+        if ((maskRestoreRegsInt & regMask) != RBM_NONE)
+        {
+            offset -= REGSIZE_BYTES;
+            emit->emitIns_R_R_I(INS_ld, EA_PTRSIZE, reg, REG_SPBASE, offset);
+            compiler->unwindSaveReg(reg, offset);
+        }
+    }
+
+    // --- Deallocate the frame: r1 = caller-SP ---
+    emit->emitIns_R_R_I(INS_addi, EA_PTRSIZE, REG_SPBASE, REG_SPBASE, funcletFrameSize);
+    compiler->unwindAllocStack(funcletFrameSize);
+
+    // --- Restore FP, LR, R2 from the caller's linkage area ---
+    emit->emitIns_R_R_I(INS_ld, EA_PTRSIZE, REG_FP, REG_SPBASE, FP_backchain_save_offset);
+    compiler->unwindSaveReg(REG_FP, FP_backchain_save_offset);
+
+    emit->emitIns_R_R_I(INS_ld, EA_PTRSIZE, REG_R0, REG_SPBASE, LR_save_offset);
+    compiler->unwindSaveReg(REG_R0, LR_save_offset);
+
+    emit->emitIns_R_R_I(INS_ld, EA_PTRSIZE, REG_R2, REG_SPBASE, R2_save_offset);
+    compiler->unwindSaveReg(REG_R2, R2_save_offset);
+
+    emit->emitIns_R(INS_mtlr, EA_PTRSIZE, REG_R0);
+    emit->emitIns(INS_blr);
+    compiler->unwindReturn(REG_R0);
+
+    compiler->unwindEndEpilog();
 }
 
 //------------------------------------------------------------------------
@@ -5854,17 +6072,136 @@ void CodeGen::genFloatToIntCast(GenTree* treeNode)
 
 void CodeGen::genCaptureFuncletPrologEpilogInfo()
 {
-    //_ASSERTE("!NYI");
-    if (!compiler->UsesFunclets())
+    if (!compiler->ehAnyFunclets())
     {
-        return;  // No funclets in this function
+        return;
     }
 
-    // Capture funclet prolog/epilog info for exception handling
-    // For simple functions without exception handlers, this is not needed
-    // TODO: Implement funclet support when needed
-    return;
+    assert(isFramePointerUsed());
+    // The frame size and offsets must be finalized.
+    assert(compiler->lvaDoneFrameLayout == Compiler::FINAL_FRAME_LAYOUT);
 
+    regMaskTP rsMaskSaveRegs = regSet.rsMaskCalleeSaved;
+    // Note: on PPC64LE, FP (r31) is saved at the fixed ABI back-chain slot
+    // (-8 from caller-SP) before stdu, so it is NOT tracked in rsMaskCalleeSaved.
+    // The callee-save loops in the prolog/epilog cover r14-r30 and f14-f31 only.
+    assert((rsMaskSaveRegs & RBM_FPBASE) == 0);
+
+    // -----------------------------------------------------------------------
+    // Funclet frame layout (ELFv2 ABI):
+    //
+    //   caller-SP  (= funclet entry r1)
+    //     -8(caller-SP)  : saved FP (r31)   ]  written before stdu into the
+    //     +16(caller-SP) : saved LR          ]  caller's linkage area
+    //     +24(caller-SP) : saved R2/TOC      ]
+    //   funclet-SP  (= caller-SP - funcletFrameSize)
+    //     +0  .. +31            : 32-byte ELFv2 mandatory linkage area
+    //     +32 .. +32+saveBytes-1: callee-saved int regs r14-r30 (ascending)
+    //                             then callee-saved float regs f14-f31 (ascending)
+    //     +pspSlotOffset        : PSP slot (8 bytes, if present) — at the same
+    //                             caller-SP-relative offset as in the main function
+    //     ..alignment padding..
+    //   caller-SP  (= funclet-SP + funcletFrameSize)
+    //
+    // PPC64LE has no negative-SP addressing.  All slot offsets are positive
+    // SP-relative.  The PSP slot's position in the funclet frame is driven by
+    // the main function's PSPSym caller-SP-relative offset so the VM can find
+    // it at the same location from both frames.
+    // -----------------------------------------------------------------------
+
+    // OSR: pad so PSPSym sits at the same caller-relative offset as in Tier0.
+    int osrPad = 0;
+    if (compiler->opts.IsOSR())
+    {
+        osrPad -= compiler->info.compPatchpointInfo->TotalFrameSize();
+        assert((osrPad % STACK_ALIGN) == 0);
+    }
+
+    // Delta from caller-SP to FP in the main function (negative).
+    genFuncletInfo.fiFunction_CallerSP_to_FP_delta = genCallerSPtoFPdelta() + osrPad;
+
+    // Callee-saved registers start right above the 32-byte linkage area.
+    const int FUNCLET_LINKAGE_AREA           = 32;
+    genFuncletInfo.fiSP_to_CalleeSaved_delta = FUNCLET_LINKAGE_AREA;
+
+    const int saveBytes = (int)(genCountBits(rsMaskSaveRegs) * REGSIZE_BYTES);
+
+    // Minimum frame content: linkage area + callee-saved registers.
+    int funcletFrameSize = FUNCLET_LINKAGE_AREA + saveBytes;
+
+    // The PSP slot must sit at the same caller-SP-relative offset as in the main
+    // function.  Read that offset directly from the main frame's lclvar layout so
+    // there is a single source of truth and the assert at the bottom always holds.
+    //
+    // fiCallerSP_to_PSP_slot_delta  < 0  (PSP is below caller-SP)
+    // fiSP_to_PSP_slot_delta        > 0  (PSP is above funclet-SP)
+    //   fiSP_to_PSP_slot_delta = funcletFrameSize + fiCallerSP_to_PSP_slot_delta
+    //                          = funcletFrameSize - |callerSP_to_PSP|
+    //
+    // The funclet frame must be at least large enough to hold this slot, so we
+    // size it to ensure fiSP_to_PSP_slot_delta >= funcletFrameSize - funcletFrameSize
+    // is positive after alignment.
+
+    if (compiler->lvaPSPSym != BAD_VAR_NUM)
+    {
+        // Authoritative caller-SP-relative offset of the PSP slot, set by
+        // lvaAssignVirtualFrameOffsetsToLocals / lvaFixVirtualFrameOffsets.
+        const int callerSP_to_PSP = compiler->lvaGetCallerSPRelativeOffset(compiler->lvaPSPSym);
+        assert(callerSP_to_PSP <= 0);
+
+        // The funclet frame must be tall enough that pspSlotOffset is positive.
+        // Minimum required size = -callerSP_to_PSP + 8 (for the slot itself) + osrPad,
+        // but we always round up to STACK_ALIGN anyway.
+        funcletFrameSize = max(funcletFrameSize, -callerSP_to_PSP - osrPad);
+        funcletFrameSize = (int)roundUp((unsigned)funcletFrameSize, STACK_ALIGN);
+
+        genFuncletInfo.fiSpDelta                    = -funcletFrameSize;
+        genFuncletInfo.fiSaveRegs                   = rsMaskSaveRegs;
+        genFuncletInfo.fiCallerSP_to_PSP_slot_delta = callerSP_to_PSP;
+        // PSP slot offset from funclet-SP: always positive on PPC64LE.
+        genFuncletInfo.fiSP_to_PSP_slot_delta       = funcletFrameSize + callerSP_to_PSP;
+    }
+    else
+    {
+        funcletFrameSize = (int)roundUp((unsigned)funcletFrameSize, STACK_ALIGN);
+
+        genFuncletInfo.fiSpDelta                    = -funcletFrameSize;
+        genFuncletInfo.fiSaveRegs                   = rsMaskSaveRegs;
+        genFuncletInfo.fiCallerSP_to_PSP_slot_delta = 0;
+        genFuncletInfo.fiSP_to_PSP_slot_delta       = 0;
+    }
+
+#ifdef DEBUG
+    if (verbose)
+    {
+        printf("\n");
+        printf("Funclet prolog / epilog info\n");
+        printf("                         Save regs: ");
+        dspRegMask(genFuncletInfo.fiSaveRegs);
+        printf("\n");
+        if (compiler->opts.IsOSR())
+        {
+            printf("                           OSR Pad: %d\n", osrPad);
+        }
+        printf("   fiFunction_CallerSP_to_FP_delta: %d\n", genFuncletInfo.fiFunction_CallerSP_to_FP_delta);
+        printf("         fiSP_to_CalleeSaved_delta: %d\n", genFuncletInfo.fiSP_to_CalleeSaved_delta);
+        printf("            fiSP_to_PSP_slot_delta: %d\n", genFuncletInfo.fiSP_to_PSP_slot_delta);
+        printf("      fiCallerSP_to_PSP_slot_delta: %d\n", genFuncletInfo.fiCallerSP_to_PSP_slot_delta);
+        printf("                         fiSpDelta: %d\n", genFuncletInfo.fiSpDelta);
+    }
+
+    assert(genFuncletInfo.fiSP_to_CalleeSaved_delta >= 0);
+    assert(genFuncletInfo.fiSP_to_PSP_slot_delta >= 0);
+    assert(genFuncletInfo.fiCallerSP_to_PSP_slot_delta <= 0);
+    assert(genFuncletInfo.fiSpDelta < 0);
+    assert(((-genFuncletInfo.fiSpDelta) % STACK_ALIGN) == 0);
+
+    if (compiler->lvaPSPSym != BAD_VAR_NUM)
+    {
+        assert(genFuncletInfo.fiCallerSP_to_PSP_slot_delta ==
+               compiler->lvaGetCallerSPRelativeOffset(compiler->lvaPSPSym)); // same offset used in main function and funclet!
+    }
+#endif // DEBUG
 }
 
 void CodeGen::genSetPSPSym(regNumber initReg, bool* pInitRegZeroed)

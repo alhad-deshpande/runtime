@@ -607,13 +607,52 @@ void UnwindPrologCodes::Dump(int indent)
 
 void UnwindEpilogCodes::EnsureSize(int requiredSize)
 {
-    _ASSERTE(!"NYI");
+    if (requiredSize > uecMemSize)
+    {
+        // Reallocate, and copy everything to a new array.
+
+        // Choose the next power of two size. This may or may not be the best choice.
+        noway_assert((requiredSize & 0xC0000000) == 0); // too big!
+        int newSize;
+        for (newSize = uecMemSize << 1; newSize < requiredSize; newSize <<= 1)
+        {
+            // do nothing
+        }
+
+        BYTE* newUnwindCodes = new (uwiComp, CMK_UnwindInfo) BYTE[newSize];
+        memcpy_s(newUnwindCodes, newSize, uecMem, uecMemSize);
+#ifdef DEBUG
+        // Clear the old unwind codes; nobody should be looking at them
+        memset(uecMem, 0xFF, uecMemSize);
+#endif                           // DEBUG
+        uecMem = newUnwindCodes; // we don't free anything that used to be there since we have a no-release allocator
+        // uecCodeSlot stays the same
+        uecMemSize = newSize;
+    }
 }
 
 #ifdef DEBUG
 void UnwindEpilogCodes::Dump(int indent)
 {
-    _ASSERTE(!"NYI");
+    printf("%*sUnwindEpilogCodes @0x%08p, size:%d:\n", indent, "", dspPtr(this), sizeof(*this));
+    printf("%*s  uwiComp: 0x%08p\n", indent, "", dspPtr(uwiComp));
+    printf("%*s  &uecMemLocal[0]: 0x%08p\n", indent, "", dspPtr(&uecMemLocal[0]));
+    printf("%*s  uecMem: 0x%08p\n", indent, "", dspPtr(uecMem));
+    printf("%*s  uecMemSize: %d\n", indent, "", uecMemSize);
+    printf("%*s  uecCodeSlot: %d\n", indent, "", uecCodeSlot);
+    printf("%*s  uecFinalized: %s\n", indent, "", dspBool(uecFinalized));
+
+    if (uecMemSize > 0)
+    {
+        printf("%*s  codes:", indent, "");
+        for (int i = 0; i < uecMemSize; i++)
+        {
+            printf(" %02x", uecMem[i]);
+            if (i == uecCodeSlot)
+                printf(" <-C"); // Indicate the current pointer
+        }
+        printf("\n");
+    }
 }
 #endif // DEBUG
 
@@ -634,24 +673,51 @@ void UnwindEpilogCodes::Dump(int indent)
 
 int UnwindEpilogInfo::Match(UnwindEpilogInfo* pEpi)
 {
-    _ASSERTE(!"NYI");
+    if (Matches())
+    {
+        // We are already matched to someone else, and won't provide codes to the final layout
+        return -1;
+    }
+
+    if (Size() < pEpi->Size())
+    {
+        return -1;
+    }
+
+    int matchIndex = Size() - pEpi->Size();
+
+    if (0 == memcmp(GetCodes() + matchIndex, pEpi->GetCodes(), pEpi->Size()))
+    {
+        return matchIndex;
+    }
+
+    return -1;
 }
 
 void UnwindEpilogInfo::CaptureEmitLocation()
 {
-    _ASSERTE(!"NYI");
+    noway_assert(epiEmitLocation == NULL); // This function is only called once per epilog
+    epiEmitLocation = new (uwiComp, CMK_UnwindInfo) emitLocation();
+    epiEmitLocation->CaptureLocation(uwiComp->GetEmitter());
 }
 
 void UnwindEpilogInfo::FinalizeOffset()
 {
-    _ASSERTE(!"NYI");
-    //epiStartOffset = epiEmitLocation->CodeOffset(uwiComp->GetEmitter());
+    epiStartOffset = epiEmitLocation->CodeOffset(uwiComp->GetEmitter());
 }
 
 #ifdef DEBUG
 void UnwindEpilogInfo::Dump(int indent)
 {
-    _ASSERTE(!"NYI");
+    printf("%*sUnwindEpilogInfo @0x%08p, size:%d:\n", indent, "", dspPtr(this), sizeof(*this));
+    printf("%*s  uwiComp: 0x%08p\n", indent, "", dspPtr(uwiComp));
+    printf("%*s  epiNext: 0x%08p\n", indent, "", dspPtr(epiNext));
+    printf("%*s  epiEmitLocation: 0x%08p\n", indent, "", dspPtr(epiEmitLocation));
+    printf("%*s  epiStartOffset: 0x%x\n", indent, "", epiStartOffset);
+    printf("%*s  epiMatches: %s\n", indent, "", dspBool(epiMatches));
+    printf("%*s  epiStartIndex: %d\n", indent, "", epiStartIndex);
+
+    epiCodes.Dump(indent + 2);
 }
 #endif // DEBUG
 
@@ -811,8 +877,7 @@ void UnwindFragmentInfo::SplitEpilogCodes(emitLocation* emitLoc, UnwindFragmentI
 
 bool UnwindFragmentInfo::IsAtFragmentEnd(UnwindEpilogInfo* pEpi)
 {
-    _ASSERTE(!"NYI");
-    //return uwiComp->GetEmitter()->emitIsFuncEnd(pEpi->epiEmitLocation, (ufiNext == NULL) ? NULL : ufiNext->ufiEmitLoc);
+    return uwiComp->GetEmitter()->emitIsFuncEnd(pEpi->epiEmitLocation, (ufiNext == NULL) ? NULL : ufiNext->ufiEmitLoc);
 }
 
 // Merge the unwind codes as much as possible.

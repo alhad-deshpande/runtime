@@ -107,8 +107,24 @@
   #define RBM_ENC_CALLEE_SAVED     0
 
   // Temporary registers used for the GS cookie check.
-  #define REG_GSCOOKIE_TMP_0       REG_R11
-  #define REG_GSCOOKIE_TMP_1       REG_R12
+  //
+  // Constraints:
+  //   - Must be volatile (caller-trash).
+  //   - Must not be an argument register (R3-R10): when pushReg=true (tailcall JMP)
+  //     argument registers are live and cannot be clobbered.
+  //   - Must not be R0: cannot be used as a base register in ld/std (treated as 0).
+  //   - Must not be R2 (TOC pointer).
+  //   - TMP_0 must not be R11: R11 is the VSD indirection-cell register (virtualStubParamInfo),
+  //     which must survive into the dispatch stub. TMP_0 is passed directly to
+  //     genEmitHelperCall(FAIL_FAST) as the call-target scratch register, so using
+  //     R11 here would corrupt the live VSD cell before the virtual call dispatches.
+  //
+  // R12 is the designated call-target scratch (REG_DEFAULT_HELPER_CALL_TARGET /
+  // REG_JUMP_THUNK_PARAM) and is not an argument register — ideal for TMP_0.
+  // R11 is safe for TMP_1: it only holds the stack-loaded cookie value, which is dead
+  // after the cmpd comparison and never passed to genEmitHelperCall.
+  #define REG_GSCOOKIE_TMP_0       REG_R12
+  #define REG_GSCOOKIE_TMP_1       REG_R11
 
   // register to hold shift amount; no special register is required on ARM64.
   #define REG_SHIFT                REG_NA
@@ -247,7 +263,11 @@
 
   #define RBM_VALIDATE_INDIRECT_CALL_TRASH (RBM_INT_CALLEE_TRASH & ~(RBM_R0 | RBM_R1 | RBM_R2 | RBM_R3 | RBM_R4 | RBM_R5 | RBM_R6 | RBM_R7 | RBM_R8 | RBM_R9 | RBM_R10 | RBM_R11 | RBM_R12 | RBM_R13))
   #define REG_VALIDATE_INDIRECT_CALL_ADDR REG_R13
-  #define REG_DISPATCH_INDIRECT_CALL_ADDR REG_R11
+  // REG_DISPATCH_INDIRECT_CALL_ADDR must differ from REG_R11 (VirtualStubParamInfo /
+  // VSD indirection-cell register) to avoid clobbering it in CFG-protected indirect
+  // calls. REG_R12 is already the designated call-target register on PPC64LE
+  // (REG_DEFAULT_HELPER_CALL_TARGET / REG_JUMP_THUNK_PARAM).
+  #define REG_DISPATCH_INDIRECT_CALL_ADDR REG_R12
 
   #define REG_FPBASE               REG_FP
   #define RBM_FPBASE               RBM_FP
