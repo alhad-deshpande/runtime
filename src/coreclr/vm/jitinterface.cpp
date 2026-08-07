@@ -12714,6 +12714,11 @@ static bool ShouldUseInterpreterFallback(MethodDesc* ftnDesc,const char* ftnName
        "IsATty",
        "GetEncodingFromCharset",
        "IsValidCodePoint",
+       "AsBytes",
+       "CreateInstanceOfT",
+       "GetEnumerator",
+       "Dispose",
+       "WriteLine",
     };
 
     struct JitInclusionEntry
@@ -13332,7 +13337,10 @@ static bool ShouldUseInterpreterFallback(MethodDesc* ftnDesc,const char* ftnName
 	{ "ComInfo","FromObjectSlow"},
 	{ "System.Collections.Generic.Dictionary`2[Guid,__Canon]",".ctor"},
 	{ "DatabaseFactory","ReadDatabase"},
-
+        { "System.Int32","TryFormat"},
+	{ "System.TerminalFormatStrings",".ctor"},
+        { "System.Lazy`1[__Canon]","ExecutionAndPublication"},
+        { "System.RuntimeType","MakeGenericType"},
     };
 
     const size_t numInclusions = sizeof(jitInclusionList) / sizeof(jitInclusionList[0]);
