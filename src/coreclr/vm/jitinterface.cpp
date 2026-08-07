@@ -12709,7 +12709,7 @@ static bool ShouldUseInterpreterFallback(MethodDesc* ftnDesc,const char* ftnName
        "ToStringAndClear",
        "GetEnvironmentVariableCore",
        "SequenceEqual",
-
+       "get_IsPrimitive"
     };
 
     struct JitInclusionEntry

@@ -448,20 +448,38 @@ void CodeGen::genCodeForCompare(GenTreeOp* tree)
     }
     else
     {
-	assert(!varTypeIsFloating(op2Type));
-	assert(!op1->isContainedIntOrIImmed());
-	
-	if (op2->IsCnsIntOrI())
-	{
-	    GenTreeIntConCommon* intConst = op2->AsIntConCommon();
-	    ins  = (cmpSize == EA_8BYTE) ? INS_cmpdi : INS_cmpwi;
-	    emit->emitIns_R_I(ins, cmpSize, op1->GetRegNum(), intConst->IconValue());
-	}
-	else
-	{
-	    ins = (cmpSize == EA_8BYTE) ? INS_cmpd : INS_cmpw;
-	    emit->emitIns_R_R(ins, cmpSize, op1->GetRegNum(), op2->GetRegNum());
-	}
+ assert(!varTypeIsFloating(op2Type));
+ assert(!op1->isContainedIntOrIImmed());
+
+ // Use the immediate compare form only when the constant is contained (i.e. lowering
+ // decided it is small enough to fold) and the value actually fits in the 16-bit signed
+ // immediate field that cmpwi/cmpdi encode.  Any constant outside [-32768, 32767], or
+ // any non-contained constant that LSRA already materialised into a register, must use
+ // the register-compare form (cmpw / cmpd) instead.
+ if (op2->isContainedIntOrIImmed())
+ {
+     ssize_t immVal = op2->AsIntConCommon()->IconValue();
+     if (immVal >= -32768 && immVal <= 32767)
+     {
+         ins = (cmpSize == EA_8BYTE) ? INS_cmpdi : INS_cmpwi;
+         emit->emitIns_R_I(ins, cmpSize, op1->GetRegNum(), immVal);
+     }
+     else
+     {
+         // Constant is contained but too large for a 16-bit immediate field.
+         // Materialise it into a temporary register and compare register-to-register.
+         regNumber tmpReg = internalRegisters.GetSingle(tree);
+         instGen_Set_Reg_To_Imm(cmpSize, tmpReg, immVal);
+         ins = (cmpSize == EA_8BYTE) ? INS_cmpd : INS_cmpw;
+         emit->emitIns_R_R(ins, cmpSize, op1->GetRegNum(), tmpReg);
+     }
+ }
+ else
+ {
+     // op2 is either a non-constant or a non-contained constant already in a register.
+     ins = (cmpSize == EA_8BYTE) ? INS_cmpd : INS_cmpw;
+     emit->emitIns_R_R(ins, cmpSize, op1->GetRegNum(), op2->GetRegNum());
+ }
     }
 
     if (targetReg != REG_NA)
