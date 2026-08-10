@@ -13344,6 +13344,14 @@ static bool ShouldUseInterpreterFallback(MethodDesc* ftnDesc,const char* ftnName
 	{ "ActivatorCache",".ctor"},
 	{ "System.Runtime.CompilerServices.CastHelpers","IsInstanceOfClass"},
 	{ "System.Runtime.CompilerServices.MethodTable","get_IsValueType"},
+
+	{ "ActivatorCache",".ctor"},
+	{ "System.Runtime.CompilerServices.CastHelpers","IsInstanceOfClass"},
+        { "System.Runtime.CompilerServices.MethodTable","get_IsValueType"},
+	{ "System.Diagnostics.Tracing.XplatEventLogger","InitializePersistentListener"},
+	{ "System.Guid","TryParseExactD"},
+	{ "UTF8EncodingSealed","GetMaxByteCount"},
+	{ "System.Runtime.CompilerServices.DefaultInterpolatedStringHandle",".ctor"},
     };
 
     const size_t numInclusions = sizeof(jitInclusionList) / sizeof(jitInclusionList[0]);
