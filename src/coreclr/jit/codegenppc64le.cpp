@@ -451,33 +451,58 @@ void CodeGen::genCodeForCompare(GenTreeOp* tree)
  assert(!varTypeIsFloating(op2Type));
  assert(!op1->isContainedIntOrIImmed());
 
+ // Determine whether this is an unsigned comparison.  The JIT sets GTF_UNSIGNED on
+ // the comparison node when the C# source operands are unsigned (e.g. uint / nuint).
+ // Unsigned comparisons must use cmpl[w|d][i] rather than cmp[w|d][i] so that the
+ // hardware treats the operands as unsigned integers.  Using the signed forms (cmpw /
+ // cmpwi) when the value in a register has bit 31 set would sign-extend it into a
+ // negative 32-bit quantity and produce wrong branch outcomes — this is exactly the
+ // bug that caused Dictionary.FindValue to throw ConcurrentOperationsNotSupportedException
+ // when the collision counter exceeded INT_MAX.
+ const bool isUnsigned = tree->IsUnsigned();
+
  // Use the immediate compare form only when the constant is contained (i.e. lowering
- // decided it is small enough to fold) and the value actually fits in the 16-bit signed
- // immediate field that cmpwi/cmpdi encode.  Any constant outside [-32768, 32767], or
- // any non-contained constant that LSRA already materialised into a register, must use
- // the register-compare form (cmpw / cmpd) instead.
+ // decided it is small enough to fold) and the value fits in the 16-bit field.
+ // For unsigned immediate compares the field is zero-extended (UIMM16): range [0, 65535].
+ // For signed immediate compares it is sign-extended (SIMM16): range [-32768, 32767].
+ // Any value outside the applicable range falls through to the register-compare path.
  if (op2->isContainedIntOrIImmed())
  {
      ssize_t immVal = op2->AsIntConCommon()->IconValue();
-     if (immVal >= -32768 && immVal <= 32767)
+     bool    fitsInImm;
+     if (isUnsigned)
+         fitsInImm = (immVal >= 0 && immVal <= 65535); // UIMM16
+     else
+         fitsInImm = (immVal >= -32768 && immVal <= 32767); // SIMM16
+
+     if (fitsInImm)
      {
-         ins = (cmpSize == EA_8BYTE) ? INS_cmpdi : INS_cmpwi;
+         if (isUnsigned)
+             ins = (cmpSize == EA_8BYTE) ? INS_cmpldi : INS_cmplwi;
+         else
+             ins = (cmpSize == EA_8BYTE) ? INS_cmpdi : INS_cmpwi;
          emit->emitIns_R_I(ins, cmpSize, op1->GetRegNum(), immVal);
      }
      else
      {
-         // Constant is contained but too large for a 16-bit immediate field.
-         // Materialise it into a temporary register and compare register-to-register.
+         // Constant does not fit in the immediate field; materialise it and use
+         // the register-compare form.
          regNumber tmpReg = internalRegisters.GetSingle(tree);
          instGen_Set_Reg_To_Imm(cmpSize, tmpReg, immVal);
-         ins = (cmpSize == EA_8BYTE) ? INS_cmpd : INS_cmpw;
+         if (isUnsigned)
+             ins = (cmpSize == EA_8BYTE) ? INS_cmpld : INS_cmplw;
+         else
+             ins = (cmpSize == EA_8BYTE) ? INS_cmpd : INS_cmpw;
          emit->emitIns_R_R(ins, cmpSize, op1->GetRegNum(), tmpReg);
      }
  }
  else
  {
-     // op2 is either a non-constant or a non-contained constant already in a register.
-     ins = (cmpSize == EA_8BYTE) ? INS_cmpd : INS_cmpw;
+     // op2 is a non-constant or a non-contained constant already in a register.
+     if (isUnsigned)
+         ins = (cmpSize == EA_8BYTE) ? INS_cmpld : INS_cmplw;
+     else
+         ins = (cmpSize == EA_8BYTE) ? INS_cmpd : INS_cmpw;
      emit->emitIns_R_R(ins, cmpSize, op1->GetRegNum(), op2->GetRegNum());
  }
     }
@@ -3292,16 +3317,22 @@ void CodeGen::genCodeForIndexAddr(GenTreeIndexAddr* node)
     // Generate the bounds check if necessary.
     if (node->IsBoundsChecked())
     {
-        // Load array length: tmpReg = [base + lenOffset]
-        // PowerPC uses lwz (load word and zero) for 32-bit array length
+        // Load array length from the array header: tmpReg = [base + lenOffset]
+        // lwz zero-extends the 32-bit length into a 64-bit register, keeping it unsigned.
         emit->emitIns_R_R_I(INS_lwz, EA_4BYTE, tmpReg, baseReg, node->gtLenOffset);
-        
-        // Compare: if (index >= length) goto RangeCheckFailed
-        // cmpw/cmpd: compare (unsigned done via branch condition)
-        instruction cmpIns = (index->TypeGet() == TYP_LONG) ? INS_cmpd : INS_cmpw;
+
+        // Array bounds checks are ALWAYS unsigned: the CLR defines them as
+        //   (uint)index >= (uint)length
+        // so we must use cmplw/cmpld (unsigned) rather than cmpw/cmpd (signed).
+        //
+        // Using signed cmpw here means that when index wraps negative — the most
+        // common case being i = entry.next = -1 (end-of-chain sentinel in Dictionary)
+        // — the signed comparison sees -1 < length and incorrectly passes the check,
+        // causing the code to access memory before the array buffer.
+        instruction cmpIns = (index->TypeGet() == TYP_LONG) ? INS_cmpld : INS_cmplw;
         emit->emitIns_R_R(cmpIns, emitActualTypeSize(index->TypeGet()), indexReg, tmpReg);
-        
-        // Branch if index >= length (unsigned comparison)
+
+        // Branch if (uint)index >= (uint)length → range-check failure
         genJumpToThrowHlpBlk(EJ_ge, SCK_RNGCHK_FAIL, node->gtIndRngFailBB);
     }
 
@@ -3324,7 +3355,7 @@ void CodeGen::genCodeForIndexAddr(GenTreeIndexAddr* node)
         {
             // Shift index left by scale bits: tmpReg = index << scale
             // Use sldi (shift left doubleword immediate) or slwi (shift left word immediate)
-            instruction shiftIns = (attr == EA_8BYTE) ? INS_sldi : INS_slwi;
+            instruction shiftIns = (EA_SIZE(attr) == EA_8BYTE) ? INS_sldi : INS_slwi;
             emit->emitIns_R_R_I(shiftIns, attr, tmpReg, indexReg, scale);
             
             // Add base to scaled index: result = base + tmpReg
@@ -3338,7 +3369,7 @@ void CodeGen::genCodeForIndexAddr(GenTreeIndexAddr* node)
 
         // Multiply: tmpReg = index * elementSize
         // Use mulld (64-bit) or mullw (32-bit)
-        instruction mulIns = (attr == EA_8BYTE) ? INS_mulld : INS_mullw;
+        instruction mulIns = (EA_SIZE(attr) == EA_8BYTE) ? INS_mulld : INS_mullw;
         emit->emitIns_R_R_R(mulIns, attr, tmpReg, indexReg, tmpReg);
 
         // Add base: result = base + tmpReg
@@ -3351,7 +3382,7 @@ void CodeGen::genCodeForIndexAddr(GenTreeIndexAddr* node)
     {
         // Use addi (add immediate) for small offsets
         // PowerPC addi supports 16-bit signed immediate (-32768 to 32767)
-        if ((node->gtElemOffset >= -32768) && (node->gtElemOffset <= 32767))
+        if (((int)node->gtElemOffset >= -32768) && ((int)node->gtElemOffset <= 32767))
         {
             emit->emitIns_R_R_I(INS_addi, attr, targetReg, targetReg, node->gtElemOffset);
         }
@@ -5031,22 +5062,36 @@ void CodeGen::instGen_Set_Reg_To_Imm(emitAttr       size,
     }
     else
     {
-	// For larger immediates, use multiple instructions
-	// This is a simplified version - full implementation will be in emitOutputInstr
-	if (size == EA_4BYTE)
-	{
-	    // 32-bit: lis + ori
-	    GetEmitter()->emitIns_R_I(INS_lis, size, reg, (imm >> 16), INS_OPTS_NONE, INS_SCALABLE_OPTS_NONE DEBUGARG(targetHandle) DEBUGARG(gtFlags));
-	    GetEmitter()->emitIns_R_I(INS_ori, size, reg, (imm & 0xffff), INS_OPTS_NONE, INS_SCALABLE_OPTS_NONE DEBUGARG(targetHandle) DEBUGARG(gtFlags));
-	}
-	else //EA_8BYTE
-	{
-	    GetEmitter()->emitIns_R_I(INS_lis, size, reg, ((imm >> 48) & 0xffff), INS_OPTS_NONE, INS_SCALABLE_OPTS_NONE DEBUGARG(targetHandle) DEBUGARG(gtFlags));
-	    GetEmitter()->emitIns_R_I(INS_ori, size, reg, ((imm >> 32) & 0xffff), INS_OPTS_NONE, INS_SCALABLE_OPTS_NONE DEBUGARG(targetHandle) DEBUGARG(gtFlags));
-	    GetEmitter()->emitIns_R_I(INS_sldi, size, reg, 32, INS_OPTS_NONE, INS_SCALABLE_OPTS_NONE DEBUGARG(targetHandle) DEBUGARG(gtFlags));
-	    GetEmitter()->emitIns_R_I(INS_oris, size, reg, ((imm >> 16) & 0xffff), INS_OPTS_NONE, INS_SCALABLE_OPTS_NONE DEBUGARG(targetHandle) DEBUGARG(gtFlags));
-	    GetEmitter()->emitIns_R_I(INS_ori, size, reg, (imm & 0xffff), INS_OPTS_NONE, INS_SCALABLE_OPTS_NONE DEBUGARG(targetHandle) DEBUGARG(gtFlags));
-	}
+        // For larger immediates, use multiple instructions.
+        // Cast to uint64_t before shifting to guarantee unsigned (zero-filling) right shifts
+        // on all compilers.  Using signed ssize_t arithmetic would produce arithmetic
+        // (sign-filling) shifts for negative immediates, corrupting every chunk above bit 31
+        // and causing the JIT disassembler to print garbage values (e.g. 0xCDCD / 52685 for
+        // all five instructions when the address happens to have the same pattern in each
+        // 16-bit lane).
+        const uint64_t uimm = static_cast<uint64_t>(imm);
+
+        if (size == EA_4BYTE)
+        {
+            // 32-bit immediate: lis rD, imm@h  +  ori rD, rD, imm@l
+            // Both chunks are masked to 16 bits so that idcCnsVal stores only the
+            // value that will actually be encoded in the instruction field.
+            GetEmitter()->emitIns_R_I(INS_lis, size, reg, (ssize_t)((uimm >> 16) & 0xffff), INS_OPTS_NONE, INS_SCALABLE_OPTS_NONE DEBUGARG(targetHandle) DEBUGARG(gtFlags));
+            GetEmitter()->emitIns_R_I(INS_ori, size, reg, (ssize_t)(uimm & 0xffff),          INS_OPTS_NONE, INS_SCALABLE_OPTS_NONE DEBUGARG(targetHandle) DEBUGARG(gtFlags));
+        }
+        else // EA_8BYTE — five-instruction sequence
+        {
+            // lis  rD, imm@highest  (bits 63:48)
+            GetEmitter()->emitIns_R_I(INS_lis,  size, reg, (ssize_t)((uimm >> 48) & 0xffff), INS_OPTS_NONE, INS_SCALABLE_OPTS_NONE DEBUGARG(targetHandle) DEBUGARG(gtFlags));
+            // ori  rD, rD, imm@higher  (bits 47:32)
+            GetEmitter()->emitIns_R_I(INS_ori,  size, reg, (ssize_t)((uimm >> 32) & 0xffff), INS_OPTS_NONE, INS_SCALABLE_OPTS_NONE DEBUGARG(targetHandle) DEBUGARG(gtFlags));
+            // sldi rD, rD, 32  — slide upper half into bits 63:32
+            GetEmitter()->emitIns_R_I(INS_sldi, size, reg, 32,                                INS_OPTS_NONE, INS_SCALABLE_OPTS_NONE DEBUGARG(targetHandle) DEBUGARG(gtFlags));
+            // oris rD, rD, imm@h  (bits 31:16)
+            GetEmitter()->emitIns_R_I(INS_oris, size, reg, (ssize_t)((uimm >> 16) & 0xffff), INS_OPTS_NONE, INS_SCALABLE_OPTS_NONE DEBUGARG(targetHandle) DEBUGARG(gtFlags));
+            // ori  rD, rD, imm@l  (bits 15:0)
+            GetEmitter()->emitIns_R_I(INS_ori,  size, reg, (ssize_t)(uimm & 0xffff),          INS_OPTS_NONE, INS_SCALABLE_OPTS_NONE DEBUGARG(targetHandle) DEBUGARG(gtFlags));
+        }
     }
 }
 

@@ -61,10 +61,14 @@ INST(rotrw,       "rotrw",        0,      M_FORM,       0x54000000)  // Rotate R
 INST(rldcl,       "rldcl",        0,      MDS_FORM,     0x78000010)  // Rotate Left Doubleword by Count and Clear Left (register ROR 64-bit)
 INST(rlwnm,       "rlwnm",        0,      M_FORM,       0x5C000000)  // Rotate Left Word then AND with Mask (register ROR 32-bit)
 INST(andi,        "andi.",        0,      D_FORM,       0x70000000)  // AND Immediate (with record bit)
-INST(cmpw,	  "cmpw",	  0,	  X_FORM,	0x7C000000) // cmp with L=0
-INST(cmpd,        "cmpd",          0,      X_FORM,       0x7C200000) // cmp with L=1
-INST(cmpwi,	  "cmpwi",	  0,	  D_FORM,	0x2C000000) // cmpi with L=0
-INST(cmpdi,  	  "cmpdi",  	  0, 	  D_FORM,   	0x2C200000) // cmpi with L=1
+INST(cmpw,	  "cmpw",	  0,	  X_FORM,	0x7C000000) // cmp  L=0 (signed 32-bit)
+INST(cmpd,        "cmpd",          0,      X_FORM,       0x7C200000) // cmp  L=1 (signed 64-bit)
+INST(cmpwi,	  "cmpwi",	  0,	  D_FORM,	0x2C000000) // cmpi L=0 (signed 32-bit immediate)
+INST(cmpdi,  	  "cmpdi",  	  0, 	  D_FORM,   	0x2C200000) // cmpi L=1 (signed 64-bit immediate)
+INST(cmplw,       "cmplw",         0,      X_FORM,       0x7C000040) // cmpl L=0 (unsigned 32-bit)
+INST(cmpld,       "cmpld",         0,      X_FORM,       0x7C200040) // cmpl L=1 (unsigned 64-bit)
+INST(cmplwi,      "cmplwi",        0,      D_FORM,       0x28000000) // cmpli L=0 (unsigned 32-bit immediate)
+INST(cmpldi,      "cmpldi",        0,      D_FORM,       0x28200000) // cmpli L=1 (unsigned 64-bit immediate)
 INST(lbz,	  "lbz",	  0,	  D_FORM,	0x88000000)
 INST(lhz,	  "lhz",	  0,	  D_FORM,	0xA0000000)
 INST(lha,	  "lha",	  0,	  D_FORM,	0xA8000000)

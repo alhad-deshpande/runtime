@@ -896,7 +896,9 @@ void emitter::emitIns_R_I(instruction ins,
             fmt = IF_RI_1B;  // lis rD, imm16
             break;
         case INS_cmpwi:
-            fmt = IF_RRI_1A; // cmpwi crD, rA, imm16
+        case INS_cmplwi:
+        case INS_cmpldi:
+            fmt = IF_RRI_1A; // cmp[l][w|d]i crD, rA, imm16
             break;
         case INS_ori:
         case INS_oris:
@@ -1025,11 +1027,12 @@ void emitter::emitIns_R_R(instruction     ins,
             fmt = IF_CMP_2A;  // Floating-point comparison format
             break;	    
  	case INS_cmpd:
-    	case INS_cmpw:
-            // Comparison instructions - these are X-form instructions
-            // cmpd rA, rB compares two registers
-            fmt = IF_RR_2B;  // Will set proper format later
-            break;
+ 	  	case INS_cmpw:
+ 	      case INS_cmpld:
+ 	      case INS_cmplw:
+ 	          // Signed and unsigned comparison instructions (X-form)
+ 	          fmt = IF_RR_2B;
+ 	          break;
             
  	default:
      	fmt = IF_RR_2A;
@@ -2376,24 +2379,43 @@ size_t emitter::emitOutputInstr(insGroup* ig, instrDesc* id, BYTE** dp)
            break;
 
        case INS_cmpw:
-           // cmpw crD, rA, rB (cmp with L=0)
-           // Assuming crD is in idReg1, rA in idReg2, rB in idReg3
+           // cmpw rA, rB  (signed 32-bit register compare)
            ppc_cmpw (dstRW, 0, id->idReg1(), id->idReg2());
            break;
 
        case INS_cmpd:
-           // cmpd crD, rA, rB (cmp with L=1)
+           // cmpd rA, rB  (signed 64-bit register compare)
            ppc_cmpd (dstRW, 0, id->idReg1(), id->idReg2());
            break;
 
        case INS_cmpwi:
-           // cmpwi crD, rA, SIMM (cmpi with L=0)
+           // cmpwi rA, SIMM  (signed 32-bit immediate compare)
            ppc_cmpwi (dstRW, 0, id->idReg1(), emitGetInsSC(id));
            break;
 
        case INS_cmpdi:
-           // cmpdi crD, rA, SIMM (cmpi with L=1)
+           // cmpdi rA, SIMM  (signed 64-bit immediate compare)
            ppc_cmpdi (dstRW, 0, id->idReg1(), emitGetInsSC(id));
+           break;
+
+       case INS_cmplw:
+           // cmplw rA, rB  (unsigned 32-bit register compare)
+           ppc_cmplw (dstRW, 0, id->idReg1(), id->idReg2());
+           break;
+
+       case INS_cmpld:
+           // cmpld rA, rB  (unsigned 64-bit register compare)
+           ppc_cmpld (dstRW, 0, id->idReg1(), id->idReg2());
+           break;
+
+       case INS_cmplwi:
+           // cmplwi rA, UIMM  (unsigned 32-bit immediate compare)
+           ppc_cmplwi (dstRW, 0, id->idReg1(), emitGetInsSC(id));
+           break;
+
+       case INS_cmpldi:
+           // cmpldi rA, UIMM  (unsigned 64-bit immediate compare)
+           ppc_cmpldi (dstRW, 0, id->idReg1(), emitGetInsSC(id));
            break;
 
        case INS_lbz:
@@ -2816,6 +2838,10 @@ const char* emitter::emitDisInsName(code_t code, const BYTE* addr, instrDesc* id
 	case INS_rlwnm:   return "rlwnm   ";
 	case INS_cmpd:    return "cmpd    ";
 	case INS_cmpdi:   return "cmpdi   ";
+	case INS_cmplw:   return "cmplw   ";
+	case INS_cmpld:   return "cmpld   ";
+	case INS_cmplwi:  return "cmplwi  ";
+	case INS_cmpldi:  return "cmpldi  ";
 	case INS_lbz:     return "lbz     ";
 	case INS_lhz:     return "lhz     ";
 	case INS_lha:     return "lha     ";
@@ -3051,6 +3077,8 @@ void emitter::emitDispIns(
             
         case INS_mov:
         case INS_cmpw:
+        case INS_cmplw:
+        case INS_cmpld:
         case INS_extsb:
         case INS_extsh:
         case INS_extsw:
@@ -3067,6 +3095,8 @@ void emitter::emitDispIns(
             break;
             
         case INS_cmpwi:
+        case INS_cmplwi:
+        case INS_cmpldi:
             printf("cr0, r%d, %d", id->idReg1(), (int)emitGetInsSC(id));
             break;
             

@@ -80,13 +80,25 @@
 #define ppc_srwi(c,A,S,n)  ppc_emit32(c, (21 << 26) | ((S) << 21) | ((A) << 16) | ((32-(n)) << 11) | ((n) << 6) | (31 << 1) | 0)
 #define ppc_srawi(c,A,S,n) ppc_emit32(c, (31 << 26) | ((S) << 21) | ((A) << 16) | ((n) << 11) | (824 << 1) | 0)
 
-// Compare instructions
+// Compare instructions (signed)
+// cmp  X-form: opcode=31, XO=0  — compares rA and rB as signed integers
+// cmpi D-form: opcode=11         — compares rA and sign-extended SIMM
 #define ppc_cmp(c,cfrD,L,A,B)   ppc_emit32(c, (31 << 26) | ((cfrD) << 23) | (0 << 22) | ((L) << 21) | ((A) << 16) | ((B) << 11) | (0 << 1) | 0)
 #define ppc_cmpi(c,cfrD,L,A,B)  ppc_emit32(c, (11 << 26) | (cfrD << 23) | (0 << 22) | (L << 21) | (A << 16) | (uint16_t)(B))
 #define ppc_cmpw(c,cfrD,A,B)    ppc_cmp(c, (cfrD), 0, (A), (B))
 #define ppc_cmpd(c,cfrD,A,B)    ppc_cmp(c, (cfrD), 1, (A), (B))
 #define ppc_cmpwi(c,cfrD,A,B)   ppc_cmpi(c, (cfrD), 0, (A), (B))
 #define ppc_cmpdi(c,cfrD,A,B)   ppc_cmpi(c, (cfrD), 1, (A), (B))
+
+// Unsigned compare instructions
+// cmpl  X-form: opcode=31, XO=32 — compares rA and rB as unsigned integers
+// cmpli D-form: opcode=10        — compares rA and zero-extended UIMM
+#define ppc_cmpl(c,cfrD,L,A,B)   ppc_emit32(c, (31 << 26) | ((cfrD) << 23) | (0 << 22) | ((L) << 21) | ((A) << 16) | ((B) << 11) | (32 << 1) | 0)
+#define ppc_cmpli(c,cfrD,L,A,B)  ppc_emit32(c, (10 << 26) | ((cfrD) << 23) | (0 << 22) | ((L) << 21) | ((A) << 16) | (uint16_t)(B))
+#define ppc_cmplw(c,cfrD,A,B)    ppc_cmpl(c, (cfrD), 0, (A), (B))
+#define ppc_cmpld(c,cfrD,A,B)    ppc_cmpl(c, (cfrD), 1, (A), (B))
+#define ppc_cmplwi(c,cfrD,A,B)   ppc_cmpli(c, (cfrD), 0, (A), (B))
+#define ppc_cmpldi(c,cfrD,A,B)   ppc_cmpli(c, (cfrD), 1, (A), (B))
 
 // Load instructions
 #define ppc_lbz(c,D,d,A)   ppc_emit32 (c, (34 << 26) | ((D) << 21) | ((A) << 16) | (uint16_t)(d))
