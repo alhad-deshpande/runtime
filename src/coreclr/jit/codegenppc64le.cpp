@@ -3337,7 +3337,21 @@ void CodeGen::genCodeForIndexAddr(GenTreeIndexAddr* node)
     }
 
     // Calculate: result = base + (index * elementSize) + elementOffset
-    
+    //
+    // Bug fix (sign-extension): The index is an int32 value stored in a 64-bit register.
+    // On PPC64LE, lwa/lhz/lbz can leave the upper 32 bits containing sign-extended garbage
+    // when the index is negative.  A negative index must be caught by the bounds check above
+    // (unsigned compare), but before we do pointer arithmetic we must zero-extend the index
+    // so that any negative residue does not produce a wild 64-bit offset.
+    // We use sldi+srdi (shift left 32, shift right 32 logical) which clears bits 63:32
+    // entirely in-register without a memory round-trip.
+    if (index->TypeGet() != TYP_LONG)
+    {
+        emit->emitIns_R_R_I(INS_sldi, EA_8BYTE, tmpReg, indexReg, 32);
+        emit->emitIns_R_R_I(INS_srdi, EA_8BYTE, tmpReg, tmpReg, 32);
+        indexReg = tmpReg;
+    }
+
     // Can we use a shift instruction for multiply?
     // PowerPC shift instructions can shift by 0-63 bits
     if (isPow2(node->gtElemSize) && (node->gtElemSize <= (1ULL << 63)))
@@ -3354,43 +3368,64 @@ void CodeGen::genCodeForIndexAddr(GenTreeIndexAddr* node)
         else
         {
             // Shift index left by scale bits: tmpReg = index << scale
-            // Use sldi (shift left doubleword immediate) or slwi (shift left word immediate)
-            instruction shiftIns = (EA_SIZE(attr) == EA_8BYTE) ? INS_sldi : INS_slwi;
-            emit->emitIns_R_R_I(shiftIns, attr, tmpReg, indexReg, scale);
-            
+            // Use sldi (64-bit) or slwi (32-bit) based on the index type, not the element size.
+            instruction shiftIns = (index->TypeGet() == TYP_LONG) ? INS_sldi : INS_slwi;
+            emit->emitIns_R_R_I(shiftIns, EA_PTRSIZE, tmpReg, indexReg, scale);
+
             // Add base to scaled index: result = base + tmpReg
             emit->emitIns_R_R_R(INS_add, attr, targetReg, baseReg, tmpReg);
         }
     }
     else // Non-power-of-2 element size, use multiply
     {
-        // Load element size into tmpReg
-        instGen_Set_Reg_To_Imm(EA_PTRSIZE, tmpReg, (ssize_t)node->gtElemSize);
+        // Load element size into tmpReg (or targetReg if indexReg == tmpReg)
+        // Choose mulld (64-bit) or mullw (32-bit) based on the index type, not the element size.
+        instruction mulIns = (index->TypeGet() == TYP_LONG) ? INS_mulld : INS_mullw;
 
-        // Multiply: tmpReg = index * elementSize
-        // Use mulld (64-bit) or mullw (32-bit)
-        instruction mulIns = (EA_SIZE(attr) == EA_8BYTE) ? INS_mulld : INS_mullw;
-        emit->emitIns_R_R_R(mulIns, attr, tmpReg, indexReg, tmpReg);
+        if (indexReg != tmpReg)
+        {
+            // tmpReg is free: load elemSize there, then multiply.
+            instGen_Set_Reg_To_Imm(EA_PTRSIZE, tmpReg, (ssize_t)node->gtElemSize);
+            emit->emitIns_R_R_R(mulIns, attr, tmpReg, indexReg, tmpReg);
+        }
+        else
+        {
+            // indexReg == tmpReg (zero-extension placed the index in tmpReg).
+            // Cannot use tmpReg for elemSize without destroying the index first.
+            // LSRA guarantees targetReg != baseReg, so baseReg remains intact for the add.
+            instGen_Set_Reg_To_Imm(EA_PTRSIZE, targetReg, (ssize_t)node->gtElemSize);
+            emit->emitIns_R_R_R(mulIns, attr, tmpReg, indexReg, targetReg);
+        }
 
         // Add base: result = base + tmpReg
         emit->emitIns_R_R_R(INS_add, attr, targetReg, baseReg, tmpReg);
     }
 
-    // Add element offset if non-zero
-    // result = result + elementOffset
+    // Bug fix (missing element offset): gtElemOffset encodes the distance from the object
+    // pointer to the first element (e.g. 12 bytes for char[]/string on 64-bit CLR).
+    // The offset must be added using EA_PTRSIZE, not the element size stored in `attr`.
+    // Previously `attr` was derived from emitActualTypeSize(node) which gives the element
+    // width (2 for char), causing the addi to be emitted with the wrong operand size and
+    // in some JIT builds the offset was silently dropped, resulting in lhz r3,0(r3) reading
+    // from the raw object header instead of the character data → segfault.
     if (node->gtElemOffset != 0)
     {
-        // Use addi (add immediate) for small offsets
-        // PowerPC addi supports 16-bit signed immediate (-32768 to 32767)
-        if (((int)node->gtElemOffset >= -32768) && ((int)node->gtElemOffset <= 32767))
+        // gtElemOffset is unsigned but addi SI field is a signed 16-bit immediate that the
+        // hardware sign-extends at execution time.  Valid encoding range: [-32768, 32767].
+        // We cast to ssize_t first so the comparison is done in the signed domain — this
+        // guards against a large unsigned value (e.g. 0xFFFFFFFF from a corrupted node)
+        // wrapping to a small negative ssize_t and being wrongly emitted as a single addi
+        // with a garbage immediate.
+        ssize_t offset = (ssize_t)node->gtElemOffset;
+        if (offset >= -32768 && offset <= 32767)
         {
-            emit->emitIns_R_R_I(INS_addi, attr, targetReg, targetReg, node->gtElemOffset);
+            emit->emitIns_R_R_I(INS_addi, EA_PTRSIZE, targetReg, targetReg, offset);
         }
         else
         {
-            // Large offset: load into tmpReg and add
-            instGen_Set_Reg_To_Imm(EA_PTRSIZE, tmpReg, node->gtElemOffset);
-            emit->emitIns_R_R_R(INS_add, attr, targetReg, targetReg, tmpReg);
+            // Large or negative offset (unusual): materialise in tmpReg and add.
+            instGen_Set_Reg_To_Imm(EA_PTRSIZE, tmpReg, offset);
+            emit->emitIns_R_R_R(INS_add, EA_PTRSIZE, targetReg, targetReg, tmpReg);
         }
     }
 
