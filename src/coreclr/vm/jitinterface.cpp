@@ -13352,6 +13352,9 @@ static bool ShouldUseInterpreterFallback(MethodDesc* ftnDesc,const char* ftnName
 	{ "System.Guid","TryParseExactD"},
 	{ "UTF8EncodingSealed","GetMaxByteCount"},
 	{ "System.Runtime.CompilerServices.DefaultInterpolatedStringHandle",".ctor"},
+
+	{ "System.Threading.Tasks.Task",".cctor"}
+ 
     };
 
     const size_t numInclusions = sizeof(jitInclusionList) / sizeof(jitInclusionList[0]);

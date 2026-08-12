@@ -251,6 +251,58 @@ const char* emitter::emitRegName(regNumber reg, emitAttr size, bool varName) con
 
 /*****************************************************************************
 *
+*  Returns the canonical access size (EA_1BYTE / EA_2BYTE / EA_4BYTE / EA_8BYTE)
+*  implied by a PPC64LE load/store instruction, or EA_UNKNOWN when the instruction
+*  does not have a fixed access width (e.g. INS_lea, INS_addi).
+*
+*  Used to normalise the emitAttr passed by callers that supply emitActualTypeSize
+*  (which may be larger than the true access width for small types like TYP_BOOL).
+*/
+static emitAttr ppc64leInsAccessSize(instruction ins)
+{
+    switch (ins)
+    {
+        case INS_lbz:
+        case INS_stb:
+            return EA_1BYTE;
+        case INS_lhz:
+        case INS_lha:
+        case INS_sth:
+            return EA_2BYTE;
+        case INS_lwz:
+        case INS_lwa:
+        case INS_stw:
+        case INS_lfs:
+        case INS_stfs:
+            return EA_4BYTE;
+        case INS_ld:
+        case INS_std:
+        case INS_lfd:
+        case INS_stfd:
+            return EA_8BYTE;
+        default:
+            return EA_UNKNOWN;
+    }
+}
+
+/*****************************************************************************
+*
+*  Normalise attr (and the derived size) to the access width implied by ins,
+*  preserving any GC/BYREF flags carried in attr.
+*/
+static void ppc64leNormalizeAttr(instruction ins, emitAttr& attr, emitAttr& size)
+{
+    emitAttr insSize = ppc64leInsAccessSize(ins);
+    if (insSize != EA_UNKNOWN)
+    {
+        // Replace only the size bits; keep GC/BYREF flags from the original attr.
+        attr = EA_SET_FLG(insSize, (unsigned)attr & ~(unsigned)EA_SIZE_MASK);
+        size = insSize;
+    }
+}
+
+/*****************************************************************************
+*
 *  Add an instruction referencing a register and a stack-based local variable.
 */
 void emitter::emitIns_R_S(instruction ins, emitAttr attr, regNumber reg1, int varx, int offs)
@@ -258,6 +310,10 @@ void emitter::emitIns_R_S(instruction ins, emitAttr attr, regNumber reg1, int va
     assert(offs >= 0);
 
     emitAttr size = EA_SIZE(attr);
+
+    // Callers may pass emitActualTypeSize (e.g. EA_4BYTE for TYP_BOOL) while the
+    // instruction encodes a specific narrower access width; normalise to match.
+    ppc64leNormalizeAttr(ins, attr, size);
 
     /* Figure out the variable's frame position */
     bool    FPbased;
@@ -424,6 +480,10 @@ void emitter::emitIns_S_R(instruction ins, emitAttr attr, regNumber reg1, int va
     assert(offs >= 0);
     emitAttr size = EA_SIZE(attr);
     insFormat fmt = IF_NONE;
+
+    // Callers may pass emitActualTypeSize (e.g. EA_4BYTE for TYP_BOOL) while the
+    // instruction encodes a specific narrower access width; normalise to match.
+    ppc64leNormalizeAttr(ins, attr, size);
 
     /* Figure out the variable's frame position */
     bool FPbased;
