@@ -2158,17 +2158,6 @@ size_t emitter::emitOutputInstr(insGroup* ig, instrDesc* id, BYTE** dp)
            break;
        case INS_addi:
             // addi rD, rA, SIMM
-            //
-            // INS_addi is allocated by several different code paths that produce
-            // different instrDesc subtypes (small, largeCns, lclVarPair, jmp).
-            // We MUST use addiClassifyInsDsc() to route each subtype correctly.
-            // Branching on idIsSmallDsc() alone is insufficient: a large-constant
-            // plain addi (ADDI_DSC_CNS) is not a small descriptor, so it falls into
-            // the same branch as a jump descriptor (ADDI_DSC_JMP) and gets cast to
-            // instrDescJmp*. If idjIG happens to be non-null in the uninitialized
-            // instrDescCns memory, idjOffs (= 0) is used as the immediate instead of
-            // the actual constant — silently emitting "addi rD, rA, 0" (a no-op).
-            // That is the root cause of lhz r3,0(r3) instead of lhz r3,12(r3).
             if (id->idIsDspReloc())
             {
                 // PC-relative patching for jump table address or method start
@@ -2211,40 +2200,41 @@ size_t emitter::emitOutputInstr(insGroup* ig, instrDesc* id, BYTE** dp)
                 regNumber targetReg = id->idReg1();
                 ppc_addi(dstRW, targetReg, targetReg, offsetLo);
             }
+            else if (!id->idIsSmallDsc())
+            {
+                // Check if this is a jump descriptor with a BasicBlock label
+                // This is used for EH catch return continuation (emitIns_R_L)
+                instrDescJmp* jmp = (instrDescJmp*)id;
+                
+                // Only process if this has a valid BasicBlock label and is in the jump list
+                // (idjIG will be set if it was added to the jump list)
+                if (jmp->idjIG != nullptr && id->idAddr()->iiaBBlabel != nullptr)
+                {
+                    // BasicBlock label case - for EH catch return continuation
+                    // The offset was already calculated by emitJumpDistBind and stored in idjOffs
+                    
+                    // idjOffs contains the byte offset from bcl PC to target
+                    // bcl was 2 instructions before (8 bytes): at (currentCodeOffset - 8)
+                    // bcl captured PC+4, which is at (currentCodeOffset - 8) + 4 = currentCodeOffset - 4
+                    // So the offset in idjOffs is already relative to that PC
+                    int64_t offset = jmp->idjOffs;
+                    
+                    // Extract low 16 bits for addi immediate
+                    int16_t offsetImm = (int16_t)(offset & 0xFFFF);
+                    
+                    // addi rD, rD, offset@l (add offset to register containing PC)
+                    regNumber targetReg = id->idReg1();
+                    ppc_addi(dstRW, targetReg, targetReg, offsetImm);
+                }
+                else
+                {
+                    // Regular large descriptor addi (shouldn't normally happen, but handle it)
+                    ppc_addi(dstRW, id->idReg1(), id->idReg2(), emitGetInsSC(id));
+                }
+            }
             else
             {
-                switch (addiClassifyInsDsc(id))
-                {
-                    case ADDI_DSC_JMP:
-                    {
-                        // BasicBlock-label addi used for EH catch return continuation
-                        // (emitIns_R_L). The offset was resolved by emitJumpDistBind
-                        // and stored in idjOffs; safe to cast to instrDescJmp* here.
-                        instrDescJmp* jmp = (instrDescJmp*)id;
-                        if (jmp->idjIG != nullptr && id->idAddr()->iiaBBlabel != nullptr)
-                        {
-                            int64_t  offset    = jmp->idjOffs;
-                            int16_t  offsetImm = (int16_t)(offset & 0xFFFF);
-                            regNumber targetReg = id->idReg1();
-                            ppc_addi(dstRW, targetReg, targetReg, offsetImm);
-                        }
-                        else
-                        {
-                            ppc_addi(dstRW, id->idReg1(), id->idReg2(), emitGetInsSC(id));
-                        }
-                        break;
-                    }
-
-                    case ADDI_DSC_SMALL:
-                    case ADDI_DSC_CNS:
-                    case ADDI_DSC_LCLVAR_PAIR:
-                    case ADDI_DSC_LCLVAR_PAIR_CNS:
-                    case ADDI_DSC_PLAIN:
-                    default:
-                        // All plain addi variants: emit the stored immediate directly.
-                        ppc_addi(dstRW, id->idReg1(), id->idReg2(), emitGetInsSC(id));
-                        break;
-                }
+                ppc_addi(dstRW, id->idReg1(), id->idReg2(), emitGetInsSC(id));
             }
             break;
 
