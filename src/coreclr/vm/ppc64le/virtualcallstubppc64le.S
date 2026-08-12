@@ -17,13 +17,19 @@
 //-----------------------------------------------------------------------------
 // ResolveWorkerAsmStub
 // Inputs:
-//   r3: object reference
-//   r5: dispatch token (or ResolveCacheElem* when PROMOTE_CHAIN_FLAG set)
-//   40(r1): indirection cell | flags  (caller wrote at 8(r1))
+//   r3:  object reference (this pointer)
+//   r10: dispatch token  (or ResolveCacheElem* when PROMOTE_CHAIN_FLAG set)
+//   r11: indirection cell | flags  (VSD cell register — virtualStubParamInfo = REG_R11;
+//        set by the JIT and preserved unmodified through all dispatch stubs)
 // Output:
-//   Tail-calls target (via CTR)
-// Clobbers: r0, r3-r12 (volatile only)
-// VSD_ResolveWorker args: r3=obj, r4=cell, r5=token|node, r7=flags
+//   Tail-calls resolved target (via CTR)
+// Clobbers: r0, r3-r12 (volatile), callee-saved restored in epilog
+//
+// VSD_ResolveWorker(pTransitionBlock, siteAddr, token, flags):
+//   arg r3 = &TransitionBlock  (= new SP after stdu)
+//   arg r4 = indirection cell address  (r11 with low-2 flag bits cleared)
+//   arg r5 = dispatch token or ResolveCacheElem*  (from r10)
+//   arg r6 = flags  (low 2 bits of r11)
 //-----------------------------------------------------------------------------
 NESTED_ENTRY ResolveWorkerAsmStub, _TEXT, NoHandler
 	mflr %r0
@@ -98,10 +104,11 @@ NESTED_ENTRY ResolveWorkerAsmStub, _TEXT, NoHandler
 	stfd %f30, 472(%r1)
 	stfd %f31, 480(%r1)
 
-	mr %r3, %r1
-	mr %r4, %r11
-	mr %r5, %r10
-	rldicl %r6, %r4, 0, 62
+	// Build VSD_ResolveWorker arguments from the VSD cell register (r11):
+	mr      %r3, %r1                // arg1: pTransitionBlock = new SP
+	rldicl  %r6, %r11, 0, 62       // arg4: flags  = r11 & 3  (low 2 bits)
+	rldicr  %r4, %r11, 0, 61       // arg2: cell   = r11 & ~3 (flags stripped)
+	mr      %r5, %r10               // arg3: token  = r10
 
 	bl      C_FUNC(VSD_ResolveWorker) // r3 = target PC
 	mr      %r12, %r3                   // move target to r12
@@ -183,74 +190,78 @@ NESTED_END ResolveWorkerAsmStub, _TEXT
 //-----------------------------------------------------------------------------
 // ResolveWorkerChainLookupAsmStub
 // Inputs:
-//   r3: object reference
-//   r5: dispatch token
-//   8(r1): indirection cell | flags
-//   16(r1): ResolveCacheElem* head
+//   r3:  object reference
+//   r5:  dispatch token
+//   r10: ResolveCacheElem* head  (written by ResolveStub miss path at 48(r1), then
+//        loaded by the caller before branching here)
+//   r11: indirection cell | flags  (VSD cell register, preserved by all dispatch stubs)
 // Output:
-//   Hit:    tail-calls cached target
-//   Miss/promote: jumps to ResolveWorkerAsmStub
-// Clobbers: r0, r3-r12 (volatile only)
-// ResolveCacheElem layout assumed:
-//   0: cached MethodTable
-//   8: cached token
-//  16: target PC
-//  24: next (ResolveCacheElem*)
+//   Hit:    tail-calls cached target via CTR
+//   Miss/promote: branches to ResolveWorkerAsmStub (r11 carries cell|flags, r10 carries
+//                 the ResolveCacheElem* on the promote path)
+// Clobbers: r0, r6, r9, r12
+// ResolveCacheElem layout:
+//   0:  cached MethodTable
+//   8:  cached token
+//  16:  target PC
+//  24:  next pointer
 //-----------------------------------------------------------------------------
 LEAF_ENTRY ResolveWorkerChainLookupAsmStub, _TEXT
-    // If BACKPATCH_FLAG set, go straight to worker
-    ld      %r0, 8(%r1)                 // cell|flags
-    andi.   %r0, %r0, BACKPATCH_FLAG
-    bne     ResolveWorkerAsmStub
+    // If BACKPATCH_FLAG is set in r11, go straight to the full resolve worker.
+    // r0 is safe to clobber here; andi. must use a non-r0 source — use r6.
+    andi.   %r6, %r11, BACKPATCH_FLAG
+    bne     C_FUNC(ResolveWorkerAsmStub)
 
-    ld      %r9, 16(%r1)                // r9 = head
+    mr      %r9, %r10                   // r9 = ResolveCacheElem* head
 .Lprobe:
     cmpdi   cr0, %r9, 0
-    beq     ResolveWorkerAsmStub      // empty chain → resolve
+    beq     C_FUNC(ResolveWorkerAsmStub) // empty chain → full resolve
 
-    // Compare MethodTable
-    ld      %r6, 0(%r3)                 // actual MethodTable
-    ld      %r0, 0(%r9)                 // cached MethodTable
+    // Compare MethodTable of the live object against cached entry
+    ld      %r6, 0(%r3)                 // actual MethodTable from object header
+    ld      %r0, 0(%r9)                 // cached MethodTable in this entry
     cmpd    cr0, %r6, %r0
     bne     .Lnext
 
-    // Compare token
+    // Compare dispatch token
     ld      %r0, 8(%r9)                 // cached token
     cmpd    cr0, %r5, %r0
     bne     .Lnext
 
-    // Cache hit: r12 = target
+    // Cache hit — load target into r12 for tail-call
     ld      %r12, 16(%r9)
 
-    // Decrement global success counter atomically
-    addis  %r11, %r2, g_dispatch_cache_chain_success_counter@toc@ha
-    ld     %r11, g_dispatch_cache_chain_success_counter@toc@l(%r11)
+    // Atomically decrement g_dispatch_cache_chain_success_counter.
+    // Use r6 (volatile, safe to clobber) as the counter address; r0 cannot be a
+    // D-form base register on PPC64LE (hardware reads r0 as literal 0 in that field).
+    addis   %r6, %r2, g_dispatch_cache_chain_success_counter@toc@ha
+    ld      %r6, g_dispatch_cache_chain_success_counter@toc@l(%r6)
 .Ldec_retry:
-    lwarx   %r0, 0, %r11
+    lwarx   %r0, 0, %r6
     addi    %r0, %r0, -1
-    stwcx.  %r0, 0, %r11
+    stwcx.  %r0, 0, %r6
     bne-    .Ldec_retry
 
-    // If counter >= 0 → tail-call; else promote chain
+    // If counter >= 0 → tail-call the cached target; else promote this entry.
     cmpwi   cr0, %r0, 0
     bge     .Ltail_call
 
-    // Promotion path: reset counter, set PROMOTE_CHAIN_FLAG in caller slot
+    // Promotion path: reset counter and set PROMOTE_CHAIN_FLAG in r11.
     li      %r0, INITIAL_SUCCESS_COUNT
-    std     %r0, 0(%r11)
+    stw     %r0, 0(%r6)                 // reset (word store; counter is INT32)
 
-    ld      %r0, 8(%r1)                 // cell|flags (caller frame)
-    ori     %r0, %r0, PROMOTE_CHAIN_FLAG
-    std     %r0, 8(%r1)
+    ori     %r11, %r11, PROMOTE_CHAIN_FLAG // mark promote in VSD cell register
 
-    mr      %r5, %r9                    // r5 = ResolveCacheElem*
-    b       ResolveWorkerAsmStub
+    mr      %r10, %r9                   // pass ResolveCacheElem* in r10 to worker
+    b       C_FUNC(ResolveWorkerAsmStub)
 
 .Lnext:
-    ld      %r9, 24(%r9)                // advance to next
+    ld      %r9, 24(%r9)                // advance to next node
     b       .Lprobe
 
 .Ltail_call:
+    // PPC64LE ELF v2 ABI: r12 must equal the branch target before bctr.
+    // r12 already holds the cached target (loaded at the cache-hit path above).
     mtctr   %r12
     bctr
 LEAF_END ResolveWorkerChainLookupAsmStub, _TEXT
