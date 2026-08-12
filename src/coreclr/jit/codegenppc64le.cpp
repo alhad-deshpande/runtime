@@ -4479,6 +4479,8 @@ void CodeGen::genFnEpilog(BasicBlock* block)
 {
     assert(block != nullptr);
 
+    ScopedSetVariable<bool> _setGeneratingEpilog(&compiler->compGeneratingEpilog, true);
+
     regMaskTP regsToRestoreMask = regSet.rsGetModifiedCalleeSavedRegsMask();
 
     int totalFrameSize = genTotalFrameSize();
@@ -4525,6 +4527,8 @@ void CodeGen::genFnEpilog(BasicBlock* block)
         }
     }
 
+    compiler->unwindBegEpilog();
+
     for (int regNum = REG_F31; regNum >= REG_F14; regNum--)
     {
         regNumber reg     = (regNumber)regNum;
@@ -4551,24 +4555,33 @@ void CodeGen::genFnEpilog(BasicBlock* block)
         }
     }
 
-    // Restore r1 to caller_SP.
+    // Restore r31 and r1. For an ordinary frame, restore r31 while r1 still
+    // denotes the fixed callee SP, so its unwind offset is non-negative.
     if (compiler->compLocallocUsed)
     {
         // ld r1, 0(r1): r1 = caller_SP (ELFv2 backchain written by genLclHeap at 0(new_r1))
         // The backchain word holds the value of caller_SP, so a single load is sufficient.
         emit->emitIns_R_R_I(INS_ld, EA_PTRSIZE, REG_SPBASE, REG_SPBASE, 0);
         compiler->unwindAllocStack(totalFrameSize);
+
+        // Localloc unwind semantics are handled separately. Preserve the
+        // existing machine-code restore from caller_SP - 8 for now.
+        emit->emitIns_R_R_I(INS_ld, EA_PTRSIZE, REG_FP, REG_SPBASE, FP_backchain_save_offset);
+        compiler->unwindSaveReg(REG_FP, FP_backchain_save_offset);
     }
     else
     {
+        const int FP_save_offset = totalFrameSize + FP_backchain_save_offset;
+        assert(FP_save_offset >= 0);
+
+        emit->emitIns_R_R_I(INS_ld, EA_PTRSIZE, REG_FP, REG_SPBASE, FP_save_offset);
+        compiler->unwindSaveReg(REG_FP, FP_save_offset);
+
         emit->emitIns_R_R_I(INS_addi, EA_PTRSIZE, REG_SPBASE, REG_SPBASE, totalFrameSize);
         compiler->unwindAllocStack(totalFrameSize);
     }
 
-    // r1 is now caller_SP. Restore r31 from -8(r1) = caller_SP - 8.
-    emit->emitIns_R_R_I(INS_ld, EA_PTRSIZE, REG_FP, REG_SPBASE, FP_backchain_save_offset);
-    compiler->unwindSaveReg(REG_FP, FP_backchain_save_offset);
-
+    // r1 is now caller_SP.
     emit->emitIns_R_R_I(INS_ld, EA_PTRSIZE, REG_R0, REG_SPBASE, LR_save_offset);
     compiler->unwindSaveReg(REG_R0, LR_save_offset);
 
@@ -4577,6 +4590,9 @@ void CodeGen::genFnEpilog(BasicBlock* block)
 
     emit->emitIns_R(INS_mtlr, EA_PTRSIZE, REG_R0);
     emit->emitIns(INS_blr);
+    compiler->unwindReturn(REG_R0);
+
+    compiler->unwindEndEpilog();
 }
 
 //------------------------------------------------------------------------
@@ -4670,17 +4686,25 @@ void CodeGen::genPushCalleeSavedRegisters()
     constexpr int R2_save_offset           = 24;
 
     GetEmitter()->emitIns_R_R_I(INS_std, EA_PTRSIZE, REG_R2, REG_SPBASE, R2_save_offset);
+    compiler->unwindSaveReg(REG_R2, R2_save_offset);
+
     GetEmitter()->emitIns_R(INS_mflr, EA_PTRSIZE, REG_R0);
     GetEmitter()->emitIns_R_R_I(INS_std, EA_PTRSIZE, REG_R0, REG_SPBASE, LR_save_offset);
-    GetEmitter()->emitIns_R_R_I(INS_std, EA_PTRSIZE, REG_FP, REG_SPBASE, FP_backchain_save_offset);
+    compiler->unwindSaveReg(REG_R0, LR_save_offset);
 
-    // Keep the implementation simple and ABI-conformant: save the ABI linkage
-    // area entries first, then allocate the full frame with an updating store,
-    // establish the frame pointer from SP, save FP at the top of the callee-save
-    // area, then save the rest of the modified callee-saved registers in
-    // ascending register order.
+    // Save the ABI linkage-area entries first, then allocate the full frame.
+    // Save the incoming r31 relative to the established callee SP before
+    // overwriting r31 with the current frame pointer. Then save the remaining
+    // modified callee-saved registers in ascending register order.
     GetEmitter()->emitIns_R_R_I(INS_stdu, EA_PTRSIZE, REG_SPBASE, REG_SPBASE, -totalFrameSize);
     compiler->unwindAllocStack(totalFrameSize);
+
+    // Save the incoming r31 at caller_SP - 8, expressed relative to the
+    // established callee SP so the unwind offset is non-negative.
+    const int FP_save_offset = totalFrameSize + FP_backchain_save_offset;
+    assert(FP_save_offset >= 0);
+    GetEmitter()->emitIns_R_R_I(INS_std, EA_PTRSIZE, REG_FP, REG_SPBASE, FP_save_offset);
+    compiler->unwindSaveReg(REG_FP, FP_save_offset);
 
     GetEmitter()->emitIns_Mov(INS_mov, EA_PTRSIZE, REG_FP, REG_SPBASE, /* canSkip */ false);
 
@@ -4715,8 +4739,8 @@ void CodeGen::genPushCalleeSavedRegisters()
         }
     }
 
-    JITDUMP("    offsetSpToSavedFp=%d\n", FP_backchain_save_offset);
-    compiler->unwindSetFrameReg(REG_FPBASE, FP_backchain_save_offset);
+    JITDUMP("    frame pointer offset from SP=0\n");
+    compiler->unwindSetFrameReg(REG_FPBASE, 0);
 
     if (compiler->info.compIsVarArgs)
     {
@@ -5845,10 +5869,10 @@ void CodeGen::genFuncletProlog(BasicBlock* block)
     // ELFv2 frame:
     //
     //   caller_SP  (= funclet entry r1)
-    //     -8(caller_SP)  : saved FP (r31)          }  written before stdu,
-    //     +16(caller_SP) : saved LR                }  into the *caller's*
-    //     +24(caller_SP) : saved R2/TOC            }  linkage area
+    //     +16(caller_SP) : saved LR
+    //     +24(caller_SP) : saved R2/TOC
     //   ---  stdu atomically writes back-chain and decrements r1 ---
+    //     funclet_SP + frameSize - 8 : saved incoming FP (r31)
     //   [funclet_SP + fiSpDelta + frameSize - 1] .. [funclet_SP + fiSP_to_CalleeSaved_delta]
     //                  : callee-saved int regs r14-r31 (ascending order)
     //                  : callee-saved float regs f14-f31 (ascending order)
@@ -5869,15 +5893,23 @@ void CodeGen::genFuncletProlog(BasicBlock* block)
     regMaskTP maskSaveRegsInt   = genFuncletInfo.fiSaveRegs & RBM_INT_CALLEE_SAVED;
     regMaskTP maskSaveRegsFloat = genFuncletInfo.fiSaveRegs & RBM_ALLFLOAT;
 
-    // --- Save LR, FP, R2 into the caller's linkage area (pre-frame-allocation) ---
+    // --- Save ABI linkage-area entries before allocating the frame ---
     emit->emitIns_R_R_I(INS_std, EA_PTRSIZE, REG_R2, REG_SPBASE, R2_save_offset);
+    compiler->unwindSaveReg(REG_R2, R2_save_offset);
+
     emit->emitIns_R(INS_mflr, EA_PTRSIZE, REG_R0);
     emit->emitIns_R_R_I(INS_std, EA_PTRSIZE, REG_R0, REG_SPBASE, LR_save_offset);
-    emit->emitIns_R_R_I(INS_std, EA_PTRSIZE, REG_FP, REG_SPBASE, FP_backchain_save_offset);
+    compiler->unwindSaveReg(REG_R0, LR_save_offset);
 
     // --- Allocate the frame: stdu writes the back-chain and updates r1 ---
     emit->emitIns_R_R_I(INS_stdu, EA_PTRSIZE, REG_SPBASE, REG_SPBASE, -funcletFrameSize);
     compiler->unwindAllocStack(funcletFrameSize);
+
+    // Save incoming r31 at caller_SP - 8, expressed relative to funclet SP.
+    const int FP_save_offset = funcletFrameSize + FP_backchain_save_offset;
+    assert(FP_save_offset >= 0);
+    emit->emitIns_R_R_I(INS_std, EA_PTRSIZE, REG_FP, REG_SPBASE, FP_save_offset);
+    compiler->unwindSaveReg(REG_FP, FP_save_offset);
 
     // --- Establish FP = SP (bottom of frame) ---
     emit->emitIns_Mov(INS_mov, EA_PTRSIZE, REG_FP, REG_SPBASE, /* canSkip */ false);
@@ -5909,7 +5941,7 @@ void CodeGen::genFuncletProlog(BasicBlock* block)
         }
     }
 
-    compiler->unwindSetFrameReg(REG_FPBASE, FP_backchain_save_offset);
+    compiler->unwindSetFrameReg(REG_FPBASE, 0);
 
     // This is the end of the OS-reported prolog for unwinding purposes.
     compiler->unwindEndProlog();
@@ -6020,14 +6052,17 @@ void CodeGen::genFuncletEpilog()
         }
     }
 
+    // Restore incoming r31 while r1 still denotes the fixed funclet SP.
+    const int FP_save_offset = funcletFrameSize + FP_backchain_save_offset;
+    assert(FP_save_offset >= 0);
+    emit->emitIns_R_R_I(INS_ld, EA_PTRSIZE, REG_FP, REG_SPBASE, FP_save_offset);
+    compiler->unwindSaveReg(REG_FP, FP_save_offset);
+
     // --- Deallocate the frame: r1 = caller-SP ---
     emit->emitIns_R_R_I(INS_addi, EA_PTRSIZE, REG_SPBASE, REG_SPBASE, funcletFrameSize);
     compiler->unwindAllocStack(funcletFrameSize);
 
-    // --- Restore FP, LR, R2 from the caller's linkage area ---
-    emit->emitIns_R_R_I(INS_ld, EA_PTRSIZE, REG_FP, REG_SPBASE, FP_backchain_save_offset);
-    compiler->unwindSaveReg(REG_FP, FP_backchain_save_offset);
-
+    // --- Restore LR and R2 from the caller's linkage area ---
     emit->emitIns_R_R_I(INS_ld, EA_PTRSIZE, REG_R0, REG_SPBASE, LR_save_offset);
     compiler->unwindSaveReg(REG_R0, LR_save_offset);
 
