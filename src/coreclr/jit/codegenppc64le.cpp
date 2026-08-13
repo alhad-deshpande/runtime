@@ -789,6 +789,45 @@ void CodeGen::genCodeForTreeNode(GenTree* treeNode)
 }
 
 //------------------------------------------------------------------------
+// ppc64UseWideArith: Decide whether to emit 64-bit (doubleword) arithmetic
+//                    instructions instead of 32-bit (word) ones.
+//
+// Arguments:
+//    op1 - first operand tree node
+//    op2 - second operand tree node
+//
+// Return Value:
+//    true  – at least one operand carries a 64-bit type (TYP_LONG or TYP_I_IMPL);
+//             use mulld / divd / divdu etc.
+//    false – both operands are 32-bit (TYP_INT or smaller);
+//             use mullw / divw / divwu etc.
+//
+// Notes:
+//    Instruction selection must be based on the *operand* widths, not the
+//    result-node type.  The JIT routinely produces GT_MUL/GT_DIV nodes typed
+//    TYP_LONG when both operands are TYP_INT (e.g. pointer-stride arithmetic
+//    widens int×int to long so the result fits a 64-bit add).
+//
+//    On PPC64, the doubleword forms (mulld, divd, …) read the full 64-bit
+//    register.  After an `lwa` sign-extend of a 32-bit value whose MSB is set
+//    (e.g. 0x80000001 → 0xFFFFFFFF_80000001), mulld treats the value as a
+//    large negative 64-bit number and produces a product that wraps into an
+//    unmapped address — causing the segfault observed in
+//    String.GetNonRandomizedHashCode on PPC64LE.
+//
+//    The word forms (mullw, divw, …) read only bits [31:0] of each operand,
+//    which is always correct for TYP_INT values regardless of what the upper
+//    32 bits contain.  Their 64-bit sign-extended result is safe for
+//    subsequent 64-bit pointer-arithmetic.
+//
+static bool ppc64UseWideArith(GenTree* op1, GenTree* op2)
+{
+    var_types t1 = genActualType(op1->TypeGet());
+    var_types t2 = genActualType(op2->TypeGet());
+    return (t1 == TYP_LONG) || (t1 == TYP_I_IMPL) || (t2 == TYP_LONG) || (t2 == TYP_I_IMPL);
+}
+
+//------------------------------------------------------------------------
 // genCodeForBinary: Generate code for many binary arithmetic operators
 //
 // Arguments:
@@ -876,61 +915,59 @@ void CodeGen::genCodeForBinary(GenTreeOp* treeNode)
                       break;
 
                   case GT_MUL:
-                      // mulld: multiply low doubleword (64-bit)
-                      // mullw: multiply low word (32-bit)
-                      ins = (attr == EA_8BYTE) ? INS_mulld : INS_mullw;
+                      // Use mulld (64-bit) when either operand is 64-bit, mullw (32-bit) otherwise.
+                      // See ppc64UseWideArith for the full rationale.
+                      ins = ppc64UseWideArith(op1, op2) ? INS_mulld : INS_mullw;
                       emit->emitIns_R_R_R(ins, attr, targetReg, op1reg, op2reg);
                       break;
 
                   case GT_DIV:
-                      // divd: divide doubleword signed (64-bit)
-                      // divw: divide word signed (32-bit)
-                      ins = (attr == EA_8BYTE) ? INS_divd : INS_divw;
+                      // Use divd (64-bit) when either operand is 64-bit, divw (32-bit) otherwise.
+                      ins = ppc64UseWideArith(op1, op2) ? INS_divd : INS_divw;
                       emit->emitIns_R_R_R(ins, attr, targetReg, op1reg, op2reg);
                       break;
 
                   case GT_UDIV:
-                      // divdu: divide doubleword unsigned (64-bit)
-                      // divwu: divide word unsigned (32-bit)
-                      ins = (attr == EA_8BYTE) ? INS_divdu : INS_divwu;
+                      // Use divdu (64-bit) when either operand is 64-bit, divwu (32-bit) otherwise.
+                      ins = ppc64UseWideArith(op1, op2) ? INS_divdu : INS_divwu;
                       emit->emitIns_R_R_R(ins, attr, targetReg, op1reg, op2reg);
                       break;
 
                   case GT_MOD:
                   case GT_UMOD:
-		  {
-			// Compute: remainder = dividend - (quotient * divisor)
-			// Algorithm:
-			//   1. quotient = dividend / divisor  (divd/divw or divdu/divwu)
-			//   2. temp = quotient * divisor      (mulld/mullw)
-			//   3. remainder = dividend - temp    (subf)
+    {
+   // Compute: remainder = dividend - (quotient * divisor)
+   // Algorithm:
+   //   1. quotient = dividend / divisor  (divd/divw or divdu/divwu)
+   //   2. temp = quotient * divisor      (mulld/mullw)
+   //   3. remainder = dividend - temp    (subf)
 
-			// Need a temporary register for the quotient
-			regNumber tempReg = internalRegisters.GetSingle(treeNode);
+   // Need a temporary register for the quotient
+   regNumber tempReg = internalRegisters.GetSingle(treeNode);
 
-			// Step 1: Compute quotient in tempReg
-			instruction divIns;
-			if (oper == GT_MOD)
-			{
-			    // Signed division
-			    divIns = (attr == EA_8BYTE) ? INS_divd : INS_divw;
-			}
-			else // GT_UMOD
-			{
-			    // Unsigned division
-			    divIns = (attr == EA_8BYTE) ? INS_divdu : INS_divwu;
-			}
-			emit->emitIns_R_R_R(divIns, attr, tempReg, op1reg, op2reg);
+   // Use wide (64-bit) instructions when either operand is 64-bit.
+   bool wide = ppc64UseWideArith(op1, op2);
 
-			// Step 2: Multiply quotient by divisor, result in tempReg
-			instruction mulIns = (attr == EA_8BYTE) ? INS_mulld : INS_mullw;
-			emit->emitIns_R_R_R(mulIns, attr, tempReg, tempReg, op2reg);
+   // Step 1: Compute quotient in tempReg
+   instruction divIns;
+   if (oper == GT_MOD)
+   {
+       divIns = wide ? INS_divd : INS_divw;   // signed division
+   }
+   else // GT_UMOD
+   {
+       divIns = wide ? INS_divdu : INS_divwu;  // unsigned division
+   }
+   emit->emitIns_R_R_R(divIns, attr, tempReg, op1reg, op2reg);
 
-			// Step 3: Subtract to get remainder: targetReg = op1reg - tempReg
-			// subf rD, rA, rB computes rD = rB - rA, so we use subf targetReg, tempReg, op1reg
-			emit->emitIns_R_R_R(INS_subf, attr, targetReg, tempReg, op1reg);
-		    }
-		    break;
+   // Step 2: Multiply quotient by divisor, result in tempReg
+   emit->emitIns_R_R_R(wide ? INS_mulld : INS_mullw, attr, tempReg, tempReg, op2reg);
+
+   // Step 3: Subtract to get remainder: targetReg = op1reg - tempReg
+   // subf rD, rA, rB computes rD = rB - rA, so we use subf targetReg, tempReg, op1reg
+   emit->emitIns_R_R_R(INS_subf, attr, targetReg, tempReg, op1reg);
+      }
+      break;
 
                  case GT_AND:
                     // and: bitwise AND
@@ -3367,9 +3404,11 @@ void CodeGen::genCodeForIndexAddr(GenTreeIndexAddr* node)
         // Load element size into tmpReg
         instGen_Set_Reg_To_Imm(EA_PTRSIZE, tmpReg, (ssize_t)node->gtElemSize);
 
-        // Multiply: tmpReg = index * elementSize
-        // Use mulld (64-bit) or mullw (32-bit)
-        instruction mulIns = (EA_SIZE(attr) == EA_8BYTE) ? INS_mulld : INS_mullw;
+        // Multiply: tmpReg = index * elementSize.
+        // Use ppc64UseWideArith so the instruction is selected from the index
+        // operand width rather than the node-result attr, matching the same
+        // fix applied in genCodeForBinary.
+        instruction mulIns = ppc64UseWideArith(index, index) ? INS_mulld : INS_mullw;
         emit->emitIns_R_R_R(mulIns, attr, tmpReg, indexReg, tmpReg);
 
         // Add base: result = base + tmpReg
