@@ -1210,6 +1210,18 @@ int LinearScan::BuildNode(GenTree* tree)
 	           srcCount = BuildLclHeap(tree);
 	           break;
 
+	       case GT_BOUNDS_CHECK:
+	       {
+	           // GT_BOUNDS_CHECK consumes the index and array length, produces no result.
+	           // The comparison uses cmplw/cmpld (unsigned 32/64-bit), which operate
+	           // directly on register values — no sign-extension temporaries needed.
+	           GenTreeBoundsChk* node = tree->AsBoundsChk();
+	           assert(dstCount == 0);
+	           srcCount = BuildOperandUses(node->GetIndex());
+	           srcCount += BuildOperandUses(node->GetArrayLength());
+	       }
+	       break;
+
 	       default:
 	       {
 	           printf("LSRA BuildNode: Unhandled operation: %s (oper=%d)\n",

@@ -950,7 +950,12 @@ void Lowering::ContainCheckSelect(GenTreeOp* node)
 //
 void Lowering::ContainCheckBoundsChk(GenTreeBoundsChk* node)
 {
-    _ASSERTE(!"NYI");
+    // On PowerPC64LE the bounds check emits cmplw/cmpld (register-register form).
+    // The immediate-operand forms (cmplwi/cmpldi) could be used to contain a
+    // constant index or length, but genRangeCheck currently requires both operands
+    // in registers.  Leave operands uncontained so they are always materialised
+    // into registers before the comparison.
+    assert(node->OperIs(GT_BOUNDS_CHECK));
 }
 
 #ifdef FEATURE_HW_INTRINSICS

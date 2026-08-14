@@ -771,6 +771,10 @@ void CodeGen::genCodeForTreeNode(GenTree* treeNode)
             GetEmitter()->emitIns_R_L(INS_addi, EA_PTRSIZE, genPendingCallLabel, targetReg);
             break;
 
+        case GT_BOUNDS_CHECK:
+            genRangeCheck(treeNode);
+            break;
+
         case GT_PHYSREG:
             genCodeForPhysReg(treeNode->AsPhysReg());
             break;
@@ -2554,10 +2558,52 @@ void CodeGen::genCreateAndStoreGCInfo(unsigned            codeSize,
 //------------------------------------------------------------------------
 // genRangeCheck: generate code for GT_BOUNDS_CHECK node.
 //
+// Arguments:
+//    oper - The GT_BOUNDS_CHECK node
+//
+// Notes:
+//    Emits an unsigned comparison (index >= length) and jumps to the
+//    range-check-fail helper block if the check fails.
+//
+//    The CLR array bounds check is defined as:
+//        throw if (uint)index >= (uint)length
+//    so we always use the unsigned compare instructions cmplw/cmpld.
+//
 void CodeGen::genRangeCheck(GenTree* oper)
 {
-    //_ASSERTE("!NYI");
-    abort();
+    noway_assert(oper->OperIs(GT_BOUNDS_CHECK));
+    GenTreeBoundsChk* bndsChk = oper->AsBoundsChk();
+
+    GenTree* arrLen   = bndsChk->GetArrayLength();
+    GenTree* arrIndex = bndsChk->GetIndex();
+
+    genConsumeRegs(arrIndex);
+    genConsumeRegs(arrLen);
+
+    regNumber indexReg  = arrIndex->GetRegNum();
+    regNumber lengthReg = arrLen->GetRegNum();
+
+#ifdef DEBUG
+    var_types bndsChkType = genActualType(arrLen->TypeGet());
+    var_types indexType   = genActualType(arrIndex->TypeGet());
+    // Bounds checks can only be 32 or 64 bit sized comparisons.
+    assert(bndsChkType == TYP_INT || bndsChkType == TYP_LONG);
+    assert(indexType == TYP_INT || indexType == TYP_LONG);
+#endif // DEBUG
+
+    // Array bounds checks are ALWAYS unsigned: the CLR defines them as
+    //   (uint)index >= (uint)length
+    // so we must use cmplw/cmpld (unsigned) rather than cmpw/cmpd (signed).
+    //
+    // cmplw compares the low 32 bits of both registers as unsigned 32-bit
+    // integers — correct for TYP_INT operands without any sign extension.
+    // cmpld compares the full 64-bit register content — correct for TYP_LONG.
+    instruction cmpIns = (genActualType(arrLen->TypeGet()) == TYP_LONG) ? INS_cmpld : INS_cmplw;
+    GetEmitter()->emitIns_R_R(cmpIns, emitActualTypeSize(genActualType(arrLen->TypeGet())),
+                              indexReg, lengthReg);
+
+    // Branch if (uint)index >= (uint)length → range-check failure
+    genJumpToThrowHlpBlk(EJ_ge, bndsChk->gtThrowKind, bndsChk->gtIndRngFailBB);
 }
 
 //---------------------------------------------------------------------
