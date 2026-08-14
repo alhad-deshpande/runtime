@@ -221,11 +221,25 @@ GenTree* Lowering::LowerStoreIndir(GenTreeStoreInd* node)
 GenTree* Lowering::LowerMul(GenTreeOp* mul)
 {
     assert(mul->OperIsMul());
-    
-    // PowerPC64 supports direct register-to-register multiply operations
-    // No special transformations needed, just perform containment checks
+
+    if (mul->OperIs(GT_MULHI))
+    {
+        // GT_MULHI is produced by the Lemire FastMod decomposition in lower.cpp.
+        // That code always sets GTF_UNSIGNED (ulong × uint, both unsigned), so
+        // genCodeForMulHi will correctly select mulhdu / mulhwu.
+        //
+        // Assert here so that if anything upstream ever clears GTF_UNSIGNED on a
+        // GT_MULHI node, we catch it immediately rather than silently emitting
+        // mulhd / mulhw (signed) and producing a wrong upper-half product.
+        assert((mul->gtFlags & GTF_UNSIGNED) != 0 &&
+               "GT_MULHI on PPC64LE must remain unsigned; "
+               "signed mulhd/mulhw would give wrong results for the FastMod pattern");
+    }
+
+    // PowerPC64 supports direct register-to-register multiply operations.
+    // No further transformations are needed; perform containment checks only.
     ContainCheckMul(mul);
-    
+
     return mul->gtNext;
 }
 

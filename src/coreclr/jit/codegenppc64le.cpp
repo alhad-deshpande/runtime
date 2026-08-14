@@ -662,6 +662,10 @@ void CodeGen::genCodeForTreeNode(GenTree* treeNode)
             genCodeForBinary(treeNode->AsOp());
             break;
 
+        case GT_MULHI:
+            genCodeForMulHi(treeNode->AsOp());
+            break;
+
         case GT_DIV:
         case GT_UDIV:
         case GT_MOD:
@@ -790,6 +794,69 @@ void CodeGen::genCodeForTreeNode(GenTree* treeNode)
                    varTypeName(treeNode->TypeGet()), treeNode->gtFlags);
             abort();
     }
+}
+
+//------------------------------------------------------------------------
+// genCodeForMulHi: Generate code for GT_MULHI — the upper half of a full-width
+//                  integer multiply (used by the Lemire FastMod algorithm).
+//
+// Arguments:
+//    treeNode - the GT_MULHI node
+//
+// Notes:
+//    PowerPC64 has dedicated multiply-high instructions:
+//      mulhdu rD, rA, rB  – unsigned doubleword: bits [127:64] of rA × rB (64-bit)
+//      mulhd  rD, rA, rB  – signed   doubleword: bits [127:64] of rA × rB (64-bit)
+//      mulhwu rD, rA, rB  – unsigned word:       bits [63:32]  of rA × rB (32-bit)
+//      mulhw  rD, rA, rB  – signed   word:       bits [63:32]  of rA × rB (32-bit)
+//
+//    IMPORTANT: We must NOT use ppc64UseWideArith() here, because FastMod passes
+//    a ulong multiplier (TYP_LONG) and a uint value (TYP_INT).  ppc64UseWideArith
+//    would return true (because one operand is TYP_LONG), which would select the
+//    doubleword form — correct for 64-bit operands — but only if the 32-bit operand
+//    was zero-extended into the register.  If it was sign-extended by an `lwa` load
+//    and its MSB is set, mulhdu would read a large negative 64-bit number and
+//    produce a wrong result.  We therefore use the node's own type plus the
+//    GTF_UNSIGNED flag to pick the instruction, which is exactly what the JIT
+//    intends for the operation.
+//
+void CodeGen::genCodeForMulHi(GenTreeOp* treeNode)
+{
+    assert(treeNode->OperIs(GT_MULHI));
+    assert(!treeNode->gtOverflowEx());
+
+    genConsumeOperands(treeNode);
+
+    regNumber targetReg  = treeNode->GetRegNum();
+    var_types targetType = treeNode->TypeGet();
+    emitter*  emit       = GetEmitter();
+    emitAttr  attr       = emitActualTypeSize(treeNode);
+    bool      isUnsigned = (treeNode->gtFlags & GTF_UNSIGNED) != 0;
+
+    GenTree* op1 = treeNode->gtGetOp1();
+    GenTree* op2 = treeNode->gtGetOp2();
+
+    assert(!varTypeIsFloating(targetType));
+    assert(targetReg != REG_NA);
+    assert(!op1->isContained());
+    assert(!op2->isContained());
+
+    instruction ins;
+    if (EA_SIZE(attr) == EA_8BYTE)
+    {
+        // mulhdu / mulhd: high 64 bits of a 128-bit product
+        ins = isUnsigned ? INS_mulhdu : INS_mulhd;
+    }
+    else
+    {
+        // mulhwu / mulhw: high 32 bits of a 64-bit product
+        assert(EA_SIZE(attr) == EA_4BYTE);
+        ins = isUnsigned ? INS_mulhwu : INS_mulhw;
+    }
+
+    emit->emitIns_R_R_R(ins, attr, targetReg, op1->GetRegNum(), op2->GetRegNum());
+
+    genProduceReg(treeNode);
 }
 
 //------------------------------------------------------------------------

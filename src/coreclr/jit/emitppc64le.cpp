@@ -1331,6 +1331,10 @@ void emitter::emitIns_R_R_R(instruction ins,
         case INS_subf:
         case INS_mulld:
         case INS_mullw:
+        case INS_mulhdu:
+        case INS_mulhd:
+        case INS_mulhwu:
+        case INS_mulhw:
         case INS_divd:
         case INS_divdu:
         case INS_divw:
@@ -1433,6 +1437,10 @@ void emitter::emitIns_R_R_R(instruction ins,
     case INS_subf:
     case INS_mulld:
     case INS_mullw:
+    case INS_mulhdu:
+    case INS_mulhd:
+    case INS_mulhwu:
+    case INS_mulhw:
     case INS_divd:
     case INS_divdu:
     case INS_divw:
@@ -2706,6 +2714,30 @@ size_t emitter::emitOutputInstr(insGroup* ig, instrDesc* id, BYTE** dp)
            ppc_mullw (dstRW, id->idReg1(), id->idReg2(), id->idReg3());
            break;
 
+       case INS_mulhdu:
+           // mulhdu rD, rA, rB - Multiply High Doubleword Unsigned
+           // Returns bits [127:64] of rA * rB (both treated as unsigned 64-bit)
+           ppc_mulhdu (dstRW, id->idReg1(), id->idReg2(), id->idReg3());
+           break;
+
+       case INS_mulhd:
+           // mulhd rD, rA, rB - Multiply High Doubleword Signed
+           // Returns bits [127:64] of rA * rB (both treated as signed 64-bit)
+           ppc_mulhd (dstRW, id->idReg1(), id->idReg2(), id->idReg3());
+           break;
+
+       case INS_mulhwu:
+           // mulhwu rD, rA, rB - Multiply High Word Unsigned
+           // Returns bits [63:32] of rA[31:0] * rB[31:0] (unsigned 32-bit)
+           ppc_mulhwu (dstRW, id->idReg1(), id->idReg2(), id->idReg3());
+           break;
+
+       case INS_mulhw:
+           // mulhw rD, rA, rB - Multiply High Word Signed
+           // Returns bits [63:32] of rA[31:0] * rB[31:0] (signed 32-bit)
+           ppc_mulhw (dstRW, id->idReg1(), id->idReg2(), id->idReg3());
+           break;
+
        case INS_divd:
            // divd rD, rA, rB - Divide Doubleword
            ppc_divd (dstRW, id->idReg1(), id->idReg2(), id->idReg3());
@@ -2937,6 +2969,10 @@ const char* emitter::emitDisInsName(code_t code, const BYTE* addr, instrDesc* id
 	case INS_subf:    return "subf    ";
 	case INS_mulld:   return "mulld   ";
 	case INS_mullw:   return "mullw   ";
+	case INS_mulhdu:  return "mulhdu  ";
+	case INS_mulhd:   return "mulhd   ";
+	case INS_mulhwu:  return "mulhwu  ";
+	case INS_mulhw:   return "mulhw   ";
 	case INS_divd:    return "divd    ";
 	case INS_divdu:   return "divdu   ";
 	case INS_divw:    return "divw    ";

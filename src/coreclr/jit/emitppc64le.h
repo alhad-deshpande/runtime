@@ -193,9 +193,18 @@
 #define ppc_neg(c,D,A)     ppc_emit32 (c, (31 << 26) | ((D) << 21) | ((A) << 16) | (0 << 11) | (0 << 10) | (104 << 1) | 0)
 #define ppc_add(c,D,A,B)   ppc_emit32 (c, (31 << 26) | ((D) << 21) | ((A) << 16) | ((B) << 11) | (0 << 10) | (266 << 1) | 0)
 #define ppc_subf(c,D,A,B)  ppc_emit32 (c, (31 << 26) | ((D) << 21) | ((A) << 16) | ((B) << 11) | (0 << 10) | (40 << 1) | 0)  
-#define ppc_mulld(c,D,A,B) ppc_emit32 (c, (31 << 26) | ((D) << 21) | ((A) << 16) | ((B) << 11) | (0 << 10) | (233 << 1) | 0)
-#define ppc_mullw(c,D,A,B) ppc_emit32 (c, (31 << 26) | ((D) << 21) | ((A) << 16) | ((B) << 11) | (0 << 10) | (235 << 1) | 0) 
-#define ppc_divd(c,D,A,B)  ppc_emit32 (c, (31 << 26) | ((D) << 21) | ((A) << 16) | ((B) << 11) | (0 << 10) | (489 << 1) | 0) 
+#define ppc_mulld(c,D,A,B)  ppc_emit32 (c, (31 << 26) | ((D) << 21) | ((A) << 16) | ((B) << 11) | (0 << 10) | (233 << 1) | 0)
+#define ppc_mullw(c,D,A,B)  ppc_emit32 (c, (31 << 26) | ((D) << 21) | ((A) << 16) | ((B) << 11) | (0 << 10) | (235 << 1) | 0)
+// Multiply High — XO-form, OE=0, Rc=0
+// mulhdu rD, rA, rB  — high 64 bits of rA*rB (unsigned 64-bit)  XO=9
+// mulhd  rD, rA, rB  — high 64 bits of rA*rB (signed 64-bit)    XO=73
+// mulhwu rD, rA, rB  — high 32 bits of rA*rB (unsigned 32-bit)  XO=11
+// mulhw  rD, rA, rB  — high 32 bits of rA*rB (signed 32-bit)    XO=75
+#define ppc_mulhdu(c,D,A,B) ppc_emit32 (c, (31 << 26) | ((D) << 21) | ((A) << 16) | ((B) << 11) | (0 << 10) | (  9 << 1) | 0)
+#define ppc_mulhd(c,D,A,B)  ppc_emit32 (c, (31 << 26) | ((D) << 21) | ((A) << 16) | ((B) << 11) | (0 << 10) | ( 73 << 1) | 0)
+#define ppc_mulhwu(c,D,A,B) ppc_emit32 (c, (31 << 26) | ((D) << 21) | ((A) << 16) | ((B) << 11) | (0 << 10) | ( 11 << 1) | 0)
+#define ppc_mulhw(c,D,A,B)  ppc_emit32 (c, (31 << 26) | ((D) << 21) | ((A) << 16) | ((B) << 11) | (0 << 10) | ( 75 << 1) | 0)
+#define ppc_divd(c,D,A,B)   ppc_emit32 (c, (31 << 26) | ((D) << 21) | ((A) << 16) | ((B) << 11) | (0 << 10) | (489 << 1) | 0)
 #define ppc_divdu(c,D,A,B) ppc_emit32 (c, (31 << 26) | ((D) << 21) | ((A) << 16) | ((B) << 11) | (0 << 10) | (457 << 1) | 0) 
 #define ppc_divw(c,D,A,B)  ppc_emit32 (c, (31 << 26) | ((D) << 21) | ((A) << 16) | ((B) << 11) | (0 << 10) | (491 << 1) | 0) 
 #define ppc_divwu(c,D,A,B) ppc_emit32 (c, (31 << 26) | ((D) << 21) | ((A) << 16) | ((B) << 11) | (0 << 10) | (459 << 1) | 0) 

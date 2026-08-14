@@ -147,6 +147,10 @@ INST(add,         "add",          0,      XO_FORM,      0x7C000214)  // Add
 INST(subf,        "subf",         0,      XO_FORM,      0x7C000050)  // Subtract From
 INST(mulld,       "mulld",        0,      XO_FORM,      0x7C0001D2)  // Multiply Low Doubleword
 INST(mullw,       "mullw",        0,      XO_FORM,      0x7C0001D6)  // Multiply Low Word
+INST(mulhdu,      "mulhdu",       0,      XO_FORM,      0x7C000012)  // Multiply High Doubleword Unsigned
+INST(mulhd,       "mulhd",        0,      XO_FORM,      0x7C000092)  // Multiply High Doubleword
+INST(mulhwu,      "mulhwu",       0,      XO_FORM,      0x7C000016)  // Multiply High Word Unsigned
+INST(mulhw,       "mulhw",        0,      XO_FORM,      0x7C000096)  // Multiply High Word
 INST(divd,        "divd",         0,      XO_FORM,      0x7C0003D2)  // Divide Doubleword
 INST(divdu,       "divdu",        0,      XO_FORM,      0x7C000392)  // Divide Doubleword Unsigned
 INST(divw,        "divw",         0,      XO_FORM,      0x7C0003D6)  // Divide Word
