@@ -83,11 +83,13 @@ LEAF_ENTRY CONTEXT_CaptureContext, _TEXT
 	stfd %f31, CONTEXT_F31(%r3)
 
 	// Save Control Registers - XER, LR and CTR
-	mfspr 5, 1
-	std %r5, CONTEXT_XER(%r3)
+	mfspr %r5, 1                   // XER (DWORD field — use stw)
+	stw %r5, CONTEXT_XER(%r3)
+	mfcr %r5                       // CCR (DWORD field — use stw)
+	stw %r5, CONTEXT_CCR(%r3)
 	mflr %r5
 	std %r5, CONTEXT_NIP(%r3)
-	mfspr 5, 9
+	mfspr %r5, 9                   // CTR
 	std %r5, CONTEXT_CTR(%r3)
 
 	// Restore r5 general purpose register
@@ -169,9 +171,13 @@ LEAF_ENTRY RtlRestoreContext, _TEXT
 	ld %r30, CONTEXT_R30(%r3)
 	ld %r31, CONTEXT_R31(%r3)
 
-	// Restore Control Register - XER
-	ld %r12, CONTEXT_XER(%r3)
-	mtspr 1, 12
+	// Restore Control Register - XER (DWORD field — use lwz)
+	lwz %r12, CONTEXT_XER(%r3)
+	mtspr 1, %r12
+
+	// Restore Condition Register - CCR (DWORD field — use lwz)
+	lwz %r12, CONTEXT_CCR(%r3)
+	mtcrf 0xff, %r12
 
 	// Restore Control Register - LR
 	mtlr %r0
