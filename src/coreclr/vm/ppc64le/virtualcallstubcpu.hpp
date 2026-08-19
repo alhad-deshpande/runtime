@@ -86,9 +86,16 @@ struct DispatchHolder
     void Initialize(DispatchHolder* pDispatchHolderRX, PCODE implTarget, PCODE failTarget, size_t expectedMT)
     {
         // r12 points to _entryPoint[0] (stub base), set by the caller.
-         _stub._entryPoint[0] = 0xe80c0028; // ld r0, 40(r12)
-        _stub._entryPoint[1] = 0xe8830000; // ld r4, 0(r3)
-        _stub._entryPoint[2] = 0x7c240000; // cmpd cr0, r4, r0
+        // r9 is used as the MethodTable scratch: it is volatile and NOT an argument
+        // register in the relevant sense — r3 is the only argument that matters here
+        // (the 'this' pointer).  r4 must NOT be used because it carries the second
+        // argument (e.g. the key in TryInsert → GetHashCode) and the DispatchStub is
+        // a transparent trampoline with no save/restore frame.  r11 must NOT be used
+        // because it is the live VSD indirection-cell register (virtualStubParamInfo)
+        // consumed by the fail/resolve path.
+         _stub._entryPoint[0] = 0xe80c0028; // ld  r0, 40(r12)    ; _expectedMT  → r0
+        _stub._entryPoint[1] = 0xe9230000; // ld  r9, 0(r3)      ; actual MT from object → r9
+        _stub._entryPoint[2] = 0x7c090000; // cmpd cr0, r9, r0   ; compare actual vs expected MT
         _stub._entryPoint[3] = 0x41820010; // beq target (+16)
         _stub._entryPoint[4] = 0xe98c0038; // ld r12, 56(r12)
         _stub._entryPoint[5] = 0x7d8903a6; // mtspr CTR, r12
