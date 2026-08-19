@@ -13353,8 +13353,13 @@ static bool ShouldUseInterpreterFallback(MethodDesc* ftnDesc,const char* ftnName
 	{ "UTF8EncodingSealed","GetMaxByteCount"},
 	{ "System.Runtime.CompilerServices.DefaultInterpolatedStringHandle",".ctor"},
 
-	{ "System.Threading.Tasks.Task",".cctor"}
- 
+	{ "System.Threading.Tasks.Task",".cctor"},
+        { "System.Collections.Generic.Dictionary`2[__Canon,__Canon]","TryInsert"},
+	{ "System.Collections.Generic.Dictionary`2[Guid,__Canon]","TryInsert"},
+	{ "Enumerator[__Canon]","MoveNext"},
+	{ "IGenericCacheEntry`1[__Canon]","CreateAndCache"},
+	{ "System.Collections.Generic.Dictionary`2[__Canon,__Canon]","FindValue"},
+
     };
 
     const size_t numInclusions = sizeof(jitInclusionList) / sizeof(jitInclusionList[0]);
