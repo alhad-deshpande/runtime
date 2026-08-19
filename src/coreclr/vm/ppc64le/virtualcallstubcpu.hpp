@@ -8,7 +8,7 @@
 
 // TODO RESOLVE_STUB
 #define DISPATCH_STUB_FIRST_DWORD 0xe80c0028 // ld r0,40(r12)
-#define RESOLVE_STUB_FIRST_DWORD 0xe8830000  // ld r4, 0(r3)
+#define RESOLVE_STUB_FIRST_DWORD 0xe9230000  // ld r9, 0(r3)
 
 #define USES_LOOKUP_STUBS   1
 
@@ -192,16 +192,18 @@ struct ResolveHolder
 	   // -------------------------------
 	   // r11 = indirection cell (virtualStubParamInfo = REG_R11, set by JIT, preserved here)
 	   // r12 = this stub's base address (set by caller)
-	   //   ld    r4,0(r3)               ; load actual MethodTable from object
-	   //   srdi  r0,r4,12
-	   //   add   r0,r0,r4
+	   // NOTE: r4 is the 2nd argument register and MUST NOT be clobbered by this frameless
+	   // stub.  Use r9 (volatile scratch) to hold the actual MethodTable instead.
+	   //   ld    r9,0(r3)               ; load actual MethodTable from object → r9 (safe scratch)
+	   //   srdi  r0,r9,12
+	   //   add   r0,r0,r9
 	   //   xori  r0,r0,hashedToken
 	   //   andi. r0,r0,CALL_STUB_CACHE_MASK
 	   //   sldi  r0,r0,3
 	   //   ld    r10,160(r12)           ; cache base address
 	   //   add   r10,r10,r0             ; cache slot pointer
 	   //   ld    r0,0(r10)              ; cached MethodTable
-	   //   cmpd  cr0,r4,r0
+	   //   cmpd  cr0,r9,r0
 	   //   bne   miss                   ; +28
 	   //   ld    r0,8(r10)              ; cached token
 	   //   ld    r5,168(r12)            ; this stub's token
@@ -218,16 +220,16 @@ struct ResolveHolder
 	   //   mtctr r12                    ; CTR = ResolveWorkerAsmStub; r12 = target per ABI ✓
 	   //   bctr
 	   //   nop; nop; nop
-	       _stub._resolveEntryPoint[0]  = 0xe8830000;                          // ld    r4,0(r3)
-	       _stub._resolveEntryPoint[1]  = 0x7800e904;                          // srdi  r0,r4,12
-	       _stub._resolveEntryPoint[2]  = 0x7c004214;                          // add   r0,r0,r4
+	       _stub._resolveEntryPoint[0]  = 0xe9230000;                          // ld    r9,0(r3)      ; actual MT → r9 (r4 preserved)
+	       _stub._resolveEntryPoint[1]  = 0x79208302;                          // srdi  r0,r9,12      ; rldicl r0,r9,52,12
+	       _stub._resolveEntryPoint[2]  = 0x7c004a14;                          // add   r0,r0,r9
 	       _stub._resolveEntryPoint[3]  = 0x68000000 | (hashedToken & 0xFFFF); // xori  r0,r0,imm16
 	       _stub._resolveEntryPoint[4]  = 0x70000000 | (CALL_STUB_CACHE_MASK & 0xFFFF); // andi. r0,r0,imm16
 	       _stub._resolveEntryPoint[5]  = 0x7800c104;                          // sldi  r0,r0,3
 	       _stub._resolveEntryPoint[6]  = 0xe94c00a0;                          // ld    r10,160(r12)
 	       _stub._resolveEntryPoint[7]  = 0x7d4a0214;                          // add   r10,r10,r0
 	       _stub._resolveEntryPoint[8]  = 0xe80a0000;                          // ld    r0,0(r10)
-	       _stub._resolveEntryPoint[9]  = 0x7c240000;                          // cmpd  cr0,r4,r0
+	       _stub._resolveEntryPoint[9]  = 0x7c290000;                          // cmpd  cr0,r9,r0
 	       _stub._resolveEntryPoint[10] = 0x4082001c;                          // bne   +28 -> miss
 	       _stub._resolveEntryPoint[11] = 0xe80a0008;                          // ld    r0,8(r10)
 	       _stub._resolveEntryPoint[12] = 0xe8ac00a8;                          // ld    r5,168(r12)
