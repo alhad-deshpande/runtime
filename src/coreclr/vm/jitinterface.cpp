@@ -13363,6 +13363,32 @@ static bool ShouldUseInterpreterFallback(MethodDesc* ftnDesc,const char* ftnName
 	{ "System.Collections.Generic.Dictionary`2[__Canon,__Canon]","FindValue"},
         { "System.AppContext", "GetData" },
 	{ "System.Collections.Generic.Dictionary`2[__Canon,__Canon]", "TryGetValue" },
+
+
+       { "System.Runtime.CompilerServices.DefaultInterpolatedStringHandler", "AppendFormatted" },
+       { "Sys", "Open" },
+       { "Sys", "LSeek" },
+       { "Sys", "FStat" },
+       { "Sys", "PRead" },
+       { "System.Byte", "System.Numerics.IEqualityOperators<System.Byte,System.Byte,System.Boolean>.op_Equality" },
+       { "OrdinalComparer", "Equals" },
+       { "System.Buffer", "_BulkMoveWithWriteBarrier" },{ "Enumerator[__Canon,ConsoleKeyInfo]", ".ctor" },
+       { "Enumerator[__Canon,ConsoleKeyInfo]", "MoveNext" },
+       { "System.Collections.Generic.KeyValuePair`2[__Canon,ConsoleKeyInfo]", ".ctor" },
+       { "Sys", "SetKeypadXmit" },
+       { "Sys", "Write" },
+       { "System.ConsolePal", "UpdatedCachedCursorPosition" },
+       { "System.Diagnostics.Tracing.EventListener", "DisposeOnShutdown" },
+       { "System.Globalization.GlobalizationMode", "TryGetStringValue" },
+       { "System.Collections.Generic.Dictionary`2[__Canon,ConsoleKeyInfo]", "TryInsert" },
+       { "System.Diagnostics.Tracing.EventSource","Initialize"},
+       { "System.Diagnostics.Tracing.EventSourceInitHelper","TryGetPreregisteredEtwProvider"},
+       { "System.Collections.Generic.Dictionary`2[Guid,__Canon]","Remove"},
+       { "System.Diagnostics.Tracing.EventSourceInitHelper","TryGetPreregisteredEventPipeProvider"},
+       { "System.Collections.Generic.Dictionary`2[__Canon,__Canon]","Remove"},
+       { "System.Diagnostics.Tracing.EventListener","AddEventSource"},
+       { "System.Diagnostics.Tracing.EventListener","Validate"},
+
     };
 
     const size_t numInclusions = sizeof(jitInclusionList) / sizeof(jitInclusionList[0]);
