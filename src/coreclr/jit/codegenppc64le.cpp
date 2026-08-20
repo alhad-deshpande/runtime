@@ -6120,16 +6120,43 @@ void CodeGen::genFuncletProlog(BasicBlock* block)
         }
         else
         {
-            // Non-filter: the VM has re-established FP on entry.
-            // Compute CallerSP from FP using the delta captured at compile time,
-            // then store it into our PSP slot.
-            // r5 is scratch (volatile, not live on funclet entry).
-            genInstrWithConstant(INS_addi, EA_PTRSIZE, REG_R5, REG_FPBASE,
-                                 -genFuncletInfo.fiFunction_CallerSP_to_FP_delta, REG_R0, false);
+            // Non-filter finally/fault funclet: r31 is currently funclet_SP (set by "mr r31,r1" above).
+            //
+            // We need to do two things:
+            //   1. Compute parent_CallerSP and store it as our PSPSym (so the GC/EH walker
+            //      can find the parent frame from this funclet's frame).
+            //   2. Re-establish r31 (FP) = parent_r31 (= parent_SP on PPC64LE, since FP==SP),
+            //      so that the funclet body's accesses to parent-frame locals (which the JIT
+            //      compiled using the same FP-relative offsets as the parent function) land on
+            //      the correct parent-frame slots.
+            //
+            // The parent entry r1 at funclet call time = funclet_SP + funcletFrameSize.
+            // parent_CallerSP = parent_entry_r1 + totalFrameSize_parent
+            //                 = (funclet_SP + funcletFrameSize) + (-fiFunction_CallerSP_to_FP_delta)
+            //                   (fiFunction_CallerSP_to_FP_delta = genCallerSPtoFPdelta() = -totalFrameSize_parent)
+            //
+            // parent_r31 = parent_CallerSP + fiFunction_CallerSP_to_FP_delta
+            //            = parent_CallerSP - totalFrameSize_parent
+            //            = parent_entry_r1
+            //            = funclet_SP + funcletFrameSize
+            //
+
+            // Step 1: r5 = parent_CallerSP = funclet_SP + funcletFrameSize + (-fiFunction_CallerSP_to_FP_delta)
+            genInstrWithConstant(INS_addi, EA_PTRSIZE, REG_R5, REG_SPBASE,
+                                 funcletFrameSize + (-genFuncletInfo.fiFunction_CallerSP_to_FP_delta), REG_R0, false);
+
             regSet.verifyRegUsed(REG_R5);
 
-            genInstrWithConstant(INS_std,  EA_PTRSIZE, REG_R5, REG_SPBASE, genFuncletInfo.fiSP_to_PSP_slot_delta,
+            // Step 2: store parent_CallerSP as PSPSym in our funclet frame.
+            genInstrWithConstant(INS_std, EA_PTRSIZE, REG_R5, REG_SPBASE, genFuncletInfo.fiSP_to_PSP_slot_delta,
                                  REG_R0, false);
+            // Step 3: re-establish FP (r31) = parent_r31 = parent_CallerSP + fiFunction_CallerSP_to_FP_delta
+            //                              = funclet_SP + funcletFrameSize
+            // This is the value r1 had on entry to this funclet (before stdu allocated the funclet frame).
+            // All funclet body code that accesses parent-frame locals does so via r31 using the same
+            // FP-relative offsets as the parent function _ so r31 must point at the parent frame base.
+            genInstrWithConstant(INS_addi, EA_PTRSIZE, REG_FPBASE, REG_R5,
+                                 genFuncletInfo.fiFunction_CallerSP_to_FP_delta, REG_R0, false);
         }
     }
 }
