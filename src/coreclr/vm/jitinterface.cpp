@@ -12719,6 +12719,8 @@ static bool ShouldUseInterpreterFallback(MethodDesc* ftnDesc,const char* ftnName
        "GetEnumerator",
        "Dispose",
        "WriteLine",
+       "TryInsert",
+       "Remove",
     };
 
     struct JitInclusionEntry
