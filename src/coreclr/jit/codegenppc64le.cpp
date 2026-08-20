@@ -4091,9 +4091,8 @@ void CodeGen::genCodeForStoreInd(GenTreeStoreInd* tree)
 
     if (tree->IsVolatile())
     {
-        // Issue a load barrier after a volatile store
-        // lwsync is a lighter-weight sync that orders loads
-        instGen(INS_lwsync);
+        // Issue a full memory barrier after a volatile store
+        instGen(INS_hwsync);
     }
 }
 
