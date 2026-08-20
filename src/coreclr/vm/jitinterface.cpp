@@ -13388,6 +13388,18 @@ static bool ShouldUseInterpreterFallback(MethodDesc* ftnDesc,const char* ftnName
        { "System.Collections.Generic.Dictionary`2[__Canon,__Canon]","Remove"},
        { "System.Diagnostics.Tracing.EventListener","AddEventSource"},
        { "System.Diagnostics.Tracing.EventListener","Validate"},
+       { "MemberInfoCache`1[__Canon]","PopulateConstructors"},
+       { "IntroducedMethodEnumerator","MoveNext"},
+       { "ListBuilder`1[__Canon]",".ctor"},
+       { "System.Diagnostics.Tracing.EventSourceInitHelper","PreregisterEventProviders"},
+       { "System.Console","<get_Out>g__EnsureInitialized|26_0"},
+       { "Sys","Dup"},
+       { "System.Text.ValueStringBuilder", ".ctor" },
+       { "System.Console", "get_OutputEncoding" },
+       { "System.IO.StreamWriter", "Flush" },
+       { "System.ConsolePal", "WriteFromConsoleStream" },
+       { "System.Lazy`1[__Canon]", "ViaFactory" },
+       { "System.Runtime.CompilerServices.DefaultInterpolatedStringHandler", ".ctor" },
 
     };
 
