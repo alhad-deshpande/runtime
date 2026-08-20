@@ -2329,7 +2329,8 @@ void CodeGen::genCodeForStoreLclVar(GenTreeLclVar* lclNode)
             }
             if (zeroInit)
             {
-                // For PPC64LE, we can use R0 as zero register in some contexts
+                // r0 is NOT a hardwired zero on PPC64LE; explicitly load 0 into it.
+                GetEmitter()->emitIns_R_I(INS_li, EA_PTRSIZE, REG_R0, 0);
                 dataReg = REG_R0;
             }
             else
@@ -2440,7 +2441,9 @@ void CodeGen::genCodeForStoreLclFld(GenTreeLclFld* tree)
     if (data->isContainedIntOrIImmed())
     {
         assert(data->IsIntegralConst(0));
-        dataReg = REG_R0;  // Use R0 as zero register
+        // r0 is NOT a hardwired zero on PPC64LE; explicitly load 0 into it.
+        GetEmitter()->emitIns_R_I(INS_li, EA_PTRSIZE, REG_R0, 0);
+        dataReg = REG_R0;
     }
     else if (data->isContained())
     {
@@ -3144,7 +3147,8 @@ void CodeGen::genCodeForInitBlkUnroll(GenTreeBlk* node)
     else
     {
         assert(src->IsIntegralConst(0));
-        // On PPC64LE we can use R0 for zero
+        // r0 is NOT a hardwired zero on PPC64LE; explicitly load 0 into it.
+        GetEmitter()->emitIns_R_I(INS_li, EA_PTRSIZE, REG_R0, 0);
         srcReg = REG_R0;
     }
 
@@ -4068,7 +4072,9 @@ void CodeGen::genCodeForStoreInd(GenTreeStoreInd* tree)
     if (data->isContainedIntOrIImmed())
     {
         assert(data->IsIntegralConst(0));
-        dataReg = REG_R0; // Use R0 as zero register on PPC64LE
+        // r0 is NOT a hardwired zero on PPC64LE; explicitly load 0 into it.
+        GetEmitter()->emitIns_R_I(INS_li, EA_PTRSIZE, REG_R0, 0);
+        dataReg = REG_R0;
     }
     else // data is not contained, so evaluate it into a register
     {

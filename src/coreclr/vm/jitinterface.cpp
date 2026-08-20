@@ -12691,7 +12691,7 @@ static bool ShouldUseInterpreterFallback(MethodDesc* ftnDesc,const char* ftnName
        "WidenFourAsciiBytesToUtf16AndWriteToBuffer",
        "GetSpanDataFrom",
        "get_Text",
-       "IndexOfOrdinalIgnoreCase",
+       //"IndexOfOrdinalIgnoreCase",
        "GetDeclaringType",
        "GetIntroducedMethods",
 
@@ -13166,7 +13166,7 @@ static bool ShouldUseInterpreterFallback(MethodDesc* ftnDesc,const char* ftnName
         { "System.Diagnostics.DebugProvider",".ctor"},
         { "System.Diagnostics.DebugProvider",".cctor"},
         { "Settings",".cctor"},
-        { "System.Globalization.Ordinal","IndexOfOrdinalIgnoreCase"},
+        //{ "System.Globalization.Ordinal","IndexOfOrdinalIgnoreCase"},
         { "System.Environment","InitializeCommandLineArgs"},
         { "System.Runtime.InteropServices.NativeLibrary","LoadLibraryCallbackStub"},
         { "ManagedToUnmanagedIn","FromManaged"},
@@ -13359,7 +13359,8 @@ static bool ShouldUseInterpreterFallback(MethodDesc* ftnDesc,const char* ftnName
 	{ "Enumerator[__Canon]","MoveNext"},
 	{ "IGenericCacheEntry`1[__Canon]","CreateAndCache"},
 	{ "System.Collections.Generic.Dictionary`2[__Canon,__Canon]","FindValue"},
-
+        { "System.AppContext", "GetData" },
+	{ "System.Collections.Generic.Dictionary`2[__Canon,__Canon]", "TryGetValue" },
     };
 
     const size_t numInclusions = sizeof(jitInclusionList) / sizeof(jitInclusionList[0]);
