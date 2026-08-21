@@ -13400,7 +13400,7 @@ static bool ShouldUseInterpreterFallback(MethodDesc* ftnDesc,const char* ftnName
        { "System.ConsolePal", "WriteFromConsoleStream" },
        { "System.Lazy`1[__Canon]", "ViaFactory" },
        { "System.Runtime.CompilerServices.DefaultInterpolatedStringHandler", ".ctor" },
-
+       { "System.Threading.Interlocked", "ReadMemoryBarrier" },
     };
 
     const size_t numInclusions = sizeof(jitInclusionList) / sizeof(jitInclusionList[0]);

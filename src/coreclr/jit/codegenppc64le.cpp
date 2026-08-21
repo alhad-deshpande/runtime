@@ -787,6 +787,15 @@ void CodeGen::genCodeForTreeNode(GenTree* treeNode)
             genLclHeap(treeNode);
             break;
 
+        case GT_MEMORYBARRIER:
+        {
+            CodeGen::BarrierKind barrierKind =
+                treeNode->gtFlags & GTF_MEMORYBARRIER_LOAD ? BARRIER_LOAD_ONLY : BARRIER_FULL;
+
+            instGen_MemoryBarrier(barrierKind);
+            break;
+        }
+
         default:
             printf("ERROR: Unhandled tree node operation: %s (oper=%d)\n",
                    GenTree::OpName(treeNode->gtOper), treeNode->gtOper);
