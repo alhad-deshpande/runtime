@@ -3640,10 +3640,17 @@ public:
 //
 // GTF_SPILL or GTF_SPILLED flag on a multi-reg node indicates that one or
 // more of its result regs are in that state.  The spill flags of each register
-// are stored here. We only need 2 bits per returned register,
-// so this is treated as a 2-bit array. No architecture needs more than 8 bits.
+// are stored here. We need 2 bits per register, packed into an integer.
 //
+// On PPC64LE, MAX_MULTIREG_COUNT is 13 (HFA args use up to f1-f13), so we need
+// 13*2 = 26 bits -- a uint32_t. All other targets have MAX_MULTIREG_COUNT <= 4
+// and fit in an unsigned char.
+//
+#ifdef TARGET_POWERPC64
+typedef uint32_t MultiRegSpillFlags;
+#else
 typedef unsigned char MultiRegSpillFlags;
+#endif
 static const unsigned PACKED_GTF_SPILL   = 1;
 static const unsigned PACKED_GTF_SPILLED = 2;
 
@@ -3659,7 +3666,7 @@ static const unsigned PACKED_GTF_SPILLED = 2;
 //
 inline GenTreeFlags GetMultiRegSpillFlagsByIdx(MultiRegSpillFlags flags, unsigned idx)
 {
-    static_assert_no_msg(MAX_MULTIREG_COUNT * 2 <= sizeof(unsigned char) * BITS_PER_BYTE);
+    static_assert_no_msg(MAX_MULTIREG_COUNT * 2 <= sizeof(MultiRegSpillFlags) * BITS_PER_BYTE);
     assert(idx < MAX_MULTIREG_COUNT);
 
     unsigned     bits       = flags >> (idx * 2); // It doesn't matter that we possibly leave other high bits here.
@@ -3691,7 +3698,7 @@ inline GenTreeFlags GetMultiRegSpillFlagsByIdx(MultiRegSpillFlags flags, unsigne
 //
 inline MultiRegSpillFlags SetMultiRegSpillFlagsByIdx(MultiRegSpillFlags oldFlags, GenTreeFlags flagsToSet, unsigned idx)
 {
-    static_assert_no_msg(MAX_MULTIREG_COUNT * 2 <= sizeof(unsigned char) * BITS_PER_BYTE);
+    static_assert_no_msg(MAX_MULTIREG_COUNT * 2 <= sizeof(MultiRegSpillFlags) * BITS_PER_BYTE);
     assert(idx < MAX_MULTIREG_COUNT);
 
     MultiRegSpillFlags newFlags = oldFlags;
@@ -3708,7 +3715,13 @@ inline MultiRegSpillFlags SetMultiRegSpillFlagsByIdx(MultiRegSpillFlags oldFlags
     const unsigned char packedFlags = PACKED_GTF_SPILL | PACKED_GTF_SPILLED;
 
     // Clear anything that was already there by masking out the bits before 'or'ing in what we want there.
+    // On PPC64LE, MultiRegSpillFlags is uint32_t (13 regs * 2 bits = 26 bits), so cast to that width
+    // to avoid truncation. On all other targets the unsigned char cast is unchanged.
+#ifdef TARGET_POWERPC64
+    newFlags = (uint32_t)((newFlags & ~((unsigned)packedFlags << (idx * 2))) | (bits << (idx * 2)));
+#else
     newFlags = (unsigned char)((newFlags & ~(packedFlags << (idx * 2))) | (bits << (idx * 2)));
+#endif
     return newFlags;
 }
 
@@ -3717,8 +3730,17 @@ inline MultiRegSpillFlags SetMultiRegSpillFlagsByIdx(MultiRegSpillFlags oldFlags
 struct GenTreeLclVar : public GenTreeLclVarCommon
 {
 private:
+    // GenTreeLclVar is a SMALL node used only for local variable loads/stores and
+    // multi-reg return values.  On PPC64LE, MAX_MULTIREG_COUNT is 13 (to cover HFA
+    // args), but a local-var node never holds more than MAX_RET_REG_COUNT (2) result
+    // registers.  Use MAX_RET_REG_COUNT here so the struct stays within TREE_NODE_SZ_SMALL.
+#ifdef TARGET_POWERPC64
+    regNumberSmall     gtOtherReg[MAX_RET_REG_COUNT - 1];
+    unsigned char      gtSpillFlags; // MAX_RET_REG_COUNT(2) * 2 bits = 4 bits fits in 1 byte
+#else
     regNumberSmall     gtOtherReg[MAX_MULTIREG_COUNT - 1];
     MultiRegSpillFlags gtSpillFlags;
+#endif
 
 public:
     INDEBUG(IL_OFFSET gtLclILoffs = BAD_IL_OFFSET;) // instr offset of ref (only for JIT dumps)
@@ -3740,13 +3762,21 @@ public:
 
     regNumber GetRegNumByIdx(int regIndex) const
     {
+#ifdef TARGET_POWERPC64
+        assert(regIndex < MAX_RET_REG_COUNT);
+#else
         assert(regIndex < MAX_MULTIREG_COUNT);
+#endif
         return (regIndex == 0) ? GetRegNum() : (regNumber)gtOtherReg[regIndex - 1];
     }
 
     void SetRegNumByIdx(regNumber reg, int regIndex)
     {
+#ifdef TARGET_POWERPC64
+        assert(regIndex < MAX_RET_REG_COUNT);
+#else
         assert(regIndex < MAX_MULTIREG_COUNT);
+#endif
         if (regIndex == 0)
         {
             SetRegNum(reg);
@@ -3759,11 +3789,17 @@ public:
 
     GenTreeFlags GetRegSpillFlagByIdx(unsigned idx) const
     {
+#ifdef TARGET_POWERPC64
+        assert(idx < MAX_RET_REG_COUNT);
+#endif
         return GetMultiRegSpillFlagsByIdx(gtSpillFlags, idx);
     }
 
     void SetRegSpillFlagByIdx(GenTreeFlags flags, unsigned idx)
     {
+#ifdef TARGET_POWERPC64
+        assert(idx < MAX_RET_REG_COUNT);
+#endif
         gtSpillFlags = SetMultiRegSpillFlagsByIdx(gtSpillFlags, flags, idx);
     }
 

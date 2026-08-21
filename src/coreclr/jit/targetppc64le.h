@@ -33,7 +33,12 @@
   #define MAX_ARG_REG_COUNT             8  // Maximum registers used to pass a single argument in multiple registers (r3-r10 for structs).
   #define MAX_RET_REG_COUNT             2  // Maximum registers used to return a value (r3-r4 for non-HFA structs up to 16 bytes).
  
-  #define MAX_MULTIREG_COUNT            2  // Maximum number of registers defined by a single instruction (including calls).
+  #define MAX_MULTIREG_COUNT           13  // Maximum number of registers defined by a single instruction.
+                                           // On PPC64LE two cases drive this value:
+                                           //  - HFA structs passed fully in float registers: up to 13 regs (f1-f13)
+                                           //  - Split HFA structs (straddle reg/stack boundary): up to 12 float regs
+                                           //  - Split integer structs: up to 7 int regs (r3-r10 minus >=1 on stack)
+                                           // 13 is the binding maximum, so multiRegIdx must hold 0..12 (4 bits).
 
   #define NOGC_WRITE_BARRIERS      1       // We have specialized WriteBarrier JIT Helpers that DO-NOT trash the RBM_CALLEE_TRASH registers
   #define USER_ARGS_COME_LAST      1

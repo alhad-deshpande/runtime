@@ -2579,7 +2579,14 @@ public:
     // The max bits needed is based on max value of MAX_MULTIREG_COUNT value
     // across all targets and that happened to be 4 on Arm.  Hence index value
     // would be 0..MAX_MULTIREG_COUNT-1.
+    //
+    // On PPC64LE, MAX_MULTIREG_COUNT is 13 (HFA args use up to f1-f13), so 4 bits
+    // are required to hold indices 0..12. All other targets fit in 2 bits.
+#ifdef TARGET_POWERPC64
+    unsigned char multiRegIdx : 4;
+#else
     unsigned char multiRegIdx : 2;
+#endif
 
 #ifdef TARGET_ARM64
     // If this refposition needs consecutive register assignment
