@@ -2729,7 +2729,7 @@ private:
     // instruction group depends on the instruction mix as well as DEBUG/non-DEBUG build type. See the
     // EMITTER_STATS output for various statistics related to this.
     //
-#if defined(TARGET_ARMARCH) || defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64) || defined(TARGET_POWERPC64)
+#if defined(TARGET_ARMARCH) || defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64)
 // ARM32/64, LoongArch and RISC-V can require a bigger prolog instruction group. One scenario
 // is where a function uses all the incoming integer and single-precision floating-point arguments,
 // and must store them all to the frame on entry. If the frame is very large, we generate
@@ -2744,6 +2744,16 @@ private:
 // which eats up our insGroup buffer.
 #define SC_IG_BUFFER_NUM_SMALL_DESCS 0
 #define SC_IG_BUFFER_NUM_LARGE_DESCS 200
+
+#elif defined(TARGET_POWERPC64)
+// PPC64LE also needs a large prolog IG. Additionally, genZeroInitFrameUsingBlockInit
+// emits one std per 8 bytes of untracked locals — all as instrDescCns (24 bytes each,
+// since offsets exceed the small-constant range). For a method with ~2KB of untracked
+// locals plus ~50 other prolog instructions, we need roughly:
+//   50 (other prolog) + 256 (std instructions for 2048 bytes) = ~306 large descriptors.
+// Use 512 to give comfortable headroom without risk of overflow.
+#define SC_IG_BUFFER_NUM_SMALL_DESCS 0
+#define SC_IG_BUFFER_NUM_LARGE_DESCS 512
 
 #else
 #define SC_IG_BUFFER_NUM_SMALL_DESCS 14

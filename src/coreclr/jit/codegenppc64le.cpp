@@ -5666,41 +5666,28 @@ void CodeGen::genZeroInitFrameUsingBlockInit(int untrLclHi, int untrLclLo, regNu
     assert(compiler->compGeneratingProlog);
     assert(untrLclHi > untrLclLo);
 
-    int bytesToWrite = untrLclHi - untrLclLo;
-    
-    // Use initReg to hold zero
+    emitter*  emit  = GetEmitter();
+    regNumber fpReg = genFramePointerReg();
+
+    // Zero initReg; all stores use this as the source of zero.
     instGen_Set_Reg_To_Imm(EA_PTRSIZE, initReg, 0);
     *pInitRegZeroed = true;
-    
-    // Get frame pointer
-    regNumber fpReg = genFramePointerReg();
-    
-    // Simple loop: store zero in 8-byte chunks
+
+    // Emit one std per 8-byte doubleword across the full untracked local range.
+    // SC_IG_BUFFER_NUM_LARGE_DESCS for PPC64LE is 512, which is large enough to
+    // hold ~460 instrDescCns entries — enough for ~3680 bytes of frame zeroing
+    // plus the rest of the prolog without overflowing the prolog IG buffer.
     int offset = untrLclLo;
-    while (offset < untrLclHi)
+    while (offset + (int)REGSIZE_BYTES <= untrLclHi)
     {
-        // std initReg, offset(fpReg)  - Store doubleword
-        GetEmitter()->emitIns_R_R_I(INS_std, EA_8BYTE, initReg, fpReg, offset);
-        offset += 8;
+        emit->emitIns_R_R_I(INS_std, EA_8BYTE, initReg, fpReg, offset);
+        offset += REGSIZE_BYTES;
     }
-    
-    // Handle remaining bytes if not 8-byte aligned
-    int remaining = untrLclHi - offset;
-    if (remaining > 0)
+
+    // Trailing 4-byte store if the range is not doubleword-aligned.
+    if (offset < untrLclHi)
     {
-        if (remaining >= 4)
-        {
-            // stw initReg, offset(fpReg)  - Store word (4 bytes)
-            GetEmitter()->emitIns_R_R_I(INS_stw, EA_4BYTE, initReg, fpReg, offset);
-            offset += 4;
-            remaining -= 4;
-        }
-        if (remaining > 0)
-        {
-            // sth or stb for remaining 1-3 bytes
-            // For simplicity, just store word (may write extra bytes but safe)
-            GetEmitter()->emitIns_R_R_I(INS_stw, EA_4BYTE, initReg, fpReg, offset);
-        }
+        emit->emitIns_R_R_I(INS_stw, EA_4BYTE, initReg, fpReg, offset);
     }
 }
 

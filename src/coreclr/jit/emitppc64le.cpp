@@ -1921,7 +1921,8 @@ bool emitter::emitInsIsLoadOrStore(instruction ins)
  */
 void emitter::emitSetShortJump(instrDescJmp* id)
 {
-    _ASSERTE(!"NYI");
+    // All PPC64LE branch instructions are fixed 4 bytes; there is no short/long distinction.
+    // Nothing to do — idjShort is irrelevant for PPC64LE's custom emitJumpDistBind.
 }
 
 void emitter::emitInsLoadStoreOp(instruction ins, emitAttr attr, regNumber dataReg, GenTreeIndir* indir)
