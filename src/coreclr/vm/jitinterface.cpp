@@ -13401,6 +13401,9 @@ static bool ShouldUseInterpreterFallback(MethodDesc* ftnDesc,const char* ftnName
        { "System.Lazy`1[__Canon]", "ViaFactory" },
        { "System.Runtime.CompilerServices.DefaultInterpolatedStringHandler", ".ctor" },
        { "System.Threading.Interlocked", "ReadMemoryBarrier" },
+       { "System.SpanHelpers","ClearWithoutReferences"},
+       { "System.Runtime.CompilerServices.CastHelpers","ChkCastInterface"},
+       { "MemberInfoCache`1[__Canon]","GetListByName"},
     };
 
     const size_t numInclusions = sizeof(jitInclusionList) / sizeof(jitInclusionList[0]);
