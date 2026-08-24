@@ -5661,6 +5661,32 @@ void CodeGen::genIntToFloatCast(GenTree* treeNode)
 //    pInitRegZeroed - OUT parameter. *pInitRegZeroed is set to 'true' if this method sets initReg register to zero,
 //                     'false' if initReg was set to a non-zero value, and left unchanged if initReg was not touched.
 //
+// Notes:
+//    When the range is small (< 10 doubleword slots) we emit one std per slot (inline unroll).
+//    When the range is large we emit a compact loop — 6 instructions regardless of frame size —
+//    to avoid overflowing the prolog instruction-group buffer (EMIT_MAX_IG_INS_COUNT = 256 and
+//    SC_IG_BUFFER_NUM_LARGE_DESCS buffers the prolog IG).  This mirrors the RISC-V64 and
+//    LoongArch64 implementations.
+//
+//    We use 'add rAddr, rAddr, rStep' (register add) rather than 'addi rAddr, rAddr, 16'
+//    because the PPC64LE emitter's addi path for non-small constants has a pre-existing
+//    limitation that can mis-encode instructions.  The only addi with a small constant is
+//    'addi rCnt, rCnt, -1' (−1 is in the 1-bit small range [−1, 0]).
+//
+//    Loop shape (2 stores per iteration, 6 instructions total):
+//      li   initReg, 0            ; zero source  (stays zero throughout)
+//      li   rAddr, curOffset      ; start offset
+//      add  rAddr, FP, rAddr      ; rAddr = FP + curOffset
+//      li   rCnt,  uCntSlots/2   ; trip count
+//      li   rStep, 16            ; step size (2 * 8 bytes)
+//    loop:
+//      std  initReg, 0(rAddr)    ; store zero
+//      std  initReg, 8(rAddr)    ; store zero
+//      add  rAddr, rAddr, rStep  ; advance pointer by 16
+//      addi rCnt,  rCnt,  -1    ; decrement counter
+//      cmpdi rCnt, 0             ; compare with 0
+//      bne  loop                 ; branches back -6 instructions
+//
 void CodeGen::genZeroInitFrameUsingBlockInit(int untrLclHi, int untrLclLo, regNumber initReg, bool* pInitRegZeroed)
 {
     assert(compiler->compGeneratingProlog);
@@ -5669,25 +5695,115 @@ void CodeGen::genZeroInitFrameUsingBlockInit(int untrLclHi, int untrLclLo, regNu
     emitter*  emit  = GetEmitter();
     regNumber fpReg = genFramePointerReg();
 
-    // Zero initReg; all stores use this as the source of zero.
+    unsigned uCntBytes = (unsigned)(untrLclHi - untrLclLo);
+    assert((uCntBytes % sizeof(int)) == 0);
+
+    // Handle any 4-byte-aligned leading word if the range starts at a 4-byte but not 8-byte boundary.
+    unsigned padding   = (unsigned)untrLclLo & 0x7u;
+    int      curOffset = untrLclLo;
+
+    // Zero initReg; it is the source-of-zeros register for all stores.
     instGen_Set_Reg_To_Imm(EA_PTRSIZE, initReg, 0);
     *pInitRegZeroed = true;
 
-    // Emit one std per 8-byte doubleword across the full untracked local range.
-    // SC_IG_BUFFER_NUM_LARGE_DESCS for PPC64LE is 512, which is large enough to
-    // hold ~460 instrDescCns entries — enough for ~3680 bytes of frame zeroing
-    // plus the rest of the prolog without overflowing the prolog IG buffer.
-    int offset = untrLclLo;
-    while (offset + (int)REGSIZE_BYTES <= untrLclHi)
+    if (padding != 0)
     {
-        emit->emitIns_R_R_I(INS_std, EA_8BYTE, initReg, fpReg, offset);
-        offset += REGSIZE_BYTES;
+        // Range starts at a 4-byte offset inside an 8-byte slot; store the leading word.
+        assert(padding == 4);
+        emit->emitIns_R_R_I(INS_stw, EA_4BYTE, initReg, fpReg, curOffset);
+        curOffset += 4;
+        uCntBytes -= 4;
     }
 
-    // Trailing 4-byte store if the range is not doubleword-aligned.
-    if (offset < untrLclHi)
+    unsigned uCntSlots = uCntBytes / REGSIZE_BYTES; // number of 8-byte doubleword slots remaining
+
+    // Use a loop when there are 10 or more doubleword slots to zero.  Fewer slots are zeroed
+    // inline to avoid the overhead of setting up the loop registers.
+    const unsigned kLoopThreshold = 10;
+
+    if (uCntSlots >= kLoopThreshold)
     {
-        emit->emitIns_R_R_I(INS_stw, EA_4BYTE, initReg, fpReg, offset);
+        // We need three scratch registers (rAddr, rCnt, rStep), all distinct from initReg.
+        // Pick them from the volatile (callee-trash + modified callee-saved) integer registers,
+        // excluding live incoming argument registers, initReg, and REG_R0.
+        //
+        // REG_R0 must not be used as rAddr: on PowerPC, rA=R0 in D-form / DS-form
+        // load/store instructions means "use 0 as the base address", not the register value.
+        //
+        // We use a pre-loaded rStep register (value = 2*REGSIZE_BYTES = 16) and advance rAddr
+        // via "add rAddr, rAddr, rStep" rather than "addi rAddr, rAddr, 16".  This avoids a
+        // pre-existing emitter limitation where addi with a constant outside the 1-bit small
+        // constant range [-1, 0] may be mis-encoded for non-jump instrDescCns descriptors.
+        regMaskTP availMask = regSet.rsGetModifiedRegsMask() | RBM_INT_CALLEE_TRASH;
+        availMask &= ~intRegState.rsCalleeRegArgMaskLiveIn;
+        availMask &= ~genRegMask(initReg);
+        availMask &= ~RBM_R0; // R0 cannot be used as a base register in D/DS-form stores
+
+        noway_assert(availMask != RBM_NONE);
+        regMaskTP addrMask = genFindLowestBit(availMask);
+        regNumber rAddr    = genRegNumFromMask(addrMask);
+        availMask &= ~addrMask;
+
+        noway_assert(availMask != RBM_NONE);
+        regMaskTP cntMask = genFindLowestBit(availMask);
+        regNumber rCnt    = genRegNumFromMask(cntMask);
+        availMask &= ~cntMask;
+
+        noway_assert(availMask != RBM_NONE);
+        regMaskTP stepMask = genFindLowestBit(availMask);
+        regNumber rStep    = genRegNumFromMask(stepMask);
+
+        // rAddr = FP + curOffset  (start address of the region to zero)
+        instGen_Set_Reg_To_Imm(EA_PTRSIZE, rAddr, (ssize_t)curOffset);
+        emit->emitIns_R_R_R(INS_add, EA_PTRSIZE, rAddr, fpReg, rAddr);
+
+        // rCnt = number of 16-byte pairs to store (loop trip count)
+        instGen_Set_Reg_To_Imm(EA_PTRSIZE, rCnt, (ssize_t)(uCntSlots / 2));
+
+        // rStep = 16  (bytes advanced per iteration; loaded via instGen_Set_Reg_To_Imm
+        // which uses INS_li and avoids the addi large-constant emitter limitation)
+        instGen_Set_Reg_To_Imm(EA_PTRSIZE, rStep, (ssize_t)(2 * REGSIZE_BYTES));
+
+        // Loop body: exactly 6 instructions — backward branch count is -6.
+        //   initReg stays 0; rAddr and rCnt are modified each iteration.
+        emit->emitIns_R_R_I(INS_std,   EA_8BYTE,   initReg, rAddr, 0);  // store zero
+        emit->emitIns_R_R_I(INS_std,   EA_8BYTE,   initReg, rAddr, 8);  // store zero
+        emit->emitIns_R_R_R(INS_add,   EA_PTRSIZE, rAddr,   rAddr, rStep); // advance ptr
+        emit->emitIns_R_R_I(INS_addi,  EA_PTRSIZE, rCnt,    rCnt,  -1); // decrement (-1 fits in small cns)
+        emit->emitIns_R_I(  INS_cmpdi, EA_PTRSIZE, rCnt,    0);          // compare with 0
+        emit->emitIns_J(    INS_bne,   nullptr,    -6);                   // branch back to first std
+
+        // Handle the odd trailing slot (if uCntSlots is odd).
+        unsigned remainSlots = (uCntSlots & 1u);
+        if (remainSlots != 0)
+        {
+            emit->emitIns_R_R_I(INS_std, EA_8BYTE, initReg, rAddr, 0);
+        }
+
+        uCntBytes -= uCntSlots * REGSIZE_BYTES;
+        // *pInitRegZeroed remains true: initReg still holds 0.
+    }
+    else
+    {
+        // Inline unroll: one std per slot.
+        while (uCntBytes >= REGSIZE_BYTES)
+        {
+            emit->emitIns_R_R_I(INS_std, EA_8BYTE, initReg, fpReg, curOffset);
+            curOffset += REGSIZE_BYTES;
+            uCntBytes -= REGSIZE_BYTES;
+        }
+    }
+
+    // Trailing 4-byte store if there is a residual half-slot.
+    // initReg still holds zero (both paths preserve that invariant above).
+    if (uCntBytes >= 4)
+    {
+        // In the loop path curOffset was not advanced; the trailing store is relative to fpReg.
+        // In the inline path curOffset tracks the current position.
+        // In the loop path, use rAddr+0 if we had a loop (rAddr ended 8 bytes past the last pair
+        // if there was no odd trailing slot, so we need fpReg-relative addressing here).
+        // Keep it simple: always use fpReg + (untrLclHi - 4) which is accurate for both paths.
+        emit->emitIns_R_R_I(INS_stw, EA_4BYTE, initReg, fpReg, untrLclHi - 4);
     }
 }
 
