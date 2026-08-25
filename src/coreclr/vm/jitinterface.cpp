@@ -13407,6 +13407,7 @@ static bool ShouldUseInterpreterFallback(MethodDesc* ftnDesc,const char* ftnName
        { "System.Globalization.Ordinal", "IndexOfOrdinalIgnoreCase" },
        { "System.SpanHelpers","NonPackedIndexOfValueType"},
        { "System.SpanHelpers","NonPackedIndexOfAnyValueType" },
+       { "System.Diagnostics.Tracing.Statics","MetadataForString"},
     };
 
     const size_t numInclusions = sizeof(jitInclusionList) / sizeof(jitInclusionList[0]);

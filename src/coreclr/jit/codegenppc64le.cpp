@@ -6873,14 +6873,21 @@ void CodeGen::genIntCastOverflowCheck(GenTreeCast* cast, const GenIntCastDesc& d
             const int castMaxValue = desc.CheckSmallIntMax();
             const int castMinValue = desc.CheckSmallIntMin();
 
-            // Check upper bound
-            emit->emitIns_R_I(INS_cmpdi, EA_ATTR(desc.CheckSrcSize()), reg, castMaxValue);
-            genJumpToThrowHlpBlk(EJ_gt, SCK_OVERFLOW);
+            // Check upper bound. Unsigned small-int casts (e.g. int -> ushort) require
+            // unsigned comparison semantics when the minimum is zero.
+            instruction cmpIns = (castMinValue == 0)
+                ? ((desc.CheckSrcSize() == 8) ? INS_cmpldi : INS_cmplwi)
+                : ((desc.CheckSrcSize() == 8) ? INS_cmpdi : INS_cmpwi);
+            emitJumpKind upperJumpKind = (castMinValue == 0) ? EJ_hi : EJ_gt;
 
-            // Check lower bound if not zero
+            emit->emitIns_R_I(cmpIns, EA_ATTR(desc.CheckSrcSize()), reg, castMaxValue);
+            genJumpToThrowHlpBlk(upperJumpKind, SCK_OVERFLOW);
+
+            // Check lower bound if not zero.
             if (castMinValue != 0)
             {
-                emit->emitIns_R_I(INS_cmpdi, EA_ATTR(desc.CheckSrcSize()), reg, castMinValue);
+                emit->emitIns_R_I((desc.CheckSrcSize() == 8) ? INS_cmpdi : INS_cmpwi,
+                                  EA_ATTR(desc.CheckSrcSize()), reg, castMinValue);
                 genJumpToThrowHlpBlk(EJ_lt, SCK_OVERFLOW);
             }
             break;

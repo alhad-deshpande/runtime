@@ -60,15 +60,18 @@ JMP_SMALL(eq    , ne    , beq    )  // EQ
 JMP_SMALL(ne    , eq    , bne    )  // NE
 
 #elif defined(TARGET_POWERPC64)
-// TODO-POWERPC64 -> vikas add more jump instructions
 //       jump   reverse instruction condcode
 JMP_SMALL(jmp   , jmp   , b      )  // AL always
 JMP_SMALL(eq    , ne    , beq    )  // EQ
 JMP_SMALL(ne    , eq    , bne    )  // NE
-JMP_SMALL(lt    , ge    , blt )
-JMP_SMALL(ge    , lt    , bge )
-JMP_SMALL(gt    , le    , bgt )
-JMP_SMALL(le    , gt    , ble )
+JMP_SMALL(lt    , ge    , blt    )  // LT (signed)
+JMP_SMALL(ge    , lt    , bge    )  // GE (signed)
+JMP_SMALL(gt    , le    , bgt    )  // GT (signed)
+JMP_SMALL(le    , gt    , ble    )  // LE (signed)
+JMP_SMALL(lo    , hs    , blt    )  // LT (unsigned, after cmpl*)
+JMP_SMALL(hs    , lo    , bge    )  // GE (unsigned, after cmpl*)
+JMP_SMALL(hi    , ls    , bgt    )  // GT (unsigned, after cmpl*)
+JMP_SMALL(ls    , hi    , ble    )  // LE (unsigned, after cmpl*)
 
 #else
   #error Unsupported or unset target architecture
