@@ -365,7 +365,7 @@ int LinearScan::BuildPutArgSplit(GenTreePutArgSplit* argNode)
 
 //------------------------------------------------------------------------
 // BuildCast: Set the NodeInfo for a GT_CAST.
-//  
+//
 // Arguments:
 //    cast - The GT_CAST node
 //
@@ -383,16 +383,16 @@ int LinearScan::BuildCast(GenTreeCast* cast)
     }
 
     SingleTypeRegSet candidates = RBM_NONE;
-    
+
     // For float <-> int casts, we may need specific register types
     var_types srcType = genActualType(src->TypeGet());
     var_types dstType = cast->TypeGet();
-    
+
     if (varTypeIsFloating(srcType) && !varTypeIsFloating(dstType))
     {
         // Float/Double to Int cast - source must be in float register
         candidates = allRegs(TYP_FLOAT);
-	// PowerPC64 needs an internal FP register to hold the converted value
+        // PowerPC64 needs an internal FP register to hold the converted value
         // before transferring to integer register via stack
         buildInternalFloatRegisterDefForNode(cast);
     }
@@ -400,16 +400,34 @@ int LinearScan::BuildCast(GenTreeCast* cast)
     {
         // Int to Float/Double cast - source must be in int register
         candidates = allRegs(TYP_INT);
-	// PowerPC64 needs an internal FP register to hold the integer value
-	// after loading from stack before conversion
-	buildInternalFloatRegisterDefForNode(cast);
+        // PowerPC64 needs an internal FP register to hold the integer value
+        // after loading from stack before conversion
+        buildInternalFloatRegisterDefForNode(cast);
     }
+#ifdef TARGET_64BIT
+    else if (cast->gtOverflow())
+    {
+        // genIntCastOverflowCheck calls internalRegisters.GetSingle() for
+        // CHECK_UINT_RANGE, CHECK_POSITIVE_INT_RANGE and CHECK_INT_RANGE —
+        // all of which arise from 64-bit narrowing casts with overflow.
+        // Allocate the required internal integer scratch register here so
+        // that register allocation and code generation stay consistent.
+        const var_types castType = cast->gtCastType;
+        const unsigned  srcSize  = genTypeSize(srcType);
+        const unsigned  dstSize  = genTypeSize(genActualType(castType));
+
+        if ((srcSize == 8) && (dstSize == 4))
+        {
+            buildInternalIntRegisterDefForNode(cast);
+        }
+    }
+#endif // TARGET_64BIT
 
     BuildUse(src, candidates);
     // Build internal register definitions if any were requested
     buildInternalRegisterUses();
     BuildDef(cast);
-    
+
     return 1;
 }
 

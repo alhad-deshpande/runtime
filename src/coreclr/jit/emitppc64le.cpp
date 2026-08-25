@@ -1729,6 +1729,67 @@ void emitter::emitIns_R(instruction ins, emitAttr attr, regNumber reg, insOpts o
  *    addi reg, reg, offset # Add offset to reach target label (computed at emit time)
  */
 
+//------------------------------------------------------------------------
+// emitIns_R_AI: Emit a PC-relative address load for a relocatable constant.
+//
+// On PPC64LE, relocatable addresses (method/type/field handles embedded as
+// CNS_INT constants) cannot be encoded as plain immediates — they require
+// OS-level relocation fixups.  The canonical two-instruction sequence is:
+//
+//   lis  reg, addr@ha          ; load bits 47:16 (sign-adjusted high part)
+//   addi reg, reg, addr@l      ; add low 16 bits
+//
+// Both instructions are stored as instrDescCns records with idSetIsDspReloc()
+// so that the code manager can patch them at load time.
+//
+// Arguments:
+//   ins  - must be INS_lis (the high-part loader)
+//   attr - emitAttr (EA_HANDLE_CNS_RELOC or EA_8BYTE with reloc flag set)
+//   ireg - destination integer register
+//   addr - the relocatable address value
+//
+void emitter::emitIns_R_AI(instruction  ins,
+                            emitAttr     attr,
+                            regNumber    ireg,
+                            ssize_t      addr
+                            DEBUGARG(size_t    targetHandle)
+                            DEBUGARG(GenTreeFlags gtFlags))
+{
+    assert(EA_IS_RELOC(attr));
+    assert(genIsValidIntReg(ireg));
+
+    // Instruction 1: lis ireg, addr@ha
+    // Stored as a large instrDescCns so the patcher can update the 16-bit
+    // immediate field when the final address is known.
+    {
+        instrDesc* id = emitNewInstrCns(attr, (ssize_t)((uintptr_t)addr >> 16));
+        id->idIns(INS_lis);
+        id->idReg1(ireg);
+        id->idAddr()->iiaAddr = (BYTE*)addr;
+        id->idSetIsDspReloc();
+#ifdef DEBUG
+        id->idDebugOnlyInfo()->idMemCookie = targetHandle;
+        id->idDebugOnlyInfo()->idFlags     = gtFlags;
+#endif
+        appendToCurIG(id);
+    }
+
+    // Instruction 2: addi ireg, ireg, addr@l
+    {
+        instrDesc* id = emitNewInstrCns(attr, (ssize_t)((uintptr_t)addr & 0xffff));
+        id->idIns(INS_addi);
+        id->idReg1(ireg);
+        id->idReg2(ireg);
+        id->idAddr()->iiaAddr = (BYTE*)addr;
+        id->idSetIsDspReloc();
+#ifdef DEBUG
+        id->idDebugOnlyInfo()->idMemCookie = targetHandle;
+        id->idDebugOnlyInfo()->idFlags     = gtFlags;
+#endif
+        appendToCurIG(id);
+    }
+}
+
 void emitter::emitIns_R_L(instruction ins, emitAttr attr, BasicBlock* dst, regNumber reg)
 {
     assert(dst->HasFlag(BBF_HAS_LABEL));

@@ -796,6 +796,10 @@ void CodeGen::genCodeForTreeNode(GenTree* treeNode)
             break;
         }
 
+        case GT_INTRINSIC:
+            genIntrinsic(treeNode->AsIntrinsic());
+            break;
+
         default:
             printf("ERROR: Unhandled tree node operation: %s (oper=%d)\n",
                    GenTree::OpName(treeNode->gtOper), treeNode->gtOper);
@@ -1259,8 +1263,13 @@ void CodeGen::genEmitGSCookieCheck(bool pushReg)
 //
 void CodeGen::genIntrinsic(GenTreeIntrinsic* treeNode)
 {
-    //_ASSERTE("!NYI");
-    abort();
+    // No GT_INTRINSIC nodes are fully implemented on PPC64LE yet.
+    // Use NYIRAW so the JIT emits CORJIT_SKIPPED and retries the method without
+    // the intrinsic expansion.  This is safe — the JIT will fall back to a
+    // managed call — and crucially avoids calling abort(), which raises SIGABRT,
+    // crashes the process, and triggers the fatal recursion in
+    // CLRException::GetThrowable when the exception constructors are being JITted.
+    NYIRAW("genIntrinsic: GT_INTRINSIC not yet implemented on PPC64LE");
 }
 
 //---------------------------------------------------------------------
@@ -5238,7 +5247,11 @@ void CodeGen::instGen_Set_Reg_To_Imm(emitAttr       size,
 
     if (EA_IS_RELOC(size))
     {
-        abort();
+        // Relocatable constant (method/type/field handle embedded as CNS_INT).
+        // Emit:  lis reg, addr@ha  +  addi reg, reg, addr@l
+        // Both instructions are marked for relocation patching.
+        GetEmitter()->emitIns_R_AI(INS_lis, size, reg, imm
+                                   DEBUGARG(targetHandle) DEBUGARG(gtFlags));
     }
     else if (imm == 0)
     {
@@ -6821,11 +6834,11 @@ void CodeGen::genIntCastOverflowCheck(GenTreeCast* cast, const GenIntCastDesc& d
 #ifdef TARGET_64BIT
         case GenIntCastDesc::CHECK_UINT_RANGE:
         {
-            // Check if value fits in unsigned 32-bit range (upper 32 bits must be zero)
-            // Use a temporary register to test upper bits
+            // Check that bits 63:32 are all zero (value fits in uint32 range [0, UINT32_MAX]).
+            // srdi tempReg, reg, 32  →  logical right-shift fills with zeros from the top;
+            // if any of the upper 32 bits were set the result is non-zero.
             regNumber tempReg = internalRegisters.GetSingle(cast);
-            // Shift right 32 bits and check if result is zero
-            emit->emitIns_R_R_I(INS_sldi, EA_8BYTE, tempReg, reg, 32);
+            emit->emitIns_R_R_I(INS_srdi, EA_8BYTE, tempReg, reg, 32);
             emit->emitIns_R_I(INS_cmpdi, EA_8BYTE, tempReg, 0);
             genJumpToThrowHlpBlk(EJ_ne, SCK_OVERFLOW);
             break;
@@ -6833,10 +6846,10 @@ void CodeGen::genIntCastOverflowCheck(GenTreeCast* cast, const GenIntCastDesc& d
 
         case GenIntCastDesc::CHECK_POSITIVE_INT_RANGE:
         {
-            // Check if value fits in signed 32-bit range (0 to 0x7FFFFFFF)
+            // Check that bits 63:31 are all zero (value fits in int32 range [0, INT32_MAX]).
+            // srdi tempReg, reg, 31  →  if any of the upper 33 bits were set the result is non-zero.
             regNumber tempReg = internalRegisters.GetSingle(cast);
-            // Check upper 33 bits are zero
-            emit->emitIns_R_R_I(INS_sldi, EA_8BYTE, tempReg, reg, 33);
+            emit->emitIns_R_R_I(INS_srdi, EA_8BYTE, tempReg, reg, 31);
             emit->emitIns_R_I(INS_cmpdi, EA_8BYTE, tempReg, 0);
             genJumpToThrowHlpBlk(EJ_ne, SCK_OVERFLOW);
             break;
