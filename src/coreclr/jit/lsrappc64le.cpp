@@ -1074,38 +1074,180 @@ int LinearScan::BuildNode(GenTree* tree)
 	        }
 	    }
 	    break;
-              case GT_ADD:
-              case GT_SUB:
-                  if (varTypeIsFloating(tree->TypeGet()))
-                  {
-                      // Overflow operations aren't supported on float/double types.
-                      assert(!tree->gtOverflow());
 
-                      // No implicit conversions at this stage as the expectation is that
-                      // everything is made explicit by adding casts.
-                      assert(tree->gtGetOp1()->TypeGet() == tree->gtGetOp2()->TypeGet());
-                  }
-                  else if (tree->gtOverflow())
-                  {
-                      // Need a register different from target reg to check for overflow.
-                     buildInternalIntRegisterDefForNode(tree);
-                     setInternalRegsDelayFree = true;
-                  }
-                  FALLTHROUGH;
+	case GT_FIELD_LIST:
+	    // These should always be contained. We don't correctly allocate or
+	    // generate code for a non-contained GT_FIELD_LIST.
+	    noway_assert(!"Non-contained GT_FIELD_LIST");
+	    srcCount = 0;
+	    break;
 
-              case GT_AND:
-              case GT_OR:
-              case GT_XOR:
-              case GT_LSH:
-              case GT_RSH:
-              case GT_RSZ:
-              case GT_ROL:
-              case GT_ROR:
-                  srcCount = BuildBinaryUses(tree->AsOp());
-                  buildInternalRegisterUses();
-                  assert(dstCount == 1);
-                  BuildDef(tree);
-                  break;
+	case GT_BOX:
+	case GT_COMMA:
+	case GT_QMARK:
+	case GT_COLON:
+	    srcCount = 0;
+	    assert(dstCount == 0);
+	    unreached();
+	    break;
+
+	case GT_ARR_ELEM:
+	    // These must have been lowered
+	    noway_assert(!"We should never see a GT_ARR_ELEM in lowering");
+	    srcCount = 0;
+	    assert(dstCount == 0);
+	    break;
+
+	case GT_BLK:
+	    // These should all be eliminated prior to Lowering.
+	    assert(!"Non-store block node in Lowering");
+	    srcCount = 0;
+	    break;
+
+	case GT_INIT_VAL:
+	    // Always a passthrough of its child's value.
+	    assert(!"INIT_VAL should always be contained");
+	    srcCount = 0;
+	    break;
+
+	case GT_INTRINSIC:
+	{
+	    // PowerPC64 math intrinsics all use one float source and produce one float result,
+	    // except for the binary Min/Max variants which use two sources.
+	    switch (tree->AsIntrinsic()->gtIntrinsicName)
+	    {
+	        case NI_System_Math_Max:
+	        case NI_System_Math_Min:
+	        case NI_System_Math_MaxNumber:
+	        case NI_System_Math_MinNumber:
+	        {
+	            assert(varTypeIsFloating(tree->gtGetOp1()));
+	            assert(varTypeIsFloating(tree->gtGetOp2()));
+	            srcCount = BuildBinaryUses(tree->AsOp());
+	            assert(dstCount == 1);
+	            BuildDef(tree);
+	            break;
+	        }
+
+	        case NI_System_Math_Abs:
+	        case NI_System_Math_Ceiling:
+	        case NI_System_Math_Floor:
+	        case NI_System_Math_Truncate:
+	        case NI_System_Math_Round:
+	        case NI_System_Math_Sqrt:
+	        {
+	            assert(varTypeIsFloating(tree->gtGetOp1()));
+	            BuildUse(tree->gtGetOp1());
+	            srcCount = 1;
+	            assert(dstCount == 1);
+	            BuildDef(tree);
+	            break;
+	        }
+
+	        default:
+	            unreached();
+	    }
+	}
+	break;
+
+	case GT_SELECTCC:
+	    assert(dstCount == 1);
+	    srcCount = BuildSelect(tree->AsOp());
+	    break;
+
+	case GT_CMPXCHG:
+	{
+	    // PowerPC64 lwarx/stwcx. or ldarx/stdcx. loop: addr + data + comparand -> result
+	    // All operands must remain live across the store-conditional retry loop.
+	    srcCount = tree->AsCmpXchg()->Comparand()->isContained() ? 2 : 3;
+	    assert(dstCount == 1);
+	    buildInternalIntRegisterDefForNode(tree); // scratch for store-conditional result
+	    RefPosition* locationUse = BuildUse(tree->AsCmpXchg()->Addr());
+	    setDelayFree(locationUse);
+	    RefPosition* valueUse = BuildUse(tree->AsCmpXchg()->Data());
+	    setDelayFree(valueUse);
+	    if (!tree->AsCmpXchg()->Comparand()->isContained())
+	    {
+	        RefPosition* comparandUse = BuildUse(tree->AsCmpXchg()->Comparand());
+	        setDelayFree(comparandUse);
+	    }
+	    setInternalRegsDelayFree = true;
+	    buildInternalRegisterUses();
+	    BuildDef(tree);
+	}
+	break;
+
+	case GT_LOCKADD:
+	case GT_XORR:
+	case GT_XAND:
+	case GT_XADD:
+	case GT_XCHG:
+	{
+	    // PowerPC64 atomic ops use lwarx/stwcx. or ldarx/stdcx. sequences.
+	    // Addr and data must stay live across the retry loop.
+	    assert(dstCount == (tree->TypeIs(TYP_VOID) ? 0 : 1));
+	    srcCount = tree->gtGetOp2()->isContained() ? 1 : 2;
+	    buildInternalIntRegisterDefForNode(tree); // scratch for store-conditional result
+	    if (tree->OperGet() != GT_XCHG)
+	    {
+	        buildInternalIntRegisterDefForNode(tree);
+	    }
+	    RefPosition* op1Use = BuildUse(tree->gtGetOp1());
+	    RefPosition* op2Use = nullptr;
+	    if (!tree->gtGetOp2()->isContained())
+	    {
+	        op2Use = BuildUse(tree->gtGetOp2());
+	    }
+	    if (dstCount == 1)
+	    {
+	        setDelayFree(op1Use);
+	        if (op2Use != nullptr)
+	        {
+	            setDelayFree(op2Use);
+	        }
+	        setInternalRegsDelayFree = true;
+	    }
+	    buildInternalRegisterUses();
+	    if (dstCount == 1)
+	    {
+	        BuildDef(tree);
+	    }
+	}
+	break;
+
+	             case GT_ADD:
+	             case GT_SUB:
+	                 if (varTypeIsFloating(tree->TypeGet()))
+	                 {
+	                     // Overflow operations aren't supported on float/double types.
+	                     assert(!tree->gtOverflow());
+
+	                     // No implicit conversions at this stage as the expectation is that
+	                     // everything is made explicit by adding casts.
+	                     assert(tree->gtGetOp1()->TypeGet() == tree->gtGetOp2()->TypeGet());
+	                 }
+	                 else if (tree->gtOverflow())
+	                 {
+	                     // Need a register different from target reg to check for overflow.
+	                    buildInternalIntRegisterDefForNode(tree);
+	                    setInternalRegsDelayFree = true;
+	                 }
+	                 FALLTHROUGH;
+
+	             case GT_AND:
+	             case GT_AND_NOT:
+	             case GT_OR:
+	             case GT_XOR:
+	             case GT_LSH:
+	             case GT_RSH:
+	             case GT_RSZ:
+	             case GT_ROL:
+	             case GT_ROR:
+	                 srcCount = BuildBinaryUses(tree->AsOp());
+	                 buildInternalRegisterUses();
+	                 assert(dstCount == 1);
+	                 BuildDef(tree);
+	                 break;
               
 	         case GT_NEG:
 	         case GT_NOT:
