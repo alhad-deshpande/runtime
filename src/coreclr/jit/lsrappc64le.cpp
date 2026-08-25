@@ -260,7 +260,7 @@ int LinearScan::BuildPutArgSplit(GenTreePutArgSplit* argNode)
         // 1. Consume all of the items in the GT_FIELD_LIST (source)
         // 2. Store to target slot and move to target registers (destination) from source
         //
-        unsigned sourceRegCount = 0;
+        unsigned sourceRegCount  = 0;
         unsigned totalFieldCount = 0;
 
         // To avoid redundant moves, have the argument operand computed in the
@@ -298,7 +298,7 @@ int LinearScan::BuildPutArgSplit(GenTreePutArgSplit* argNode)
         {
             GenTree* node = use.GetNode();
             assert(!node->isContained());
-            
+
             // Consume all the registers, setting the appropriate register mask for the ones that
             // go into registers.
             SingleTypeRegSet sourceMask = RBM_NONE;
@@ -313,17 +313,17 @@ int LinearScan::BuildPutArgSplit(GenTreePutArgSplit* argNode)
                 // The register allocator will ensure this register remains live.
                 sourceMask = RBM_NONE; // Let LSRA choose, but mark as delayFree below
             }
-            
+
             // Build the use and get the RefPosition
             RefPosition* useRefPosition = BuildUse(node, sourceMask);
-            
+
             // For stack-bound fields (sourceRegCount >= gtNumRegs), mark as delayFree to ensure
             // the value remains in the register until PUTARG_SPLIT completes
             if (sourceRegCount >= argNode->gtNumRegs)
             {
                 setDelayFree(useRefPosition);
             }
-            
+
             sourceRegCount++;
         }
         srcCount += sourceRegCount;
@@ -356,10 +356,10 @@ int LinearScan::BuildPutArgSplit(GenTreePutArgSplit* argNode)
     }
     buildInternalRegisterUses();
     BuildDefs(argNode, dstCount, argMask);
-    
+
     // Note: For HFA structs, getDefType() in lsra.h returns the correct HFA element type,
     // so BuildDefs creates intervals with the correct register type automatically.
-    
+
     return srcCount;
 }
 
@@ -1012,11 +1012,17 @@ int LinearScan::BuildNode(GenTree* tree)
             break;
 
 	case GT_NO_OP:
-        case GT_START_NONGC:
-        case GT_PROF_HOOK:
-            srcCount = 0;
-            assert(dstCount == 0);
-            break;
+	       case GT_START_NONGC:
+	           srcCount = 0;
+	           assert(dstCount == 0);
+	           break;
+
+	       case GT_PROF_HOOK:
+	           srcCount = 0;
+	           assert(dstCount == 0);
+	           killMask = getKillSetForProfilerHook();
+	           BuildKills(tree, killMask);
+	           break;
 
 	case GT_RETURN:
             srcCount = BuildReturn(tree);
@@ -1188,8 +1194,51 @@ int LinearScan::BuildNode(GenTree* tree)
 
 		      case GT_RETFILT:
 		          assert(dstCount == 0);
+		          if (tree->TypeGet() == TYP_VOID)
+		          {
+		              srcCount = 0;
+		          }
+		          else
+		          {
+		              assert(tree->TypeGet() == TYP_INT);
+		              srcCount = 1;
+		              BuildUse(tree->gtGetOp1(), RBM_INTRET.GetIntRegSet());
+		          }
 		          break;
-	
+
+		      case GT_KEEPALIVE:
+		          assert(dstCount == 0);
+		          srcCount = BuildOperandUses(tree->gtGetOp1());
+		          break;
+
+		      case GT_JMP:
+		          srcCount = 0;
+		          assert(dstCount == 0);
+		          break;
+
+		      case GT_JTRUE:
+		          // GT_JTRUE consumes the relop result that set the condition flags.
+		          srcCount = 1;
+		          assert(dstCount == 0);
+		          BuildOperandUses(tree->gtGetOp1(), RBM_NONE);
+		          break;
+
+		      case GT_SWITCH:
+		          // This should never occur since switch nodes must not be visible at this
+		          // point in the JIT.
+		          srcCount = 0;
+		          noway_assert(!"Switch must be lowered at this point");
+		          break;
+
+		      case GT_CKFINITE:
+		          srcCount = 1;
+		          assert(dstCount == 1);
+		          buildInternalIntRegisterDefForNode(tree);
+		          BuildUse(tree->gtGetOp1());
+		          BuildDef(tree);
+		          buildInternalRegisterUses();
+		          break;
+
 		      case GT_JMPTABLE:
 		          srcCount = 0;
 		          assert(dstCount == 1);
