@@ -1251,7 +1251,21 @@ int LinearScan::BuildNode(GenTree* tree)
               
 	         case GT_NEG:
 	         case GT_NOT:
+	         case GT_BSWAP:
+	             // Single-source, single-def: one register in, one register out.
+	             // GT_BSWAP (32/64-bit) is handled by genCodeForBswap using brw/brd.
 	             srcCount = BuildOperandUses(tree->gtGetOp1(), RBM_NONE);
+	             assert(dstCount == 1);
+	             BuildDef(tree);
+	             break;
+
+	         case GT_BSWAP16:
+	             // GT_BSWAP16 emits slwi+srwi+andi+andi+or using one internal scratch
+	             // register so the parallel shifts are safe even when targetReg aliases
+	             // srcReg.
+	             buildInternalIntRegisterDefForNode(tree);
+	             srcCount = BuildOperandUses(tree->gtGetOp1(), RBM_NONE);
+	             buildInternalRegisterUses();
 	             assert(dstCount == 1);
 	             BuildDef(tree);
 	             break;

@@ -2204,6 +2204,30 @@ size_t emitter::emitOutputInstr(insGroup* ig, instrDesc* id, BYTE** dp)
            ppc_fctiduz(dstRW, id->idReg1() - REG_F0, id->idReg2() - REG_F0);
            break;
 
+	case INS_cntlzw:
+	    // cntlzw rA, rS - Count Leading Zeros Word (32-bit)
+	    // Result is the number of leading zeros in the low 32 bits of rS, placed in rA.
+	    ppc_cntlzw(dstRW, id->idReg1(), id->idReg2());
+	    break;
+
+	case INS_cntlzd:
+	    // cntlzd rA, rS - Count Leading Zeros Doubleword (64-bit)
+	    // Result is the number of leading zeros in rS (64-bit), placed in rA.
+	    ppc_cntlzd(dstRW, id->idReg1(), id->idReg2());
+	    break;
+
+	case INS_brw:
+	    // brw rA, rS - Byte-Reverse Word (ISA 3.1)
+	    // Reverses the byte order of the low 32 bits of rS, zero-extends into rA.
+	    ppc_brw(dstRW, id->idReg1(), id->idReg2());
+	    break;
+
+	case INS_brd:
+	    // brd rA, rS - Byte-Reverse Doubleword (ISA 3.1)
+	    // Reverses the byte order of all 64 bits of rS into rA.
+	    ppc_brd(dstRW, id->idReg1(), id->idReg2());
+	    break;
+
 	case INS_extsb:
 	    // extsb rA, rS - Extend Sign Byte (sign-extend 8-bit to 64-bit)
 	    ppc_extsb(dstRW, id->idReg1(), id->idReg2());
@@ -3047,6 +3071,10 @@ const char* emitter::emitDisInsName(code_t code, const BYTE* addr, instrDesc* id
 	case INS_andc:    return "andc    ";
 	case INS_orc:     return "orc     ";
 	case INS_xori:    return "xori    ";
+	case INS_cntlzw:  return "cntlzw  ";
+	case INS_cntlzd:  return "cntlzd  ";
+	case INS_brw:     return "brw     ";
+	case INS_brd:     return "brd     ";
 	case INS_xoris:   return "xoris   ";
 	case INS_lbzx:   return "lbzx";
         case INS_lhzx:   return "lhzx";

@@ -167,6 +167,14 @@ INST(orc,         "orc",          0,      X_FORM,       0x7C000338)  // OR with 
 INST(xori,        "xori",         0,      D_FORM,       0x68000000)  // XOR Immediate
 INST(xoris,       "xoris",        0,      D_FORM,       0x6C000000)  // XOR Immediate Shifted
 
+// Count Leading Zeros — used to implement BitOperations.Log2 / LeadingZeroCount
+INST(cntlzw,      "cntlzw",       0,      X_FORM,       0x7C000034)  // Count Leading Zeros Word  (32-bit)
+INST(cntlzd,      "cntlzd",       0,      X_FORM,       0x7C000074)  // Count Leading Zeros Doubleword (64-bit)
+
+// Byte-reverse instructions — used to implement GT_BSWAP / GT_BSWAP16
+INST(brw,         "brw",          0,      X_FORM,       0x7C0001B6)  // Byte-Reverse Word  (ISA 3.1+; encode as brh fallback otherwise)
+INST(brd,         "brd",          0,      X_FORM,       0x7C000176)  // Byte-Reverse Doubleword (ISA 3.1+)
+
 // clang-format on
 /*****************************************************************************/
 #undef INST

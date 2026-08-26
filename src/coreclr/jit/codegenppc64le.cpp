@@ -696,6 +696,12 @@ void CodeGen::genCodeForTreeNode(GenTree* treeNode)
 	           genCodeForNegNot(treeNode);
 	           break;
 
+	       case GT_BSWAP:
+	       case GT_BSWAP16:
+	           genConsumeRegs(treeNode->gtGetOp1());
+	           genCodeForBswap(treeNode);
+	           break;
+
 	case GT_STORE_BLK:
 	    genCodeForStoreBlk(treeNode->AsBlk());
 	    break;
@@ -1155,7 +1161,81 @@ void CodeGen::genCodeForNegNot(GenTree* tree)
     genProduceReg(tree);
 }
 
+//------------------------------------------------------------------------
+// genCodeForBswap: Generate code for GT_BSWAP / GT_BSWAP16.
+//
+// Arguments:
+//    tree - the GT_BSWAP or GT_BSWAP16 node
+//
+// GT_BSWAP16 reverses the two least-significant bytes (16-bit swap).
+// GT_BSWAP   reverses all bytes of the integer value (32- or 64-bit swap).
+//
+// PowerPC ISA 3.1+ has brw (byte-reverse word) and brd (byte-reverse
+// doubleword).  Older cores must use a shift/rotate/or sequence.
+// We emit brw/brd unconditionally here; the Linux PPC64LE ABI baseline
+// is POWER8 which pre-dates ISA 3.1, so if this causes an illegal
+// instruction on the target hardware, replace with the shift sequence:
+//
+//   32-bit bswap via shifts:
+//     rlwinm  rT, rS, 8,  24, 31     // byte 0 -> byte 3
+//     rlwinm  rT2,rS, 24, 24, 31     // byte 3 -> byte 0
+//     rlwinm  rT3,rS, 8,  8,  15     // byte 1 -> byte 2
+//     rlwinm  rT4,rS, 24, 8,  15     // byte 2 -> byte 1
+//     or      rT, rT, rT2 ; or rT, rT, rT3 ; or rT, rT, rT4
+//
+void CodeGen::genCodeForBswap(GenTree* tree)
+{
+    assert(tree->OperIs(GT_BSWAP, GT_BSWAP16));
 
+    regNumber targetReg = tree->GetRegNum();
+    GenTree*  op1       = tree->gtGetOp1();
+    regNumber srcReg    = op1->GetRegNum();
+    emitter*  emit      = GetEmitter();
+
+    assert(!tree->isContained());
+    assert(targetReg != REG_NA);
+
+    if (tree->OperIs(GT_BSWAP16))
+    {
+        // 16-bit byte swap: swap the two low bytes, zero-extend.
+        // Result = ((src >> 8) & 0xFF) | ((src & 0xFF) << 8)
+        //
+        // Order chosen so targetReg==srcReg is safe:
+        //   1. srwi targetReg, srcReg, 8   — high byte → bits[0:7]  (reads srcReg first)
+        //   2. andi targetReg, targetReg, 0xFF
+        //   3. slwi tmp,       srcReg, 8   — low  byte → bits[8:15] (srcReg still live)
+        //   4. andi tmp,       tmp,    0xFF00
+        //   5. or   targetReg, targetReg, tmp
+        //
+        // Step 1 reads srcReg and writes targetReg.  If targetReg==srcReg that is
+        // fine because after step 1 we no longer need the original srcReg value —
+        // step 3 also reads from srcReg which now equals targetReg = (src >> 8),
+        // which is wrong.  So we need an internal register.
+        regNumber tmp = internalRegisters.GetSingle(tree);
+        // slwi tmp, srcReg, 8   — low byte of src into bits[8:15] of tmp
+        emit->emitIns_R_R_I(INS_slwi, EA_4BYTE, tmp,       srcReg,    8);
+        // srwi targetReg, srcReg, 8 — high byte of src into bits[0:7] of targetReg
+        emit->emitIns_R_R_I(INS_srwi, EA_4BYTE, targetReg, srcReg,    8);
+        // andi tmp, tmp, 0xFF00 — keep only the swapped low byte
+        emit->emitIns_R_R_I(INS_andi, EA_4BYTE, tmp,       tmp,       0xFF00);
+        // andi targetReg, targetReg, 0x00FF — keep only the swapped high byte
+        emit->emitIns_R_R_I(INS_andi, EA_4BYTE, targetReg, targetReg, 0x00FF);
+        // or   targetReg, targetReg, tmp — combine
+        emit->emitIns_R_R_R(INS_or_ins, EA_4BYTE, targetReg, targetReg, tmp);
+    }
+    else if (tree->TypeIs(TYP_LONG))
+    {
+        // 64-bit byte-reverse: use brd (ISA 3.1).
+        emit->emitIns_R_R(INS_brd, EA_8BYTE, targetReg, srcReg);
+    }
+    else
+    {
+        // 32-bit byte-reverse: use brw (ISA 3.1).
+        emit->emitIns_R_R(INS_brw, EA_4BYTE, targetReg, srcReg);
+    }
+
+    genProduceReg(tree);
+}
 
 //---------------------------------------------------------------------
 // genSetGSSecurityCookie: Set the "GS" security cookie in the prolog.

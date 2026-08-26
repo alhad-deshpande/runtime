@@ -219,6 +219,20 @@
 #define ppc_andc(c,A,S,B)  ppc_emit32 (c, (31 << 26) | ((S) << 21) | ((A) << 16) | ((B) << 11) | (60 << 1) | 0)
 #define ppc_orc(c,A,S,B)   ppc_emit32 (c, (31 << 26) | ((S) << 21) | ((A) << 16) | ((B) << 11) | (412 << 1) | 0)
 
+// Count Leading Zeros (X-form, rB field = 0)
+// Format: opcode(6) | rS(5) | rA(5) | 0(5) | XO(10) | Rc(1)
+// cntlzw rA,rS  XO=26  — count leading zeros of low 32 bits; result in [0,32]
+// cntlzd rA,rS  XO=58  — count leading zeros of 64-bit register; result in [0,64]
+#define ppc_cntlzw(c,A,S)  ppc_emit32 (c, (31 << 26) | ((S) << 21) | ((A) << 16) | (0 << 11) | (26 << 1) | 0)
+#define ppc_cntlzd(c,A,S)  ppc_emit32 (c, (31 << 26) | ((S) << 21) | ((A) << 16) | (0 << 11) | (58 << 1) | 0)
+
+// Byte-Reverse instructions (X-form, ISA 3.1, rB field = 0)
+// Format: opcode(6) | rS(5) | rA(5) | 0(5) | XO(10) | Rc(1)
+// brw rA,rS  XO=219  — byte-reverse the low 32 bits of rS, zero-extend into rA
+// brd rA,rS  XO=187  — byte-reverse all 64 bits of rS into rA
+#define ppc_brw(c,A,S)     ppc_emit32 (c, (31 << 26) | ((S) << 21) | ((A) << 16) | (0 << 11) | (219 << 1) | 0)
+#define ppc_brd(c,A,S)     ppc_emit32 (c, (31 << 26) | ((S) << 21) | ((A) << 16) | (0 << 11) | (187 << 1) | 0)
+
 // Trap instruction
 #define ppc_trap(c)        ppc_emit32 (c, 0x7FE00008)
 
