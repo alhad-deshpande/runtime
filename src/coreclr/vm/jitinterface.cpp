@@ -13445,6 +13445,7 @@ static bool ShouldUseInterpreterFallback(MethodDesc* ftnDesc,const char* ftnName
        { "Container[__Canon,__Canon]", "VerifyIntegrity" },
        { "System.Runtime.DependentHandle", ".ctor" },
        { "System.Buffers.SharedArrayPoolThreadLocalArray", ".ctor" },
+       { "System.ConsolePal","EnsureInitializedCore"},
     };
 
     const size_t numInclusions = sizeof(jitInclusionList) / sizeof(jitInclusionList[0]);

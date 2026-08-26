@@ -91,22 +91,35 @@ target_ssize_t CodeGen::genStackPointerConstantAdjustmentLoopWithProbe(ssize_t s
 //
 // PPC64LE ELFv2 localloc frame layout:
 //
-//   BEFORE:
+//   BEFORE first localloc:
 //     caller_SP - 0    ← grandparent backchain
-//     caller_SP - 8    ← saved old r31
-//     caller_SP - 16   ← top of our frame / localloc anchor
-//     r31 = r1 = caller_SP - totalFrameSize  (frame base)
+//     caller_SP - 8    ← saved old r31 (= prolog-saved FP)
+//     r1 + (totalFrameSize-16) ← GS security cookie slot   (= r1 + gsCookieOffset)
+//     r1 = r31 = caller_SP - totalFrameSize  (frame base)
 //     r1 + 0 .. r1 + totalFrameSize  ← entire frame
 //
 //   AFTER localloc(allocSize):
-//     new_r1 = old_r1 - allocSize  (SP shifted down)
-//     new_r1 + 0 .. +totalFrameSize  ← frame COPIED down by allocSize
-//     new_r1 + totalFrameSize ..      ← localloc block (zeroed)  ← targetReg
-//                  .. + allocSize
-//     caller_SP - 16                 ← top of localloc block
+//     new_r1 = r1 - allocSize   (SP shifted down by allocSize)
+//     0(new_r1) = caller_SP     (ELFv2 backchain, written atomically with SP decrement)
+//     new_r1 + 8 .. + totalFrameSize - 8   ← frame COPIED from current live position
+//                                             includes the GS cookie slot at +gsCookieOffset
+//     new_r1 + totalFrameSize - 8          ← NOT copied (prolog-saved r31 lives at caller_SP-8)
+//     new_r1 + totalFrameSize - 8 = caller_SP - 8 - allocSize  ← localloc block start
+//     new_r1 + totalFrameSize - 8 + allocSize - 8  ← localloc block end (= caller_SP-16)
+//     caller_SP - 8    ← saved old r31 (unchanged in place, never moved)
 //
-// r31 is loaded with caller_SP for backchain writes, then restored to new r1.
-// The epilog restores r31 from the callee-save area slot, not from the register.
+//   targetReg (constant):    caller_SP - 8 - amount  = r31 - 8 - amount
+//   targetReg (non-constant): new_r1 + totalFrameSize - 8
+//
+// KEY INVARIANTS:
+//   1. copyBytes = totalFrameSize - 16  (copies locals+cookie, skips only prolog-r31)
+//      This keeps the GS cookie intact in the copied frame without a separate Step 5a.
+//   2. regSrc = new_r1 + allocSize + 8 (not old_r1+8) so successive locallocs read
+//      from the current live copy rather than the original (already-overwritten) frame.
+//
+// r31 is loaded with caller_SP only to write the ELFv2 backchain at 0(new_r1).
+// After the copy, r31 is restored to new_r1 (BAILOUT) so FP-relative locals work.
+// The prolog-saved r31 at (caller_SP - 8) is never overwritten here.
 //
 void CodeGen::genLclHeap(GenTree* tree)
 {
@@ -128,9 +141,9 @@ void CodeGen::genLclHeap(GenTree* tree)
 
     // -----------------------------------------------------------------------
     // Step 1: r31 ← caller_SP (= 0(r1)).
-    // r31 is clobbered here; the epilog restores it from the callee-save slot.
-    // We use r31 to hold caller_SP so we can write the correct ELFv2 backchain
-    // (0(new_r1) = caller_SP) after every SP decrement.
+    // r31 is clobbered here; the epilog restores it from the prolog-saved slot
+    // at caller_SP - 8.  We need caller_SP in r31 so we can write the correct
+    // ELFv2 backchain word (0(new_r1) = caller_SP) after moving SP.
     // -----------------------------------------------------------------------
     emit->emitIns_R_R_I(INS_ld, EA_PTRSIZE, REG_FP, REG_SPBASE, 0);
 
@@ -172,7 +185,7 @@ void CodeGen::genLclHeap(GenTree* tree)
 
     // -----------------------------------------------------------------------
     // Step 3: move SP down by allocSize and immediately write backchain.
-    //   new_r1 = old_r1 - allocSize
+    //   new_r1 = r1 - allocSize
     //   0(new_r1) = caller_SP  (held in r31)
     // -----------------------------------------------------------------------
     if (size->IsCnsIntOrI())
@@ -188,23 +201,33 @@ void CodeGen::genLclHeap(GenTree* tree)
     emit->emitIns_R_R_I(INS_std, EA_PTRSIZE, REG_FP, REG_SPBASE, 0);
 
     // -----------------------------------------------------------------------
-    // Step 4: copy old frame contents to new position.
+    // Step 4: copy current frame contents downward to new position.
     //
-    //   src  = r31 - frameSize + 8   (old r1 + 8, skip the backchain word)
-    //   dst  = r1  + 8               (new r1 + 8)
-    //   count = frameSize - 8 bytes, 8 bytes at a time
+    // Source: new_r1 + allocSize + 8  (= old_r1 + 8, skip the backchain word).
+    //   Computed as new_r1 + allocSize + 8 so successive locallocs always read
+    //   from the CURRENT (already-relocated) copy of the frame, not the stale
+    //   original which earlier localloc copies have partially overwritten.
     //
-    // After copy, dst points to r1 + 8 + (frameSize - 8) = r1 + frameSize
-    //           = (caller_SP - frameSize - allocSize) + frameSize
-    //           = caller_SP - allocSize
+    //   Constant allocSize: regSrc = new_r1 + amount + 8
+    //   Variable allocSize: regSrc = new_r1 + regCnt + 8
     //
-    // Step 5: zero localloc block [caller_SP - 16 - allocSize .. caller_SP - 16).
-    //   targetReg = r31 - 16 - allocSize  = caller_SP - 16 - allocSize  ✓
+    // Destination: new_r1 + 8
+    //
+    // Count: copy all frame words except:
+    //   - the backchain at new_r1+0           (written fresh in Step 3)
+    //   - prolog-saved r31 at caller_SP-8     (stays fixed, never moved)
+    //
+    //   copyBytes = totalFrameSize - 16
+    //     src: old_r1 + 8  ..  old_r1 + totalFrameSize - 8  (exclusive)
+    //     dst: new_r1 + 8  ..  new_r1 + totalFrameSize - 8  (exclusive)
+    //
+    //   This INCLUDES the GS security cookie at old_r1+(totalFrameSize-16),
+    //   so it is relocated intact and no post-copy restore is needed.
     //
     // r0 = 8-byte copy/zero scratch (not LSRA-allocated)
     // -----------------------------------------------------------------------
     {
-        const int copyBytes = totalFrameSize - 24;
+        const int copyBytes = totalFrameSize - 16;
 
         // Constant path:     Extract regCtr, regSrc, regDst  (3 regs)
         // Non-constant path: regCnt already extracted in Step 2; then regCtr, regSrc, regDst
@@ -212,9 +235,22 @@ void CodeGen::genLclHeap(GenTree* tree)
         regNumber regSrc = internalRegisters.Extract(tree);
         regNumber regDst = internalRegisters.Extract(tree);
 
-        // regSrc = old_r1 + 8  (r31=caller_SP, r31-(totalFrameSize-8)=old_r1+8)
-        genInstrWithConstant(INS_addi, EA_PTRSIZE, regSrc, REG_FP,
-                             -(ssize_t)(totalFrameSize - 8), REG_R0);
+        // regSrc = new_r1 + allocSize + 8  (the current live frame base + 8)
+        // This correctly sources from the most-recently-relocated copy when
+        // localloc is called multiple times in the same function.
+        if (size->IsCnsIntOrI())
+        {
+            // Constant path: new_r1 is already in r1; amount is the aligned size.
+            genInstrWithConstant(INS_addi, EA_PTRSIZE, regSrc, REG_SPBASE,
+                                 (ssize_t)(amount + 8), REG_R0);
+        }
+        else
+        {
+            // Non-constant path: regCnt holds the aligned allocSize.
+            // regSrc = r1 + regCnt + 8
+            emit->emitIns_R_R_I(INS_addi, EA_PTRSIZE, regSrc, REG_SPBASE, 8);
+            emit->emitIns_R_R_R(INS_add, EA_PTRSIZE, regSrc, regSrc, regCnt);
+        }
 
         // regDst = new_r1 + 8
         genInstrWithConstant(INS_addi, EA_PTRSIZE, regDst, REG_SPBASE,
@@ -236,16 +272,27 @@ void CodeGen::genLclHeap(GenTree* tree)
         }
 
         // -----------------------------------------------------------------------
-        // Step 5: zero [caller_SP - 16 - allocSize .. caller_SP - 16).
-        //   targetReg = r31 - 16 - allocSize
+        // Step 5: zero localloc block.
+        //
+        // The localloc buffer is placed immediately below caller_SP - 8
+        // (the prolog-saved r31 slot which never moves):
+        //
+        //   Constant path:    block = [caller_SP - 8 - amount .. caller_SP - 8)
+        //                     targetReg = r31 - 8 - amount  (r31 = caller_SP)
+        //   Non-constant path: block = [new_r1 + totalFrameSize - 8 .. caller_SP - 8)
+        //                     targetReg = new_r1 + (totalFrameSize - 8)
+        //
+        // NOTE: the GS cookie slot is at new_r1 + gsCookieOffset which is BELOW
+        // the localloc buffer and was copied intact in Step 4.  No post-zero
+        // restore is required.
         // -----------------------------------------------------------------------
         instGen_Set_Reg_To_Zero(EA_PTRSIZE, REG_R0);
 
         if (size->IsCnsIntOrI())
         {
-            // targetReg = r31 - 16 - amount  (r31 = caller_SP)
+            // targetReg = r31 - 8 - amount  (r31 = caller_SP)
             genInstrWithConstant(INS_addi, EA_PTRSIZE, targetReg, REG_FP,
-                                 -(ssize_t)(16 + amount), regCtr);
+                                 -(ssize_t)(8 + amount), regCtr);
 
             if (amount <= compiler->getUnrollThreshold(Compiler::UnrollKind::Memset))
             {
@@ -267,19 +314,12 @@ void CodeGen::genLclHeap(GenTree* tree)
         }
         else
         {
-            // Localloc block layout (non-constant allocSize):
-            //   start = new_r1 + (totalFrameSize - 16) = r1 + (totalFrameSize - 16)
-            //   end   = r31 - 16 = caller_SP - 16
-            //   size  = (r31 - 16) - start = allocSize
-            //
-            // targetReg = r1 + (totalFrameSize - 16)  (start of block, returned to caller)
+            // targetReg = new_r1 + (totalFrameSize - 8)
             genInstrWithConstant(INS_addi, EA_PTRSIZE, targetReg, REG_SPBASE,
-                                 (ssize_t)(totalFrameSize - 16), REG_R0);
+                                 (ssize_t)(totalFrameSize - 8), REG_R0);
 
-            // regCtr = (r31 - 16) - targetReg = allocSize
-            // Step 1: regCtr = r31 - 16
-            emit->emitIns_R_R_I(INS_addi, EA_PTRSIZE, regCtr, REG_FP, -16);
-            // Step 2: regCtr = regCtr - targetReg  (subf D,A,B → D=B-A)
+            // regCtr = (r31 - 8) - targetReg = allocSize
+            emit->emitIns_R_R_I(INS_addi, EA_PTRSIZE, regCtr, REG_FP, -8);
             emit->emitIns_R_R_R(INS_subf, EA_PTRSIZE, regCtr, targetReg, regCtr);
 
             emit->emitIns_Mov(INS_mov, EA_PTRSIZE, regDst, targetReg, /* canSkip */ false);
@@ -291,13 +331,13 @@ void CodeGen::genLclHeap(GenTree* tree)
             emit->emitIns_R_I(INS_cmpdi,  EA_PTRSIZE, regCtr, 0);
             inst_JMP(EJ_gt, zeroLoop);
         }
+        // GS cookie was copied intact in Step 4 — no Step 5a needed.
     }
 
 BAILOUT:
     // r31 currently holds caller_SP (loaded at Step 1).
     // Restore r31 = new frame base (= new r1) so that FP-relative locals are correct.
-    // Do NOT write r31 into -8(r31): that slot holds the saved original r31 written
-    // by the prolog and must not be clobbered — the epilog reloads r31 from it.
+    // The prolog-saved r31 slot at caller_SP - 8 is untouched; the epilog uses it.
     GetEmitter()->emitIns_Mov(INS_mov, EA_PTRSIZE, REG_FP, REG_SPBASE, /* canSkip */ false);
     GetEmitter()->emitIns_R_R_I(INS_std,  EA_PTRSIZE, REG_FP, REG_SPBASE, -8);
     if (endLabel != nullptr)
