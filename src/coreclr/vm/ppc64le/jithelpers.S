@@ -243,24 +243,98 @@ LEAF_ENTRY JIT_ByRefWriteBarrier, _TEXT
 	cmpld %r3, %r6
 	bge LOCAL_LABEL(NotInHeap_ByRef)
 	
-	// In heap - need to do full write barrier
-	// Save r3 and r4 for later increment
-	mr %r6, %r3
-	mr %r7, %r4
-	
-	// Set up arguments: r3=dst, r4=value
-	mr %r4, %r5
-	
-	// Call JIT_WriteBarrier (not CheckedWriteBarrier to avoid double check)
-	// This will write the value and handle GC bookkeeping
-	// It will also increment r3 by 8
-	// Use local entry to skip TOC setup (r2 already correct from our prolog).
-	bl LOCAL_LABEL(JIT_WriteBarrier_LocalEntry)
-	
-	// Increment source pointer
-	addi %r4, %r7, 8
-	
-	// r3 was already incremented by JIT_WriteBarrier
+	// In heap — do the store and card-table update inline.
+	// r3 = dst, r4 = src address, r5 = value (loaded above), r2 = TOC (set in prolog).
+	// r6, r7 are available scratch.  We must NOT use bl because this is a LEAF_ENTRY
+	// (LR holds our caller's return address and is never saved/restored here).
+
+	// Store the value
+	std %r5, 0(%r3)
+
+#ifdef WRITE_BARRIER_CHECK
+	// Shadow heap update (same logic as JIT_WriteBarrier)
+	addis %r6, %r2, g_GCShadow@toc@ha
+	ld %r6, g_GCShadow@toc@l(%r6)
+	cmpdi %r6, 0
+	beq LOCAL_LABEL(ByRef_ShadowUpdateDisabled)
+
+	addis %r7, %r2, g_lowest_address@toc@ha
+	ld %r7, g_lowest_address@toc@l(%r7)
+	sub %r7, %r3, %r7
+	add %r6, %r6, %r7
+
+	addis %r7, %r2, g_GCShadowEnd@toc@ha
+	ld %r7, g_GCShadowEnd@toc@l(%r7)
+	cmpld %r6, %r7
+	bge LOCAL_LABEL(ByRef_ShadowUpdateDisabled)
+
+	std %r5, 0(%r6)
+	hwsync
+	ld %r7, 0(%r3)
+	cmpld %r7, %r5
+	beq LOCAL_LABEL(ByRef_ShadowUpdateDisabled)
+	lis %r7, 0xcccc
+	ori %r7, %r7, 0xcccd
+	std %r7, 0(%r6)
+LOCAL_LABEL(ByRef_ShadowUpdateDisabled):
+#endif
+
+#ifdef FEATURE_USE_SOFTWARE_WRITE_WATCH_FOR_GC_HEAP
+	addis %r6, %r2, g_sw_ww_enabled_for_gc_heap@toc@ha
+	lbz %r6, g_sw_ww_enabled_for_gc_heap@toc@l(%r6)
+	cmpdi %r6, 0
+	beq LOCAL_LABEL(ByRef_CheckCardTable)
+
+	srdi %r6, %r3, 12
+	addis %r7, %r2, g_sw_ww_table@toc@ha
+	ld %r7, g_sw_ww_table@toc@l(%r7)
+	add %r6, %r6, %r7
+	lbz %r7, 0(%r6)
+	cmpdi %r7, 0
+	bne LOCAL_LABEL(ByRef_CheckCardTable)
+	li %r7, 0xFF
+	stb %r7, 0(%r6)
+#endif
+
+LOCAL_LABEL(ByRef_CheckCardTable):
+	// Check if the value is in the ephemeral generation
+	addis %r6, %r2, g_ephemeral_low@toc@ha
+	ld %r6, g_ephemeral_low@toc@l(%r6)
+	cmpld %r5, %r6
+	blt LOCAL_LABEL(ByRef_Exit)
+
+	addis %r6, %r2, g_ephemeral_high@toc@ha
+	ld %r6, g_ephemeral_high@toc@l(%r6)
+	cmpld %r5, %r6
+	bge LOCAL_LABEL(ByRef_Exit)
+
+	// Update card table: pCardByte = g_card_table + (dst >> 11)
+	srdi %r6, %r3, 11
+	addis %r7, %r2, g_card_table@toc@ha
+	ld %r7, g_card_table@toc@l(%r7)
+	add %r6, %r6, %r7
+	lbz %r7, 0(%r6)
+	cmpdi %r7, 0xFF
+	beq LOCAL_LABEL(ByRef_Exit)
+	li %r7, 0xFF
+	stb %r7, 0(%r6)
+
+#ifdef FEATURE_MANUALLY_MANAGED_CARD_BUNDLES
+	srdi %r6, %r3, 21
+	addis %r7, %r2, g_card_bundle_table@toc@ha
+	ld %r7, g_card_bundle_table@toc@l(%r7)
+	add %r6, %r6, %r7
+	lbz %r7, 0(%r6)
+	cmpdi %r7, 0xFF
+	beq LOCAL_LABEL(ByRef_Exit)
+	li %r7, 0xFF
+	stb %r7, 0(%r6)
+#endif
+
+LOCAL_LABEL(ByRef_Exit):
+	// Increment both dst (r3) and src (r4) by 8
+	addi %r3, %r3, 8
+	addi %r4, %r4, 8
 	blr
 
 LOCAL_LABEL(NotInHeap_ByRef):

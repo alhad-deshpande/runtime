@@ -13408,6 +13408,43 @@ static bool ShouldUseInterpreterFallback(MethodDesc* ftnDesc,const char* ftnName
        { "System.SpanHelpers","NonPackedIndexOfValueType"},
        { "System.SpanHelpers","NonPackedIndexOfAnyValueType" },
        { "System.Diagnostics.Tracing.Statics","MetadataForString"},
+       { "System.Diagnostics.Tracing.EventSource", "InitializeProviderMetadata" },
+       // SharedArrayPool accesses [ThreadStatic] field t_tlsBuckets via LDSFLD/STSFLD.
+       // The interpreter's StaticFldAddrWork does not yet support CORINFO_FIELD_STATIC_TLS_MANAGED
+       // so these methods must be JIT-compiled to avoid hitting NYI_INTERP("Thread-local static.").
+       // m_pszDebugClassName carries the concrete instantiation name (e.g. [Char]) for the first
+       // call, not the shared [__Canon] form, so both variants are listed.
+       { "System.Buffers.SharedArrayPool`1[__Canon]", "Rent" },
+       { "System.Buffers.SharedArrayPool`1[__Canon]", "Return" },
+       { "System.Buffers.SharedArrayPool`1[__Canon]", "InitializeTlsBucketsAndTrimming" },
+       { "System.Buffers.SharedArrayPool`1[Char]", "Rent" },
+       { "System.Buffers.SharedArrayPool`1[Char]", "Return" },
+       { "System.Buffers.SharedArrayPool`1[Char]", "InitializeTlsBucketsAndTrimming" },
+       // ArrayPoolEventSource static ctor initializes EventSource infrastructure including
+       // ProviderMetadata.  In DEBUG builds, InitializeProviderMetadata() always calls
+       // Debug.Assert(ProviderMetadata.SequenceEqual(...)) which fails when the auto-generated
+       // get_ProviderMetadata property (a ReadOnlySpan over a literal blob) is interpreted
+       // because the interpreter does not handle the CreateSpan intrinsic correctly.
+       { "System.Buffers.ArrayPoolEventSource", ".cctor" },
+       { "System.Buffers.ArrayPoolEventSource", ".ctor" },
+       { "System.Buffers.ArrayPoolEventSource", "get_ProviderMetadata" },
+       // InitializeTlsBucketsAndTrimming (JIT-compiled) calls ConditionalWeakTable.Add and
+       // Gen2GcCallback.Register. The CWT internal methods and DependentHandle must be JIT-compiled:
+       //   - Container methods: interpreter hangs on DependentHandle:.ctor QCall P/Invoke.
+       //   - DependentHandle:.ctor: calls InternalAllocWithGCTransition (QCall with managed ref
+       //     ObjectHandleOnStack args); the interpreter hangs marshalling these on PPC64LE.
+       //   - SharedArrayPoolThreadLocalArray:.ctor: must be JIT-compiled because Return (JIT-compiled)
+       //     calls it passing a heap-interior byref (tlsBuckets[i]) as `this`. The interpreter stub
+       //     saves this byref in its register save area but does not register it for GC scanning;
+       //     a GC during interpretation would then corrupt the pointer causing a hang/fault.
+       { "System.Runtime.CompilerServices.ConditionalWeakTable`2[__Canon,__Canon]", "Add" },
+       { "System.Runtime.CompilerServices.ConditionalWeakTable`2[__Canon,__Canon]", "CreateEntry" },
+       { "Container[__Canon,__Canon]", "FindEntry" },
+       { "Container[__Canon,__Canon]", "get_HasCapacity" },
+       { "Container[__Canon,__Canon]", "CreateEntryNoResize" },
+       { "Container[__Canon,__Canon]", "VerifyIntegrity" },
+       { "System.Runtime.DependentHandle", ".ctor" },
+       { "System.Buffers.SharedArrayPoolThreadLocalArray", ".ctor" },
     };
 
     const size_t numInclusions = sizeof(jitInclusionList) / sizeof(jitInclusionList[0]);
