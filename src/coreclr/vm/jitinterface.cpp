@@ -13475,7 +13475,7 @@ static bool ShouldUseInterpreterFallback(MethodDesc* ftnDesc,const char* ftnName
        { "System.Gen2GcCallback",".ctor"},
        { "System.Buffers.ArrayPool`1[Char]","get_Shared"},
        { "System.Runtime.CompilerServices.Unsafe","OpportunisticMisalignment"},
-       { "System.Buffers.Text.FormattingHelpers","CountDigits"},
+       //{ "System.Buffers.Text.FormattingHelpers","CountDigits"},
     };
 
     const size_t numInclusions = sizeof(jitInclusionList) / sizeof(jitInclusionList[0]);
