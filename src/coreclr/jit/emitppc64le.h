@@ -75,7 +75,7 @@
 #define ppc_srw(c,A,S,B)   ppc_emit32(c, (31 << 26) | ((S) << 21) | ((A) << 16) | ((B) << 11) | (536 << 1) | 0)
 #define ppc_sraw(c,A,S,B)  ppc_emit32(c, (31 << 26) | ((S) << 21) | ((A) << 16) | ((B) << 11) | (792 << 1) | 0)
 // Additional immediate shifts
-#define ppc_sradi(c,A,S,n) ppc_emit32(c, (31 << 26) | ((S) << 21) | ((A) << 16) | (((n) & 0x1f) << 11) | (((n) & 0x20) >> 4) | (413 << 1) | 0)
+#define ppc_sradi(c,A,S,n) ppc_emit32(c, (31 << 26) | ((S) << 21) | ((A) << 16) | (((n) & 0x1f) << 11) | (413 << 2) | (((n) & 0x20) >> 4) | 0)
 #define ppc_slwi(c,A,S,n)  ppc_emit32(c, (21 << 26) | ((S) << 21) | ((A) << 16) | ((n) << 11) | (0 << 6) | ((31-(n)) << 1) | 0)
 #define ppc_srwi(c,A,S,n)  ppc_emit32(c, (21 << 26) | ((S) << 21) | ((A) << 16) | ((32-(n)) << 11) | ((n) << 6) | (31 << 1) | 0)
 #define ppc_srawi(c,A,S,n) ppc_emit32(c, (31 << 26) | ((S) << 21) | ((A) << 16) | ((n) << 11) | (824 << 1) | 0)
