@@ -8354,6 +8354,12 @@ void CodeGen::genBitCast(var_types targetType, regNumber targetReg, var_types sr
 // Arguments
 //    treeNode - the GT_BITCAST for which we're generating code
 //
+// Notes:
+//    TARGET_POWERPC64 provides its own override in codegenppc64le.cpp because
+//    PPC64LE has no single instruction to move between GPR and FPR register
+//    banks and requires a stack round-trip (std/lfd or stfd/ld).
+//
+#ifndef TARGET_POWERPC64
 void CodeGen::genCodeForBitCast(GenTreeOp* treeNode)
 {
     assert(treeNode->TypeGet() == genActualType(treeNode));
@@ -8375,6 +8381,7 @@ void CodeGen::genCodeForBitCast(GenTreeOp* treeNode)
     }
     genProduceReg(treeNode);
 }
+#endif // !TARGET_POWERPC64
 
 //----------------------------------------------------------------------
 // genCanOmitNormalizationForBswap16:

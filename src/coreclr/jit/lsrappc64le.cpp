@@ -1445,6 +1445,34 @@ int LinearScan::BuildNode(GenTree* tree)
 	       }
 	       break;
 
+	       case GT_BITCAST:
+	       {
+	           // GT_BITCAST reinterprets the bit-pattern of its operand in a different
+	           // register bank (e.g. int <-> float) without changing the bits.
+	           // On PPC64LE this is lowered to a stfd/lfd or mfvsrd/mtvsrd pair,
+	           // so LSRA just needs one source and one destination register.
+	           // When the node carries a pre-assigned physical register (argReg),
+	           // we constrain the def to that register — matching what ARM does.
+	           assert(dstCount == 1);
+	           regNumber        argReg  = tree->GetRegNum();
+	           SingleTypeRegSet argMask = RBM_NONE;
+	           if (argReg != REG_COUNT)
+	           {
+	               argMask = genSingleTypeRegMask(argReg);
+	           }
+	           if (!tree->gtGetOp1()->isContained())
+	           {
+	               BuildUse(tree->gtGetOp1());
+	               srcCount = 1;
+	           }
+	           else
+	           {
+	               srcCount = 0;
+	           }
+	           BuildDefs(tree, dstCount, argMask);
+	       }
+	       break;
+
 	       default:
 	       {
 	           printf("LSRA BuildNode: Unhandled operation: %s (oper=%d)\n",

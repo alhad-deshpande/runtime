@@ -846,6 +846,10 @@ void CodeGen::genCodeForTreeNode(GenTree* treeNode)
             genIntrinsic(treeNode->AsIntrinsic());
             break;
 
+        case GT_BITCAST:
+            genCodeForBitCast(treeNode->AsOp());
+            break;
+
         default:
             printf("ERROR: Unhandled tree node operation: %s (oper=%d)\n",
                    GenTree::OpName(treeNode->gtOper), treeNode->gtOper);
@@ -856,8 +860,96 @@ void CodeGen::genCodeForTreeNode(GenTree* treeNode)
 }
 
 //------------------------------------------------------------------------
+// genCodeForBitCast: Generate code for a GT_BITCAST node on PPC64LE.
+//
+// A BITCAST reinterprets the raw bit-pattern of the source value in a
+// different register bank without any numeric conversion:
+//   • int  → float  (GPR → FPR): std srcReg, tmpOff(r1)  /  lfd  dstReg, tmpOff(r1)
+//   • float → int   (FPR → GPR): stfd srcReg, tmpOff(r1) /  ld   dstReg, tmpOff(r1)
+//   • float → float (FPR → FPR): fmr  dstReg, srcReg
+//   • int   → int   (GPR → GPR): mr   dstReg, srcReg
+//
+// PowerPC64 has no single instruction that moves between GPR and FPR
+// (mfvsrd/mtvsrd are VSX instructions not guaranteed in this JIT's ISA
+// baseline), so the cross-bank cases use an 8-byte scratch slot at the
+// top of the local frame — the same convention used by genIntToFloatCast
+// and genFloatToIntCast.
+//
+// Arguments:
+//    treeNode - the GT_BITCAST node
+//
+void CodeGen::genCodeForBitCast(GenTreeOp* treeNode)
+{
+    assert(treeNode->OperIs(GT_BITCAST));
+    assert(treeNode->TypeGet() == genActualType(treeNode));
+
+    regNumber targetReg  = treeNode->GetRegNum();
+    var_types targetType = treeNode->TypeGet();
+    GenTree*  op1        = treeNode->gtGetOp1();
+
+    genConsumeRegs(op1);
+
+    if (op1->isContained())
+    {
+        // The only legal contained operand is a LCL_VAR whose slot holds the
+        // bit-pattern we want to load directly into targetReg.
+        assert(op1->OperIs(GT_LCL_VAR));
+        unsigned    lclNum  = op1->AsLclVarCommon()->GetLclNum();
+        instruction loadIns = ins_Load(targetType, compiler->isSIMDTypeLocalAligned(lclNum));
+        GetEmitter()->emitIns_R_S(loadIns, emitTypeSize(targetType), targetReg, lclNum, 0);
+        genProduceReg(treeNode);
+        return;
+    }
+
+    regNumber srcReg  = op1->GetRegNum();
+    var_types srcType = op1->TypeGet();
+
+    const bool srcFlt = varTypeUsesFloatReg(srcType);
+    const bool dstFlt = varTypeUsesFloatReg(targetType);
+
+    if (srcFlt == dstFlt)
+    {
+        // Same register bank: a plain register-to-register copy suffices.
+        //   FPR→FPR: fmr   (INS_fmr  via ins_Copy)
+        //   GPR→GPR: mr    (INS_mov  via ins_Copy)
+        inst_Mov(targetType, targetReg, srcReg, /* canSkip */ true);
+    }
+    else
+    {
+        // Cross register-bank reinterpretation via an 8-byte stack scratch slot.
+        // We reuse the slot at (SP + frameSize - 16) already established for
+        // genIntToFloatCast / genFloatToIntCast.
+        emitter* emit      = GetEmitter();
+        int      tmpOffset = genTotalFrameSize() - 16;
+
+        if (!srcFlt)
+        {
+            // GPR → FPR: store the 64-bit integer word, then load as FP bits.
+            emit->emitIns_R_R_I(INS_std, EA_8BYTE, srcReg, REG_SPBASE, tmpOffset);
+            emit->emitIns_R_R_I(INS_lfd, EA_8BYTE, targetReg, REG_SPBASE, tmpOffset);
+        }
+        else
+        {
+            // FPR → GPR: store the FP word, then load as an integer bit-pattern.
+            emit->emitIns_R_R_I(INS_stfd, EA_8BYTE, srcReg, REG_SPBASE, tmpOffset);
+            if (genTypeSize(targetType) == 4)
+            {
+                // 32-bit target: pick up the low 32 bits (LE: offset 0).
+                emit->emitIns_R_R_I(INS_lwz, EA_4BYTE, targetReg, REG_SPBASE, tmpOffset);
+            }
+            else
+            {
+                emit->emitIns_R_R_I(INS_ld, EA_8BYTE, targetReg, REG_SPBASE, tmpOffset);
+            }
+        }
+    }
+
+    genProduceReg(treeNode);
+}
+
+//------------------------------------------------------------------------
 // genCodeForMulHi: Generate code for GT_MULHI — the upper half of a full-width
-//                  integer multiply (used by the Lemire FastMod algorithm).
+// integer multiply (used by the Lemire FastMod algorithm).
 //
 // Arguments:
 //    treeNode - the GT_MULHI node
