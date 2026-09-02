@@ -3698,6 +3698,17 @@ void CodeGen::genCodeForIndexAddr(GenTreeIndexAddr* node)
     // R12 is a volatile register safe to use as scratch
     const regNumber tmpReg = REG_R12;
 
+    // On PPC64LE all pointer arithmetic uses 64-bit registers.  If the index
+    // is a signed 32-bit value its upper 32 bits may be garbage (or sign-
+    // extended from a prior `lwa` load).  Sign-extend it to 64 bits with
+    // `extsw` so that subsequent `sldi`/`add` instructions see the correct
+    // value.  Zero-extended (unsigned) indices are already safe because
+    // `lwz` leaves the upper 32 bits clear; do nothing for those.
+    if (index->TypeGet() == TYP_INT)
+    {
+        emit->emitIns_R_R(INS_extsw, EA_8BYTE, indexReg, indexReg);
+    }
+
     // Generate the bounds check if necessary.
     if (node->IsBoundsChecked())
     {
@@ -6889,6 +6900,16 @@ void CodeGen::genLeaInstruction(GenTreeAddrMode* lea)
     // 1. If we have an index with scale, compute: index << log2(scale)
     // 2. Add base (if present)
     // 3. Add offset (if present)
+
+    // Sign-extend a TYP_INT index into 64 bits before any pointer arithmetic.
+    // A TYP_INT index loaded from memory via `lwa` is already sign-extended, but
+    // one computed in a register (e.g. result of mullw or addi) has undefined
+    // upper 32 bits.  `extsw` is the authoritative 32->64 sign-extension on PPC64.
+    // TYP_LONG / TYP_I_IMPL indices are already full 64-bit values; leave them alone.
+    if (index != nullptr && (index->TypeGet() == TYP_INT))
+    {
+        GetEmitter()->emitIns_R_R(INS_extsw, EA_8BYTE, index->GetRegNum(), index->GetRegNum());
+    }
 
     regNumber resultReg = targetReg;
 

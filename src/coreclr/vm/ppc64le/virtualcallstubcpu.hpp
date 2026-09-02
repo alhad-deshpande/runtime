@@ -8,7 +8,7 @@
 
 // TODO RESOLVE_STUB
 #define DISPATCH_STUB_FIRST_DWORD 0xe80c0028 // ld r0,40(r12)
-#define RESOLVE_STUB_FIRST_DWORD 0xe9230000  // ld r9, 0(r3)
+#define RESOLVE_STUB_FIRST_DWORD  0xe9430000 // ld r10,0(r3)
 
 #define USES_LOOKUP_STUBS   1
 
@@ -21,7 +21,7 @@ struct LookupStub
     inline size_t size() { LIMITED_METHOD_CONTRACT; return sizeof(LookupStub); }
 private:
     friend struct LookupHolder;
-    UINT32 _entryPoint[6];    // 6 instructions (24 bytes) 
+    UINT32 _entryPoint[6];    // 6 instructions (24 bytes)
     PCODE _resolveWorkerTarget; // offset 24
     size_t _token;            // offset 32
 };
@@ -31,15 +31,33 @@ struct LookupHolder
     private:
         LookupStub _stub;
     public:
-	static void InitializeStatic() { }
+ static void InitializeStatic() { }
 
-	void Initialize(LookupHolder* pLookupHolderRX, PCODE resolveWorkerTarget, size_t dispatchToken) {
+ void Initialize(LookupHolder* pLookupHolderRX, PCODE resolveWorkerTarget, size_t dispatchToken) {
         // r12 points to _entryPoint[0] (stub base), set by the caller.
-        _stub._entryPoint[0] = 0x7d896378; // mr r9, r12
-        _stub._entryPoint[1] = 0xe9890018; // ld r12, 24(r9) -> __resolveWorkerTarget
-        _stub._entryPoint[2] = 0xe9490020; // ld r10, 32(r9) -> _token
-        _stub._entryPoint[3] = 0x7d8903a6; // mtspr CTR, r12
-        _stub._entryPoint[4] = 0x4e800420; // bctr
+        //
+        // We must not use r9 (IFormatProvider / arg register) or any other argument
+        // register (r3-r10) as scratch. r0 cannot be a D-form load base (hardware
+        // reads it as 0). The safe approach is to load _token into r10 FIRST (while
+        // r12 is still the stub base), then overwrite r12 with _resolveWorkerTarget.
+        //
+        // [0] ld   r10, 32(r12)   ; _token → r10        (r12 = stub base)
+        // [1] ld   r12, 24(r12)   ; _resolveWorkerTarget → r12 (overwrites stub base)
+        // [2] mtctr r12           ; CTR = resolveWorkerTarget
+        // [3] bctr                ; jump to resolveWorkerTarget(token=r10, ...)
+        // [4] nop
+        // [5] nop
+        //
+        // Encoding:
+        //   ld r10,32(r12)  : RT=10 RA=12 DS=8(=32/4)  → 0xe94c0020
+        //   ld r12,24(r12)  : RT=12 RA=12 DS=6(=24/4)  → 0xe98c0018
+        //   mtctr r12       :                           → 0x7d8903a6
+        //   bctr            :                           → 0x4e800420
+        _stub._entryPoint[0] = 0xe94c0020; // ld   r10,32(r12)  ; _token → r10
+        _stub._entryPoint[1] = 0xe98c0018; // ld   r12,24(r12)  ; _resolveWorkerTarget → r12
+        _stub._entryPoint[2] = 0x7d8903a6; // mtctr r12
+        _stub._entryPoint[3] = 0x4e800420; // bctr
+        _stub._entryPoint[4] = 0x60000000; // nop
         _stub._entryPoint[5] = 0x60000000; // nop
         _stub._resolveWorkerTarget = resolveWorkerTarget;
         _stub._token = dispatchToken;
@@ -192,62 +210,64 @@ struct ResolveHolder
 	   // -------------------------------
 	   // r11 = indirection cell (virtualStubParamInfo = REG_R11, set by JIT, preserved here)
 	   // r12 = this stub's base address (set by caller)
-	   // NOTE: r4 is the 2nd argument register and MUST NOT be clobbered by this frameless
-	   // stub.  Use r9 (volatile scratch) to hold the actual MethodTable instead.
-	   //   ld    r9,0(r3)               ; load actual MethodTable from object → r9 (safe scratch)
-	   //   srdi  r0,r9,12
-	   //   add   r0,r0,r9
-	   //   xori  r0,r0,hashedToken
-	   //   andi. r0,r0,CALL_STUB_CACHE_MASK
-	   //   sldi  r0,r0,3
-	   //   ld    r10,160(r12)           ; cache base address
-	   //   add   r10,r10,r0             ; cache slot pointer
-	   //   ld    r0,0(r10)              ; cached MethodTable
-	   //   cmpd  cr0,r9,r0
-	   //   bne   miss                   ; +28
-	   //   ld    r0,8(r10)              ; cached token
-	   //   ld    r5,168(r12)            ; this stub's token
-	   //   cmpd  cr0,r5,r0
-	   //   bne   miss                   ; +12
-	   // hit: PPC64LE ABI requires r12 = target address before bctr
-	   //   ld    r12,16(r10)            ; cached target → r12
-	   //   mtctr r12
-	   //   bctr
-	   // miss: r11 already holds cell|flags; r12 still = stub base
-	   //   std   r10,48(r1)             ; save cache slot for ResolveWorkerChainLookupAsmStub
-	   //   ld    r10,168(r12)           ; token → r10 while r12 still = stub base
-	   //   ld    r12,176(r12)           ; worker addr → r12 (must be last read from stub base)
-	   //   mtctr r12                    ; CTR = ResolveWorkerAsmStub; r12 = target per ABI ✓
-	   //   bctr
-	   //   nop; nop; nop
-	       _stub._resolveEntryPoint[0]  = 0xe9230000;                          // ld    r9,0(r3)      ; actual MT → r9 (r4 preserved)
-	       _stub._resolveEntryPoint[1]  = 0x79208302;                          // srdi  r0,r9,12      ; rldicl r0,r9,52,12
-	       _stub._resolveEntryPoint[2]  = 0x7c004a14;                          // add   r0,r0,r9
+	   //
+	   // SCRATCH: only r0 and r10. r5 (Span<char>.len) and r9 (IFormatProvider) are live
+	   // argument registers that must not be clobbered. r0 cannot be a D-form base register
+	   // (hardware reads it as 0). r10 is safe; r9 and r5 must be left intact.
+	   //
+	   // [0]  ld   r10,0(r3)          ; actual MT → r10        RT=10,RA=3,DS=0   → 0xe9430000
+	   // [1]  srdi r0,r10,12          ; r0 = MT>>12             rldicl r0,r10,52,12 → 0x7940a302
+	   // [2]  add  r0,r0,r10          ; r0 = hash partial       RT=0,RA=0,RB=10   → 0x7c005214
+	   // [3]  xori r0,r0,hashedToken  ; (variable)
+	   // [4]  andi. r0,r0,CACHE_MASK  ; (variable)
+	   // [5]  sldi r0,r0,3            ; slot byte offset         rldicr r0,r0,3,60 → 0x78001f24
+	   // [6]  ld   r10,160(r12)       ; cache base → r10        RT=10,RA=12,DS=160 → 0xe94c00a0
+	   // [7]  add  r10,r10,r0         ; r10 = slot ptr           RT=10,RA=10,RB=0  → 0x7d4a0214
+	   // [8]  std  r10,48(r1)         ; save slot ptr on stack   RS=10,RA=1,DS=48  → 0xf9410030
+	   // [9]  ld   r0,0(r10)          ; r0 = cached MT           RT=0,RA=10,DS=0   → 0xe80a0000
+	   // [10] ld   r10,0(r3)          ; r10 = actual MT (re-load) RT=10,RA=3,DS=0  → 0xe9430000
+	   // [11] cmpd cr0,r10,r0         ; compare MTs              RA=10,RB=0        → 0x7c2a0000
+	   // [12] bne  +36 → [22]miss     ; BD=36: NIA=[13]=52, tgt=[22]=88            → 0x40820024
+	   // [13] ld   r10,48(r1)         ; restore slot ptr         RT=10,RA=1,DS=48  → 0xe9410030
+	   // [14] ld   r0,8(r10)          ; r0 = cached token        RT=0,RA=10,DS=8   → 0xe80a0008
+	   // [15] ld   r10,168(r12)       ; r10 = stub token         RT=10,RA=12,DS=168 → 0xe94c00a8
+	   // [16] cmpd cr0,r10,r0         ; compare tokens (r5,r9 untouched!) → 0x7c2a0000
+	   // [17] bne  +16 → [22]miss     ; BD=16: NIA=[18]=72, tgt=[22]=88            → 0x40820010
+	   // [18] ld   r10,48(r1)         ; restore slot ptr         RT=10,RA=1,DS=48  → 0xe9410030
+	   // [19] ld   r12,16(r10)        ; target → r12             RT=12,RA=10,DS=16 → 0xe98a0010
+	   // [20] mtctr r12                                                             → 0x7d8903a6
+	   // [21] bctr                    ; jump with all args intact                  → 0x4e800420
+	   // miss (slot ptr at 48(r1) from [8]; r12 still = stub base):
+	   // [22] ld   r10,168(r12)       ; token → r10             RT=10,RA=12,DS=168 → 0xe94c00a8
+	   // [23] ld   r12,176(r12)       ; worker → r12            RT=12,RA=12,DS=176 → 0xe98c00b0
+	   // [24] mtctr r12                                                             → 0x7d8903a6
+	   // [25] bctr                                                                  → 0x4e800420
+	       _stub._resolveEntryPoint[0]  = 0xe9430000;                          // ld    r10,0(r3)
+	       _stub._resolveEntryPoint[1]  = 0x7940a302;                          // srdi  r0,r10,12
+	       _stub._resolveEntryPoint[2]  = 0x7c005214;                          // add   r0,r0,r10
 	       _stub._resolveEntryPoint[3]  = 0x68000000 | (hashedToken & 0xFFFF); // xori  r0,r0,imm16
 	       _stub._resolveEntryPoint[4]  = 0x70000000 | (CALL_STUB_CACHE_MASK & 0xFFFF); // andi. r0,r0,imm16
-	       _stub._resolveEntryPoint[5]  = 0x7800c104;                          // sldi  r0,r0,3
+	       _stub._resolveEntryPoint[5]  = 0x78001f24;                          // sldi  r0,r0,3
 	       _stub._resolveEntryPoint[6]  = 0xe94c00a0;                          // ld    r10,160(r12)
 	       _stub._resolveEntryPoint[7]  = 0x7d4a0214;                          // add   r10,r10,r0
-	       _stub._resolveEntryPoint[8]  = 0xe80a0000;                          // ld    r0,0(r10)
-	       _stub._resolveEntryPoint[9]  = 0x7c290000;                          // cmpd  cr0,r9,r0
-	       _stub._resolveEntryPoint[10] = 0x4082001c;                          // bne   +28 -> miss
-	       _stub._resolveEntryPoint[11] = 0xe80a0008;                          // ld    r0,8(r10)
-	       _stub._resolveEntryPoint[12] = 0xe8ac00a8;                          // ld    r5,168(r12)
-	       _stub._resolveEntryPoint[13] = 0x7c250000;                          // cmpd  cr0,r5,r0
-	       _stub._resolveEntryPoint[14] = 0x4082000c;                          // bne   +12 -> miss
-	       // hit: r12 must hold the target before bctr (PPC64LE ELF v2 ABI)
-	       _stub._resolveEntryPoint[15] = 0xe98a0010;                          // ld    r12,16(r10)  (cached target → r12)
-	       _stub._resolveEntryPoint[16] = 0x7d8903a6;                          // mtctr r12
-	       _stub._resolveEntryPoint[17] = 0x4e800420;                          // bctr
-	       // miss: r11 = cell|flags; r12 still = stub base at this point
-	       _stub._resolveEntryPoint[18] = 0xf94a0030;                          // std   r10,48(r1)   (save cache slot for chain lookup)
-	       _stub._resolveEntryPoint[19] = 0xe8ac00a8;                          // ld    r10,168(r12) (token → r10; r12 still = stub base)
-	       _stub._resolveEntryPoint[20] = 0xe98c00b0;                          // ld    r12,176(r12) (worker addr → r12; last use of stub base)
-	       _stub._resolveEntryPoint[21] = 0x7d8903a6;                          // mtctr r12           (CTR = ResolveWorkerAsmStub; r12 = target ✓)
-	       _stub._resolveEntryPoint[22] = 0x4e800420;                          // bctr
-	       _stub._resolveEntryPoint[23] = 0x60000000;                          // nop
-	       _stub._resolveEntryPoint[24] = 0x60000000;                          // nop
-	       _stub._resolveEntryPoint[25] = 0x60000000;                          // nop
+	       _stub._resolveEntryPoint[8]  = 0xf9410030;                          // std   r10,48(r1)   ; save slot ptr
+	       _stub._resolveEntryPoint[9]  = 0xe80a0000;                          // ld    r0,0(r10)    ; cached MT
+	       _stub._resolveEntryPoint[10] = 0xe9430000;                          // ld    r10,0(r3)    ; actual MT re-load
+	       _stub._resolveEntryPoint[11] = 0x7c2a0000;                          // cmpd  cr0,r10,r0
+	       _stub._resolveEntryPoint[12] = 0x40820024;                          // bne   +36 → miss
+	       _stub._resolveEntryPoint[13] = 0xe9410030;                          // ld    r10,48(r1)   ; restore slot ptr
+	       _stub._resolveEntryPoint[14] = 0xe80a0008;                          // ld    r0,8(r10)    ; cached token
+	       _stub._resolveEntryPoint[15] = 0xe94c00a8;                          // ld    r10,168(r12) ; stub token (r5 untouched)
+	       _stub._resolveEntryPoint[16] = 0x7c2a0000;                          // cmpd  cr0,r10,r0   ; (r5,r9 never touched)
+	       _stub._resolveEntryPoint[17] = 0x40820010;                          // bne   +16 → miss
+	       _stub._resolveEntryPoint[18] = 0xe9410030;                          // ld    r10,48(r1)   ; restore slot ptr
+	       _stub._resolveEntryPoint[19] = 0xe98a0010;                          // ld    r12,16(r10)  ; target → r12
+	       _stub._resolveEntryPoint[20] = 0x7d8903a6;                          // mtctr r12
+	       _stub._resolveEntryPoint[21] = 0x4e800420;                          // bctr
+	       _stub._resolveEntryPoint[22] = 0xe94c00a8;                          // ld    r10,168(r12) ; miss: token
+	       _stub._resolveEntryPoint[23] = 0xe98c00b0;                          // ld    r12,176(r12) ; miss: worker
+	       _stub._resolveEntryPoint[24] = 0x7d8903a6;                          // mtctr r12
+	       _stub._resolveEntryPoint[25] = 0x4e800420;                          // bctr
     }
 
     ResolveStub* stub()      { LIMITED_METHOD_CONTRACT; return &_stub; }

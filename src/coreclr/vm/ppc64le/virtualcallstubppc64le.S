@@ -191,79 +191,89 @@ NESTED_END ResolveWorkerAsmStub, _TEXT
 
 //-----------------------------------------------------------------------------
 // ResolveWorkerChainLookupAsmStub
+//
 // Inputs:
-//   r3:  object reference
-//   r5:  dispatch token
-//   r10: ResolveCacheElem* head  (written by ResolveStub miss path at 48(r1), then
-//        loaded by the caller before branching here)
-//   r11: indirection cell | flags  (VSD cell register, preserved by all dispatch stubs)
-// Output:
-//   Hit:    tail-calls cached target via CTR
-//   Miss/promote: branches to ResolveWorkerAsmStub (r11 carries cell|flags, r10 carries
-//                 the ResolveCacheElem* on the promote path)
-// Clobbers: r0, r6, r9, r12
+//   r3:      object reference ('this')  — must be preserved
+//   r4–r9:   live argument registers    — must ALL be preserved
+//   r10:     dispatch token             (set by ResolveStub miss path [22])
+//   r11:     indirection cell | flags   (VSD cell register — never written)
+//   48(r1):  ResolveCacheElem* head     (stored by ResolveStub miss path [8])
+//
+// Only r0 and r12 are used as scratch. r0 cannot be a D-form base register.
+// r3–r11 are never written; r4–r9 arrive at the target intact.
+//
+// Clobbers: r0, r12
+//
 // ResolveCacheElem layout:
-//   0:  cached MethodTable
-//   8:  cached token
-//  16:  target PC
-//  24:  next pointer
+//    0: cached MethodTable
+//    8: cached token
+//   16: target PC
+//   24: next pointer
+//
+// Stack usage: 56(r1) is used as a temporary scratch slot to hold the cached
+// target PC across the counter decrement loop. This falls within the caller's
+// parameter save area (owned by the caller) and is safe to use as scratch since
+// the JIT-generated caller passes all arguments in registers only.
 //-----------------------------------------------------------------------------
 LEAF_ENTRY ResolveWorkerChainLookupAsmStub, _TEXT
-    // If BACKPATCH_FLAG is set in r11, go straight to the full resolve worker.
-    // r0 is safe to clobber here; andi. must use a non-r0 source — use r6.
-    andi.   %r6, %r11, BACKPATCH_FLAG
+    // BACKPATCH_FLAG check. andi. needs non-r0 dest — use r12.
+    andi.   %r12, %r11, BACKPATCH_FLAG
     bne     C_FUNC(ResolveWorkerAsmStub)
 
-    mr      %r9, %r10                   // r9 = ResolveCacheElem* head
+    // r12 = ResolveCacheElem* head (from 48(r1)); r10 = dispatch token (intact).
+    ld      %r12, 48(%r1)
 .Lprobe:
-    cmpdi   cr0, %r9, 0
-    beq     C_FUNC(ResolveWorkerAsmStub) // empty chain → full resolve
+    cmpdi   cr0, %r12, 0
+    beq     C_FUNC(ResolveWorkerAsmStub)    // null → full resolve
 
-    // Compare MethodTable of the live object against cached entry
-    ld      %r6, 0(%r3)                 // actual MethodTable from object header
-    ld      %r0, 0(%r9)                 // cached MethodTable in this entry
-    cmpd    cr0, %r6, %r0
-    bne     .Lnext
+    // Compare MethodTable: r0 = actual MT, load cached MT for compare.
+    ld      %r0, 0(%r3)                     // r0 = actual MT  [r3=base ✓]
+    ld      %r12, 0(%r12)                   // r12 = cached MT [r12=base ✓]
+    cmpd    cr0, %r0, %r12
+    bne     .Lmt_miss
 
-    // Compare dispatch token
-    ld      %r0, 8(%r9)                 // cached token
-    cmpd    cr0, %r5, %r0
-    bne     .Lnext
+    // MT matched — reload the node pointer, then compare token.
+    ld      %r12, 48(%r1)                   // reload node ptr from stack slot
+    ld      %r0, 8(%r12)                    // r0 = cached token [r12=base ✓]
+    cmpd    cr0, %r10, %r0                  // r10 = dispatch token (r5,r6 never touched)
+    bne     .Ltoken_miss
 
-    // Cache hit — load target into r12 for tail-call
-    ld      %r12, 16(%r9)
+    // Cache hit. Save target at 56(r1) so lwarx can reuse r0.
+    ld      %r0, 16(%r12)                   // r0 = cached target PC
+    std     %r0, 56(%r1)                    // stash target  [r1=base ✓]
 
     // Atomically decrement g_dispatch_cache_chain_success_counter.
-    // Use r6 (volatile, safe to clobber) as the counter address; r0 cannot be a
-    // D-form base register on PPC64LE (hardware reads r0 as literal 0 in that field).
-    addis   %r6, %r2, g_dispatch_cache_chain_success_counter@toc@ha
-    ld      %r6, g_dispatch_cache_chain_success_counter@toc@l(%r6)
+    // r12 = counter address; r0 = counter value (lwarx safe: RT=r0 ≠ RA=r12).
+    addis   %r12, %r2, g_dispatch_cache_chain_success_counter@toc@ha
+    ld      %r12, g_dispatch_cache_chain_success_counter@toc@l(%r12)
 .Ldec_retry:
-    lwarx   %r0, 0, %r6
+    lwarx   %r0, 0, %r12                    // r0 = counter  [r12=base ✓, r0=dest ✓]
     addi    %r0, %r0, -1
-    stwcx.  %r0, 0, %r6
+    stwcx.  %r0, 0, %r12
     bne-    .Ldec_retry
 
-    // If counter >= 0 → tail-call the cached target; else promote this entry.
     cmpwi   cr0, %r0, 0
-    bge     .Ltail_call
+    blt     .Lpromote
 
-    // Promotion path: reset counter and set PROMOTE_CHAIN_FLAG in r11.
+    // Tail-call: reload target from stash, move to r12 for ABI.
+    ld      %r12, 56(%r1)                   // r12 = target PC  [r1=base ✓]
+    mtctr   %r12
+    bctr                                    // all r4–r9 intact ✓
+
+.Lpromote:
+    // Reset counter and set PROMOTE_CHAIN_FLAG; pass ResolveCacheElem* in r10.
     li      %r0, INITIAL_SUCCESS_COUNT
-    stw     %r0, 0(%r6)                 // reset (word store; counter is INT32)
-
-    ori     %r11, %r11, PROMOTE_CHAIN_FLAG // mark promote in VSD cell register
-
-    mr      %r10, %r9                   // pass ResolveCacheElem* in r10 to worker
+    stw     %r0, 0(%r12)                    // reset counter  [r12=counter addr, r0=value ✓]
+    ori     %r11, %r11, PROMOTE_CHAIN_FLAG
+    ld      %r10, 48(%r1)                   // r10 = ResolveCacheElem* for worker
     b       C_FUNC(ResolveWorkerAsmStub)
 
-.Lnext:
-    ld      %r9, 24(%r9)                // advance to next node
+.Lmt_miss:
+    // r12 holds cached MT (not node ptr). Reload node, advance to next.
+    ld      %r12, 48(%r1)                   // reload current node ptr
+.Ltoken_miss:
+    ld      %r12, 24(%r12)                  // r12 = next node  [r12=base ✓]
+    std     %r12, 48(%r1)                   // update stack slot for next probe
     b       .Lprobe
 
-.Ltail_call:
-    // PPC64LE ELF v2 ABI: r12 must equal the branch target before bctr.
-    // r12 already holds the cached target (loaded at the cache-hit path above).
-    mtctr   %r12
-    bctr
 LEAF_END ResolveWorkerChainLookupAsmStub, _TEXT
