@@ -13502,6 +13502,32 @@ static bool ShouldUseInterpreterFallback(MethodDesc* ftnDesc,const char* ftnName
     
     return false;
 }
+
+static bool ShouldNotUseInterpreterFallback(MethodDesc* ftnDesc, const char* ftnName)
+{
+    struct InterpreterInclusionEntry
+    {
+        const char* className;
+        const char* functionName;
+    };
+
+    static const InterpreterInclusionEntry codegenBringUpInterpreterFunctions[] = {
+        { "Microsoft.Win32.SafeHandles.SafeFileHandle", "Open" },
+    };
+
+    const size_t numInterpretInclusions = sizeof(codegenBringUpInterpreterFunctions) / sizeof(codegenBringUpInterpreterFunctions[0]);
+
+    for (size_t i = 0; i < numInterpretInclusions; i++)
+    {
+        if (!strcmp(ftnDesc->m_pszDebugClassName, codegenBringUpInterpreterFunctions[i].className) &&
+            !strcmp(ftnName, codegenBringUpInterpreterFunctions[i].functionName))
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
 #endif // defined(TARGET_S390X) || defined(TARGET_POWERPC64)
 
 //
@@ -13565,9 +13591,12 @@ CorJitResult invokeCompileMethodHelper(EEJitManager *jitMgr,
         printf ("Interpreting -> %s:%s \n", ftnDesc->m_pszDebugClassName,ftnName);
         interpreterFallback = false;
     }*/
- 
-interpreterFallback = ShouldUseInterpreterFallback(ftnDesc, ftnName);
- 
+
+// By default interpreter mode and contains Jitting list 
+//interpreterFallback = ShouldUseInterpreterFallback(ftnDesc, ftnName);
+
+// By default JIT mode and contains Interpreting list
+interpreterFallback = ShouldNotUseInterpreterFallback(ftnDesc, ftnName);
  
         char filename[64];
 	std::time_t now = std::time(nullptr);
