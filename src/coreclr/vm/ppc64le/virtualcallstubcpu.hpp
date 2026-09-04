@@ -6,9 +6,8 @@
 #ifndef _VIRTUAL_CALL_STUB_PPC64LE_H
 #define _VIRTUAL_CALL_STUB_PPC64LE_H
 
-// TODO RESOLVE_STUB
-#define DISPATCH_STUB_FIRST_DWORD 0xe80c0028 // ld r0,40(r12)
-#define RESOLVE_STUB_FIRST_DWORD  0xe9430000 // ld r10,0(r3)
+#define DISPATCH_STUB_FIRST_DWORD 0xe80c0028 // ld r0,40(r12) — first instruction of DispatchStub
+#define RESOLVE_STUB_FIRST_DWORD  0xe9430000 // ld r10,0(r3)  — first instruction of ResolveStub resolveEntryPoint
 
 #define USES_LOOKUP_STUBS   1
 

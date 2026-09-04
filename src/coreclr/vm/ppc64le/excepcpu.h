@@ -48,6 +48,16 @@ PTR_CONTEXT GetCONTEXTFromRedirectedStubStackFrame(CONTEXT * pContext);
 //
 FaultingExceptionFrame *GetFrameFromRedirectedStubStackFrame (DISPATCHER_CONTEXT *pDispatcherContext);
 
+inline
+PCODE GetAdjustedCallAddress(PCODE returnAddress)
+{
+    LIMITED_METHOD_CONTRACT;
+
+    // PPC64LE bl instruction is 4 bytes; LR holds return address (NIA of bl + 4),
+    // so the call site is 4 bytes before the return address.
+    return returnAddress - 4;
+}
+
 BOOL AdjustContextForVirtualStub(EXCEPTION_RECORD *pExceptionRecord, CONTEXT *pContext);
 
 #endif // __excepppc64le_h__

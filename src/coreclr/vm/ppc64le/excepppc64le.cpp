@@ -94,18 +94,37 @@ AdjustContextForVirtualStub(
     else
     if (sk == STUB_CODE_BLOCK_VSD_RESOLVE_STUB)
     {
-        if (*PTR_DWORD(f_IP) != RESOLVE_STUB_FIRST_DWORD)
-	{
+        // PPC64LE ResolveStub has three distinct opcode groups that can fault:
+        //   opcode 58 (0x3A) — ld/ldu/lwa  : null-this MT load, cache-slot loads
+        //   opcode 31 (0x1F) — extended ops : lwarx (counter decrement retry loop)
+        //   opcode 62 (0x3E) — std          : store to stack (std r10,48(r1))
+        DWORD instr = *PTR_DWORD(f_IP);
+        DWORD opcode = instr >> 26;
+        if (opcode != 58 &&   // ld/ldu/lwa
+            opcode != 31 &&   // lwarx (and other X-form loads)
+            opcode != 62)     // std/stdu
+        {
             _ASSERTE(!"AV in ResolveStub at unknown instruction");
-	    return FALSE;
-	}
+            return FALSE;
+        }
     }
     else
     {
         return FALSE;
     }
 
-    _ASSERTE(!"PPC64LE:NYI AdjustContextForVirtualStub");
+    // pContext->Link holds the LR as captured by the kernel signal handler —
+    // the return address back to the JIT call site (NIA of bl + 4).
+    // Adjust by -4 to point at the bl instruction itself.
+    PCODE callsite = GetAdjustedCallAddress((PCODE)pContext->Link);
+
+    if (pExceptionRecord != NULL)
+    {
+        pExceptionRecord->ExceptionAddress = (PVOID)callsite;
+    }
+
+    SetIP(pContext, callsite);
+
     return TRUE;
 }
 
