@@ -5972,6 +5972,17 @@ void Compiler::lvaFixVirtualFrameOffsets()
             }
         }
 
+#ifdef TARGET_POWERPC64
+        // On PPC64LE, lvaFrameAddress already compensates for the frame size when
+        // accessing incoming stack parameters (it adds genTotalFrameSize() to the
+        // classifier-relative offset).  Applying the generic delta here would shift
+        // every stack param by one extra slot, producing the wrong address.
+        if (doAssignStkOffs && varDsc->lvIsParam && !varDsc->lvIsRegArg && varDsc->lvFramePointerBased)
+        {
+            doAssignStkOffs = false;
+        }
+#endif // TARGET_POWERPC64
+
         if (doAssignStkOffs)
         {
             JITDUMP("-- V%02u was %d, now %d\n", lclNum, varDsc->GetStackOffset(), varDsc->GetStackOffset() + delta);

@@ -13512,7 +13512,6 @@ static bool ShouldNotUseInterpreterFallback(MethodDesc* ftnDesc, const char* ftn
     };
 
     static const InterpreterInclusionEntry codegenBringUpInterpreterFunctions[] = {
-        { "Microsoft.Win32.SafeHandles.SafeFileHandle", "Open" },
     };
 
     const size_t numInterpretInclusions = sizeof(codegenBringUpInterpreterFunctions) / sizeof(codegenBringUpInterpreterFunctions[0]);
