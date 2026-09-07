@@ -34,6 +34,9 @@ LEAF_END JIT_PatchedCodeStart, _TEXT
 //   r7  : trashed
 //
 LEAF_ENTRY JIT_CheckedWriteBarrier, _TEXT
+	// ELFv2 ABI: called from JIT'd code with r12 = function address; establish our TOC.
+	addis %r2, %r12, (.TOC.-JIT_CheckedWriteBarrier)@ha
+	addi  %r2, %r2,  (.TOC.-JIT_CheckedWriteBarrier)@l
 	// Check if destination is in the GC heap
 	// Load g_lowest_address
 	addis %r5, %r2, g_lowest_address@toc@ha
@@ -47,8 +50,8 @@ LEAF_ENTRY JIT_CheckedWriteBarrier, _TEXT
 	cmpld %r3, %r5
 	bge LOCAL_LABEL(NotInHeap)
 	
-	// In heap, call JIT_WriteBarrier
-	b JIT_WriteBarrier
+	// In heap, call JIT_WriteBarrier (r2 already correct, use local entry)
+	b LOCAL_LABEL(JIT_WriteBarrier_LocalEntry)
 
 LOCAL_LABEL(NotInHeap):
 	// Not in heap, just do the store
@@ -75,6 +78,11 @@ LEAF_END_MARKED JIT_CheckedWriteBarrier, _TEXT
 //   r7  : trashed
 //
 LEAF_ENTRY JIT_WriteBarrier, _TEXT
+	// ELFv2 ABI: called from JIT'd code with r12 = function address; establish our TOC.
+	addis %r2, %r12, (.TOC.-JIT_WriteBarrier)@ha
+	addi  %r2, %r2,  (.TOC.-JIT_WriteBarrier)@l
+LOCAL_LABEL(JIT_WriteBarrier_LocalEntry):
+	// Local entry point for intra-DSO calls where r2 is already correct.
 	// Store the value
 	std %r4, 0(%r3)
 
@@ -216,6 +224,9 @@ LEAF_END JIT_PatchedCodeLast, _TEXT
 // Exit:
 //   r3, r4 are incremented by SIZEOF(LPVOID) = 8
 LEAF_ENTRY JIT_ByRefWriteBarrier, _TEXT
+	// ELFv2 ABI: called from JIT'd code with r12 = function address; establish our TOC.
+	addis %r2, %r12, (.TOC.-JIT_ByRefWriteBarrier)@ha
+	addi  %r2, %r2,  (.TOC.-JIT_ByRefWriteBarrier)@l
 	// Load the value from source address
 	ld %r5, 0(%r4)
 	
@@ -232,23 +243,98 @@ LEAF_ENTRY JIT_ByRefWriteBarrier, _TEXT
 	cmpld %r3, %r6
 	bge LOCAL_LABEL(NotInHeap_ByRef)
 	
-	// In heap - need to do full write barrier
-	// Save r3 and r4 for later increment
-	mr %r6, %r3
-	mr %r7, %r4
-	
-	// Set up arguments: r3=dst, r4=value
-	mr %r4, %r5
-	
-	// Call JIT_WriteBarrier (not CheckedWriteBarrier to avoid double check)
-	// This will write the value and handle GC bookkeeping
-	// It will also increment r3 by 8
-	bl JIT_WriteBarrier
-	
-	// Increment source pointer
-	addi %r4, %r7, 8
-	
-	// r3 was already incremented by JIT_WriteBarrier
+	// In heap — do the store and card-table update inline.
+	// r3 = dst, r4 = src address, r5 = value (loaded above), r2 = TOC (set in prolog).
+	// r6, r7 are available scratch.  We must NOT use bl because this is a LEAF_ENTRY
+	// (LR holds our caller's return address and is never saved/restored here).
+
+	// Store the value
+	std %r5, 0(%r3)
+
+#ifdef WRITE_BARRIER_CHECK
+	// Shadow heap update (same logic as JIT_WriteBarrier)
+	addis %r6, %r2, g_GCShadow@toc@ha
+	ld %r6, g_GCShadow@toc@l(%r6)
+	cmpdi %r6, 0
+	beq LOCAL_LABEL(ByRef_ShadowUpdateDisabled)
+
+	addis %r7, %r2, g_lowest_address@toc@ha
+	ld %r7, g_lowest_address@toc@l(%r7)
+	sub %r7, %r3, %r7
+	add %r6, %r6, %r7
+
+	addis %r7, %r2, g_GCShadowEnd@toc@ha
+	ld %r7, g_GCShadowEnd@toc@l(%r7)
+	cmpld %r6, %r7
+	bge LOCAL_LABEL(ByRef_ShadowUpdateDisabled)
+
+	std %r5, 0(%r6)
+	hwsync
+	ld %r7, 0(%r3)
+	cmpld %r7, %r5
+	beq LOCAL_LABEL(ByRef_ShadowUpdateDisabled)
+	lis %r7, 0xcccc
+	ori %r7, %r7, 0xcccd
+	std %r7, 0(%r6)
+LOCAL_LABEL(ByRef_ShadowUpdateDisabled):
+#endif
+
+#ifdef FEATURE_USE_SOFTWARE_WRITE_WATCH_FOR_GC_HEAP
+	addis %r6, %r2, g_sw_ww_enabled_for_gc_heap@toc@ha
+	lbz %r6, g_sw_ww_enabled_for_gc_heap@toc@l(%r6)
+	cmpdi %r6, 0
+	beq LOCAL_LABEL(ByRef_CheckCardTable)
+
+	srdi %r6, %r3, 12
+	addis %r7, %r2, g_sw_ww_table@toc@ha
+	ld %r7, g_sw_ww_table@toc@l(%r7)
+	add %r6, %r6, %r7
+	lbz %r7, 0(%r6)
+	cmpdi %r7, 0
+	bne LOCAL_LABEL(ByRef_CheckCardTable)
+	li %r7, 0xFF
+	stb %r7, 0(%r6)
+#endif
+
+LOCAL_LABEL(ByRef_CheckCardTable):
+	// Check if the value is in the ephemeral generation
+	addis %r6, %r2, g_ephemeral_low@toc@ha
+	ld %r6, g_ephemeral_low@toc@l(%r6)
+	cmpld %r5, %r6
+	blt LOCAL_LABEL(ByRef_Exit)
+
+	addis %r6, %r2, g_ephemeral_high@toc@ha
+	ld %r6, g_ephemeral_high@toc@l(%r6)
+	cmpld %r5, %r6
+	bge LOCAL_LABEL(ByRef_Exit)
+
+	// Update card table: pCardByte = g_card_table + (dst >> 11)
+	srdi %r6, %r3, 11
+	addis %r7, %r2, g_card_table@toc@ha
+	ld %r7, g_card_table@toc@l(%r7)
+	add %r6, %r6, %r7
+	lbz %r7, 0(%r6)
+	cmpdi %r7, 0xFF
+	beq LOCAL_LABEL(ByRef_Exit)
+	li %r7, 0xFF
+	stb %r7, 0(%r6)
+
+#ifdef FEATURE_MANUALLY_MANAGED_CARD_BUNDLES
+	srdi %r6, %r3, 21
+	addis %r7, %r2, g_card_bundle_table@toc@ha
+	ld %r7, g_card_bundle_table@toc@l(%r7)
+	add %r6, %r6, %r7
+	lbz %r7, 0(%r6)
+	cmpdi %r7, 0xFF
+	beq LOCAL_LABEL(ByRef_Exit)
+	li %r7, 0xFF
+	stb %r7, 0(%r6)
+#endif
+
+LOCAL_LABEL(ByRef_Exit):
+	// Increment both dst (r3) and src (r4) by 8
+	addi %r3, %r3, 8
+	addi %r4, %r4, 8
 	blr
 
 LOCAL_LABEL(NotInHeap_ByRef):
@@ -263,7 +349,11 @@ LEAF_END_MARKED JIT_ByRefWriteBarrier, _TEXT
 // __declspec(naked) void F_CALL_CONV JIT_WriteBarrier_Callable(Object **dst, Object* val)
 //.balign 16
 LEAF_ENTRY  JIT_WriteBarrier_Callable, _TEXT
+	// ELFv2 ABI: establish TOC before jumping — r12 here is JIT_WriteBarrier_Callable,
+	// not JIT_WriteBarrier, so we must set r2 from our own anchor before the branch.
+	addis %r2, %r12, (.TOC.-JIT_WriteBarrier_Callable)@ha
+	addi  %r2, %r2,  (.TOC.-JIT_WriteBarrier_Callable)@l
 	// Arguments are already in r3 (dst) and r4 (val)
-	// Just jump to JIT_WriteBarrier
-	b JIT_WriteBarrier
+	// Jump to local entry, skipping JIT_WriteBarrier's redundant TOC-setup.
+	b LOCAL_LABEL(JIT_WriteBarrier_LocalEntry)
 LEAF_END JIT_WriteBarrier_Callable, _TEXT
