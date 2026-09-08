@@ -1049,30 +1049,43 @@ int LinearScan::BuildNode(GenTree* tree)
             assert(dstCount == 0);
             break;
 
+	case GT_LCL_VAR:
+	    // We make a final determination about whether a GT_LCL_VAR is a candidate or contained
+	    // after liveness. In either case we don't build any uses or defs. Otherwise, this is a
+	    // load of a stack-based local into a register and we'll fall through to the general
+	    // local case below.
+	    if (checkContainedOrCandidateLclVar(tree->AsLclVar()))
+	    {
+	        return 0;
+	    }
+	    FALLTHROUGH;
+
+	case GT_LCL_FLD:
+	{
+	    srcCount = 0;
+	    // PPC64LE: For HFA struct parameters, use ABI passing info for register allocation
+	    bool handledAsHfa = false;
+	    if (tree->OperIs(GT_LCL_FLD))
+	    {
+	        handledAsHfa = BuildDefForHfaLclFld(tree->AsLclFld());
+	    }
+
+	    if (!handledAsHfa)
+	    {
+	        BuildDef(tree);
+	    }
+	}
+	break;
+
 	case GT_STORE_LCL_VAR:
+	    if (tree->IsMultiRegLclVar() && isCandidateMultiRegLclVar(tree->AsLclVar()))
+	    {
+	        dstCount = compiler->lvaGetDesc(tree->AsLclVar())->lvFieldCnt;
+	    }
+	    FALLTHROUGH;
+
 	case GT_STORE_LCL_FLD:
 	    srcCount = BuildStoreLoc(tree->AsLclVarCommon());
-            break;
-
-	case GT_LCL_VAR:
-	case GT_LCL_FLD:
-	    // Local variable or field load - no sources, produces one result
-	    srcCount = 0;
-	    // Only build a def if the node is not contained
-	    if (!tree->isContained())
-	    {
-	        // PPC64LE: For HFA struct parameters, use ABI passing info for register allocation
-	        bool handledAsHfa = false;
-	        if (tree->OperIs(GT_LCL_FLD))
-	        {
-	            handledAsHfa = BuildDefForHfaLclFld(tree->AsLclFld());
-	        }
-	        
-	        if (!handledAsHfa)
-	        {
-	            BuildDef(tree);
-	        }
-	    }
 	    break;
 
 	case GT_FIELD_LIST:

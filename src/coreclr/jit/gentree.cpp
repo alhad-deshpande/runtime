@@ -5237,8 +5237,16 @@ unsigned Compiler::gtSetEvalOrder(GenTree* tree)
                 costSz = 4;
                 goto COMMON_CNS;
 #elif defined(TARGET_POWERPC64)
-	// TODO POWERPC64
-	_ASSERTE(!"NYI POWERPC64");
+            case GT_CNS_STR:
+                costEx = IND_COST_EX + 2;
+                costSz = 4;
+                goto COMMON_CNS;
+
+            case GT_CNS_LNG:
+            case GT_CNS_INT:
+                costEx = 1;
+                costSz = 4;
+                goto COMMON_CNS;
 #else
             case GT_CNS_STR:
             case GT_CNS_LNG:
@@ -5317,8 +5325,9 @@ unsigned Compiler::gtSetEvalOrder(GenTree* tree)
                 costEx = 2;
                 costSz = 8;
 #elif defined(TARGET_POWERPC64)
-	// TODO POWERPC64
-	_ASSERTE(!"NYI POWERPC64");
+                // TODO-POWERPC64-CQ: tune the costs.
+                costEx = 2;
+                costSz = 8;
 #else
 #error "Unknown TARGET"
 #endif
@@ -5497,8 +5506,13 @@ unsigned Compiler::gtSetEvalOrder(GenTree* tree)
                     costEx = 1;
                     costSz = 4;
 #elif defined(TARGET_POWERPC64)
-	// TODO POWERPC64
-	_ASSERTE(!"NYI POWERPC64");
+                    costEx = 1;
+                    costSz = 2;
+                    if (isflt || varTypeIsFloating(op1->TypeGet()))
+                    {
+                        costEx = 2;
+                        costSz = 4;
+                    }
 #else
 #error "Unknown TARGET"
 #endif
