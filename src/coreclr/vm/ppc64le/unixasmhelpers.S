@@ -212,8 +212,8 @@ NESTED_ENTRY InterpreterStubThunk, _TEXT, NoHandler
 	bctrl
 
 //Epiloge
-        //ld %r3, 32(%r1)
-        ld %r4, 40(%r1)
+        //ld %r3, 32(%r1)   // intentionally skipped: r3 = interpreter scalar return value
+        //ld %r4, 40(%r1)   // intentionally skipped: r4 = high word of 128-bit struct return
         ld %r5, 48(%r1)
         ld %r6, 56(%r1)
         ld %r7, 64(%r1)
