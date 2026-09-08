@@ -13512,6 +13512,19 @@ static bool ShouldNotUseInterpreterFallback(MethodDesc* ftnDesc, const char* ftn
     };
 
     static const InterpreterInclusionEntry codegenBringUpInterpreterFunctions[] = {
+	    { "System.Number", "TryFormatInt32" },
+	    { "System.Number", "TryUInt32ToDecStr" },
+	    { "System.Number", "UInt32ToDecChars" },
+	    { "System.Number", "WriteFourDigits" },
+	    { "System.Number", ".cctor" },
+	    { "System.Number", "WriteTwoDigits" },
+	    { "System.Number", "<TryFormatInt32>g__TryFormatInt32Slow|19_0" },
+	    { "System.Number", "ParseFormatSpecifier" },
+	    { "System.Number", "Int32ToNumber" },
+	    { "System.Number", "NumberToStringFormat" },
+	    { "System.Number", "TryParseBinaryInteger" },
+	    { "System.Number", "TryParseBinaryIntegerStyle" },
+	    { "System.Number", "IsDigit" },
     };
 
     const size_t numInterpretInclusions = sizeof(codegenBringUpInterpreterFunctions) / sizeof(codegenBringUpInterpreterFunctions[0]);
