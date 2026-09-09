@@ -94,19 +94,12 @@ AdjustContextForVirtualStub(
     else
     if (sk == STUB_CODE_BLOCK_VSD_RESOLVE_STUB)
     {
-        // PPC64LE ResolveStub has three distinct opcode groups that can fault:
-        //   opcode 58 (0x3A) — ld/ldu/lwa  : null-this MT load, cache-slot loads
-        //   opcode 31 (0x1F) — extended ops : lwarx (counter decrement retry loop)
-        //   opcode 62 (0x3E) — std          : store to stack (std r10,48(r1))
-        DWORD instr = *PTR_DWORD(f_IP);
-        DWORD opcode = instr >> 26;
-        if (opcode != 58 &&   // ld/ldu/lwa
-            opcode != 31 &&   // lwarx (and other X-form loads)
-            opcode != 62)     // std/stdu
-        {
-            _ASSERTE(!"AV in ResolveStub at unknown instruction");
-            return FALSE;
-        }
+        // PPC64LE ResolveStub — resolveEntryPoint no longer contains any instruction
+        // that can AV on a null 'this' pointer: the inline cache lookup was removed,
+        // so no load from r3 or from heap-allocated cache structures occurs in the stub.
+        // Any AV in the resolve stub is an unexpected internal error.
+        _ASSERTE(!"Unexpected AV in PPC64LE ResolveStub");
+        return FALSE;
     }
     else
     {
@@ -114,8 +107,8 @@ AdjustContextForVirtualStub(
     }
 
     // pContext->Link holds the LR as captured by the kernel signal handler —
-    // the return address back to the JIT call site (NIA of bl + 4).
-    // Adjust by -4 to point at the bl instruction itself.
+    // the return address back to the JIT call site (NIA of bctrl + 4).
+    // Adjust by -4 to point at the bctrl instruction itself.
     PCODE callsite = GetAdjustedCallAddress((PCODE)pContext->Link);
 
     if (pExceptionRecord != NULL)
