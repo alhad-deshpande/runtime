@@ -13512,7 +13512,7 @@ static bool ShouldNotUseInterpreterFallback(MethodDesc* ftnDesc, const char* ftn
     };
 
     static const InterpreterInclusionEntry codegenBringUpInterpreterFunctions[] = {
-	    //{ "System.Number", "<TryFormatInt32>g__TryFormatInt32Slow|19_0" },
+	    { "System.Number", "<TryFormatInt32>g__TryFormatInt32Slow|19_0" },
     };
 
     const size_t numInterpretInclusions = sizeof(codegenBringUpInterpreterFunctions) / sizeof(codegenBringUpInterpreterFunctions[0]);
