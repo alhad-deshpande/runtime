@@ -8833,6 +8833,7 @@ public:
     void unwindNop();
     void unwindPadding(); // Generate a sequence of unwind NOP codes representing instructions between the last
                           // instruction and the current location.
+    void unwindSaveReg(regNumber reg, int offset);
     void unwindReturn(regNumber reg);
 #endif // defined(TARGET_POWERPC64)
 

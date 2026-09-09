@@ -59,9 +59,9 @@ typedef struct _PPC64LE_UNWIND_PARAMS
 //
 // Counts the number of PPC64LE instructions represented by the unwind codes
 // starting at UnwindCodePtr and ending before UnwindCodesEndPtr (or at an
-// end opcode). Each unwind byte describes exactly one 4-byte instruction on
-// PPC64LE (as documented in unwindppc64le.cpp), except the alloc_m and
-// alloc_l multi-byte opcodes — those still represent one instruction (stdu).
+// end opcode). Each unwind opcode entry represents exactly one 4-byte
+// PPC64LE instruction. Some opcode entries occupy multiple metadata bytes;
+// alloc_m, alloc_l, and save_reg still each represent one machine instruction.
 //
 // Returns the instruction count (== word count == the "OffsetInScope" unit).
 // ---------------------------------------------------------------------------
@@ -88,19 +88,24 @@ RtlpComputeScopeSize(
             UnwindCodePtr += 1;
         }
         else if (op >= 0xC0 && op <= 0xC7)
+	{
+		// alloc_m: 2 metadata bytes, 1 machine instruction
+		UnwindCodePtr += 2;
+	}
+	else if (op == 0xD0)
+	{
+		// save_reg: D0 x z, 3 metadata bytes, 1 machine instruction
+		UnwindCodePtr += 3;
+	}
+	else if (op == 0xE0)
+	{
+		// alloc_l: 4 metadata bytes, 1 machine instruction
+		UnwindCodePtr += 4;
+	}
+	else
         {
-            // alloc_m: 2 bytes
-            UnwindCodePtr += 2;
-        }
-        else if (op == 0xE0)
-        {
-            // alloc_l: 4 bytes
-            UnwindCodePtr += 4;
-        }
-        else
-        {
-            // nop (0xE3) or any other single-byte code
-            UnwindCodePtr += 1;
+	    // nop (0xE3) or any other single-byte code
+	    UnwindCodePtr += 1;
         }
     }
 
@@ -135,12 +140,15 @@ RtlpComputeScopeSize(
 //   Followed by CodeWords*4 bytes of unwind opcodes.
 //   Followed by optional handler RVA DWORD (when X=1).
 //
-// Opcode encoding emitted by the PPC64LE JIT (unwindAllocStack):
-//   alloc_s:  000xxxxx           (1 B)  sp += 16*(x)          x <= 0x1F
-//   alloc_m:  11000xxx|xxxxxxxx  (2 B)  sp += 16*(x)          x <= 0x7FF
-//   alloc_l:  E0|xx|xx|xx        (4 B)  sp += 16*(x)          x <= 0xFFFFFF
-//   nop:      E3                 (1 B)  no-op
-//   end:      E4                 (1 B)  end of codes
+// Opcode encoding emitted by the PPC64LE JIT:
+//
+//   alloc_s:  000xxxxx            (1 B)  sp += 16*(x)        x <= 0x1F
+//   alloc_m:  11000xxx|xxxxxxxx   (2 B)  sp += 16*(x)        x <= 0x7FF
+//   save_reg: D0|x|z              (3 B)  restore GPR x from [sp + 8*z]
+//   alloc_l:  E0|xx|xx|xx         (4 B)  sp += 16*(x)        x <= 0xFFFFFF
+//   set_fp:   E1                  (1 B)  sp = r31
+//   nop:      E3                  (1 B)  no-op
+//   end:      E4                  (1 B)  end of codes
 // ---------------------------------------------------------------------------
 static NTSTATUS
 RtlpUnwindFunctionFull(
@@ -215,6 +223,7 @@ RtlpUnwindFunctionFull(
         (ULONG)((ControlPcRva - FunctionEntry->BeginAddress) / 4);
 
     ULONG SkipWords = 0;
+    BOOLEAN InEpilog      = FALSE;
 
     // -----------------------------------------------------------------
     // 4. Determine whether ControlPc is in the prolog, epilog, or body.
@@ -249,6 +258,7 @@ RtlpUnwindFunctionFull(
 
             if (OffsetInFunction >= ScopeStart)
             {
+		InEpilog             = TRUE;
                 UnwindCodePtr       += UnwindIndex;
                 SkipWords            = OffsetInFunction - ScopeStart;
                 ExceptionHandler     = NULL;
@@ -277,6 +287,7 @@ RtlpUnwindFunctionFull(
 
                 if (OffsetInFunction < ScopeStart + ScopeSize)
                 {
+		    InEpilog             = TRUE;
                     UnwindCodePtr       += ScopeIndex;
                     SkipWords            = OffsetInFunction - ScopeStart;
                     ExceptionHandler     = NULL;
@@ -301,7 +312,32 @@ ExecuteCodes:
             UnwindCodePtr += 1;
         else if (op >= 0xC0 && op <= 0xC7)
             UnwindCodePtr += 2;
-        else if (op == 0xE0)
+        else if (op == 0xD0)
+        {
+            BYTE x = MEMORY_READ_BYTE(UnwindParams, UnwindCodePtr + 1);
+
+            //
+            // x == 0 represents the epilog load of the saved return address
+            // into r0:
+            //
+            //     ld r0, LR_save_offset(r1)
+            //
+            // If this unwind entry is being skipped while unwinding an epilog,
+            // that machine instruction has already executed. r0 therefore
+            // contains the caller's saved return address.
+            //
+            // Reconstruct the architectural Link value directly. This also
+            // virtually accounts for a pending "mtlr r0" when ControlPc is
+            // between the ld and mtlr instructions.
+            //
+            if (InEpilog && (x == 0))
+            {
+                ContextRecord->Link = ContextRecord->R0;
+            }
+
+            UnwindCodePtr += 3;
+	}
+	else if (op == 0xE0)
             UnwindCodePtr += 4;
         else
             UnwindCodePtr += 1;
@@ -311,12 +347,6 @@ ExecuteCodes:
 
     // -----------------------------------------------------------------
     // 6. Execute the remaining unwind opcodes.
-    //
-    //   Only the alloc_s / alloc_m / alloc_l opcodes are emitted by the
-    //   current PPC64LE JIT.  The register-save opcodes (unwindSaveReg)
-    //   are still no-ops in the JIT, so we don't need to restore any
-    //   callee-saved registers here yet.  They are added when the JIT's
-    //   unwindSaveReg implementation is completed.
     // -----------------------------------------------------------------
     NTSTATUS Status = STATUS_SUCCESS;
 
@@ -339,7 +369,40 @@ ExecuteCodes:
             UnwindCodePtr++;
             ContextRecord->R1 += 16 * x;
         }
+	// save_reg (D0|x|z): restore one saved PPC64LE GPR from
+	// the current SP plus an 8-byte-scaled offset.
+	else if (CurCode == 0xD0)
+	{
+		BYTE x = MEMORY_READ_BYTE(UnwindParams, UnwindCodePtr);
+		BYTE z = MEMORY_READ_BYTE(UnwindParams, UnwindCodePtr + 1);
+		UnwindCodePtr += 2;
 
+		ULONG_PTR Address = ContextRecord->R1 + 8 * (ULONG64)z;
+		ULONG64 Value = MEMORY_READ_QWORD(UnwindParams, Address);
+                if (x == 0)
+		{
+		    //
+		    // x == 0 describes the stack slot containing the saved Link.
+		    // r0 was only the temporary used by mflr/std in the machine prolog.
+		    //
+		    ContextRecord->Link = Value;
+		}
+		else if (x == 2)
+		{
+		    ContextRecord->R2 = Value;
+		}
+		else if ((x >= 14) && (x <= 31))
+		{
+			(&ContextRecord->R0)[x] = Value;
+		}
+		else
+		{
+			Status = STATUS_UNWIND_INVALID_SEQUENCE;
+			break;
+		}
+
+		UPDATE_CONTEXT_POINTERS(UnwindParams, x, Address);
+	}
         // alloc_l (11100000|xx|xx|xx): sp += 16 * x  (x up to 0xFFFFFF)
         else if (CurCode == 0xE0)
         {
@@ -350,6 +413,11 @@ ExecuteCodes:
             ContextRecord->R1 += 16 * x;
         }
 
+	// set_fp (11100001): restore SP from the frame pointer.
+        else if (CurCode == 0xE1)
+        {
+            ContextRecord->R1 = ContextRecord->R31;
+        }
         // nop (11100011): no action
         else if (CurCode == 0xE3)
         {
@@ -379,13 +447,13 @@ ExecuteCodes:
     // -----------------------------------------------------------------
     if (NT_SUCCESS(Status))
     {
-        ContextRecord->Nip  = ContextRecord->Link;  // return address → PC
-        *EstablisherFrame   = ContextRecord->R1;    // caller-SP
 
-        if (ARGUMENT_PRESENT(HandlerRoutine))
-            *HandlerRoutine = ExceptionHandler;
+	    ContextRecord->Nip = ContextRecord->Link;
+	    *EstablisherFrame  = ContextRecord->R1;
+	    if (ARGUMENT_PRESENT(HandlerRoutine))
+		    *HandlerRoutine = ExceptionHandler;
 
-        *HandlerData = ExceptionHandlerData;
+	    *HandlerData = ExceptionHandlerData;
     }
 
     return Status;

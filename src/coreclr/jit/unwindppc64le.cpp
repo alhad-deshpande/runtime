@@ -113,18 +113,109 @@ void Compiler::unwindAllocStack(unsigned size)
                     static_cast<BYTE>(x));
     }
 }
-
 void Compiler::unwindSetFrameReg(regNumber reg, unsigned offset)
 {
-    //_ASSERTE(!"NYI");
-    //TODO: JK, no-op for minimal frameless bring-up
+#if defined(FEATURE_CFI_SUPPORT)
+    if (generateCFIUnwindCodes())
+    {
+        if (compGeneratingProlog)
+        {
+            unwindSetFrameRegCFI(reg, offset);
+        }
+        return;
+    }
+#endif // FEATURE_CFI_SUPPORT
+
+    noway_assert(reg == REG_FPBASE);
+    noway_assert(offset == 0);
+
+    UnwindInfo* pu = &funCurrentFunc()->uwi;
+
+    // set_fp: 11100001
+    // PPC64LE establishes r31 = r1.
+    pu->AddCode(0xE1);
 }
 
 void Compiler::unwindSaveReg(regNumber reg, unsigned offset)
 {
-    //_ASSERTE(!"NYI");
-    //unreached();
-    //TODO: JK, no-op for minimal frameless bring-up
+    noway_assert(offset <= static_cast<unsigned>(INT_MAX));
+    unwindSaveReg(reg, static_cast<int>(offset));
+}
+
+void Compiler::unwindSaveReg(regNumber reg, int offset)
+{
+#if defined(FEATURE_CFI_SUPPORT)
+    if (generateCFIUnwindCodes())
+    {
+        if (compGeneratingProlog)
+        {
+            FuncInfoDsc*   func     = funCurrentFunc();
+            UNATIVE_OFFSET cbProlog = unwindGetCurrentOffset(func);
+            createCfiCode(func, cbProlog, CFI_REL_OFFSET, mapRegNumToDwarfReg(reg), offset);
+        }
+        return;
+    }
+#endif // FEATURE_CFI_SUPPORT
+
+    //
+    // The localloc epilog currently reports r31 using caller-SP - 8.
+    // Negative-offset Windows-style unwind is outside this milestone.
+    //
+    if (offset < 0)
+    {
+        return;
+    }
+
+    //
+    // PPC64LE FPR Windows-style unwind is not implemented yet.
+    //
+    if (!emitter::isGeneralRegister(reg))
+    {
+        return;
+    }
+
+    //
+    // PPC64LE save_reg:
+    //
+    //   D0 | x | z
+    //
+    // restores GPR x from [SP + z * 8].
+    //
+
+    //
+	// Large-offset register saves are outside the first PPC64LE
+	// fixed-frame unwind milestone. The temporary D0 encoding
+	// can represent offsets only through 2040 bytes.
+	//
+	if (offset > 2040)
+	{
+	    return;
+	}
+
+	noway_assert((offset % 8) == 0);
+
+	unsigned x;
+    if (reg == REG_R0)
+    {
+        x = 0;
+    }
+    else if (reg == REG_R2)
+    {
+        x = 2;
+    }
+    else
+    {
+        noway_assert((REG_R14 <= reg) && (reg <= REG_R31));
+        x = static_cast<unsigned>(reg);
+    }
+
+    unsigned z = static_cast<unsigned>(offset) / 8;
+
+    noway_assert(x <= 31);
+    noway_assert(z <= 0xFF);
+
+    UnwindInfo* pu = &funCurrentFunc()->uwi;
+    pu->AddCode(0xD0, static_cast<BYTE>(x), static_cast<BYTE>(z));
 }
 
 void Compiler::unwindNop()

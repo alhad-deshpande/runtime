@@ -41,6 +41,10 @@
 #define ESTABLISHER_FRAME_ADDRESS_IS_CALLER_SP
 #endif // TARGET_ARM || TARGET_ARM64 || TARGET_X86 || TARGET_LOONGARCH64 || TARGET_RISCV64
 
+#if defined(TARGET_POWERPC64)
+#define USE_FUNCLET_CALL_HELPER
+#endif // TARGET_POWERPC64
+
 #ifndef TARGET_UNIX
 void NOINLINE
 ClrUnwindEx(EXCEPTION_RECORD* pExceptionRecord,
@@ -559,7 +563,26 @@ void ExceptionTracker::UpdateNonvolatileRegisters(CONTEXT *pContextRecord, REGDI
     UPDATEREG(S10);
     UPDATEREG(S11);
     UPDATEREG(Fp);
+#elif defined(TARGET_POWERPC64)
 
+    UPDATEREG(R14);
+    UPDATEREG(R15);
+    UPDATEREG(R16);
+    UPDATEREG(R17);
+    UPDATEREG(R18);
+    UPDATEREG(R19);
+    UPDATEREG(R20);
+    UPDATEREG(R21);
+    UPDATEREG(R22);
+    UPDATEREG(R23);
+    UPDATEREG(R24);
+    UPDATEREG(R25);
+    UPDATEREG(R26);
+    UPDATEREG(R27);
+    UPDATEREG(R28);
+    UPDATEREG(R29);
+    UPDATEREG(R30);
+    UPDATEREG(R31);
 #else
     PORTABILITY_ASSERT("ExceptionTracker::UpdateNonvolatileRegisters");
 #endif
@@ -3455,6 +3478,8 @@ static inline UINT_PTR *GetFirstNonVolatileRegisterAddress(PCONTEXT pContextReco
     return (UINT_PTR*)&(pContextRecord->Edi);
 #elif defined(TARGET_RISCV64)
     return (UINT_PTR*)&(pContextRecord->Fp);
+#elif defined(TARGET_POWERPC64)
+    return (UINT_PTR*)&(pContextRecord->R14);
 #else
     PORTABILITY_ASSERT("GetFirstNonVolatileRegisterAddress");
     return NULL;
@@ -3463,7 +3488,7 @@ static inline UINT_PTR *GetFirstNonVolatileRegisterAddress(PCONTEXT pContextReco
 
 static inline TADDR GetFrameRestoreBase(PCONTEXT pContextRecord)
 {
-#if defined(TARGET_ARM) || defined(TARGET_ARM64) || defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64)
+#if defined(TARGET_ARM) || defined(TARGET_ARM64) || defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64) || defined(TARGET_POWERPC64)
     return GetSP(pContextRecord);
 #elif defined(TARGET_X86)
     return pContextRecord->Ebp;

@@ -5008,6 +5008,7 @@ void CodeGen::genFnEpilog(BasicBlock* block)
     compiler->unwindSaveReg(REG_R2, R2_save_offset);
 
     emit->emitIns_R(INS_mtlr, EA_PTRSIZE, REG_R0);
+    compiler->unwindNop();
     emit->emitIns(INS_blr);
     compiler->unwindReturn(REG_R0);
 
@@ -5108,6 +5109,7 @@ void CodeGen::genPushCalleeSavedRegisters()
     compiler->unwindSaveReg(REG_R2, R2_save_offset);
 
     GetEmitter()->emitIns_R(INS_mflr, EA_PTRSIZE, REG_R0);
+    compiler->unwindNop();
     GetEmitter()->emitIns_R_R_I(INS_std, EA_PTRSIZE, REG_R0, REG_SPBASE, LR_save_offset);
     compiler->unwindSaveReg(REG_R0, LR_save_offset);
 
@@ -5127,6 +5129,9 @@ void CodeGen::genPushCalleeSavedRegisters()
 
     GetEmitter()->emitIns_Mov(INS_mov, EA_PTRSIZE, REG_FP, REG_SPBASE, /* canSkip */ false);
 
+    // Keep fixed-frame unwind reconstruction SP-based. The virtual R31 may not
+    // describe the current frame base when unwinding from the method body, so
+    // emitting set_fp here can pivot SP to a stale R31 value.
     int offset = localFrameSize;
 
     regMaskTP maskSaveRegsFloat = rsPushRegs & RBM_ALLFLOAT;
@@ -5159,7 +5164,6 @@ void CodeGen::genPushCalleeSavedRegisters()
     }
 
     JITDUMP("    frame pointer offset from SP=0\n");
-    compiler->unwindSetFrameReg(REG_FPBASE, 0);
 
     if (compiler->info.compIsVarArgs)
     {
@@ -6424,6 +6428,7 @@ void CodeGen::genFuncletProlog(BasicBlock* block)
     compiler->unwindSaveReg(REG_R2, R2_save_offset);
 
     emit->emitIns_R(INS_mflr, EA_PTRSIZE, REG_R0);
+    compiler->unwindNop();
     emit->emitIns_R_R_I(INS_std, EA_PTRSIZE, REG_R0, REG_SPBASE, LR_save_offset);
     compiler->unwindSaveReg(REG_R0, LR_save_offset);
 
@@ -6437,8 +6442,10 @@ void CodeGen::genFuncletProlog(BasicBlock* block)
     emit->emitIns_R_R_I(INS_std, EA_PTRSIZE, REG_FP, REG_SPBASE, FP_save_offset);
     compiler->unwindSaveReg(REG_FP, FP_save_offset);
 
-    // --- Establish FP = SP (bottom of frame) ---
-    emit->emitIns_Mov(INS_mov, EA_PTRSIZE, REG_FP, REG_SPBASE, /* canSkip */ false);
+    // The funclet frame itself is addressed through r1.
+    // For non-filter funclets, CallEHFunclet supplies r31 = parent managed FP.
+    // Do not emit set_fp metadata: r31 is not the funclet SP in the funclet body.
+
 
     // --- Save callee-saved integer registers (r14-r31, ascending) ---
     int offset = genFuncletInfo.fiSP_to_CalleeSaved_delta;
@@ -6467,7 +6474,6 @@ void CodeGen::genFuncletProlog(BasicBlock* block)
         }
     }
 
-    compiler->unwindSetFrameReg(REG_FPBASE, 0);
 
     // This is the end of the OS-reported prolog for unwinding purposes.
     compiler->unwindEndProlog();
@@ -6495,43 +6501,23 @@ void CodeGen::genFuncletProlog(BasicBlock* block)
         }
         else
         {
-            // Non-filter finally/fault funclet: r31 is currently funclet_SP (set by "mr r31,r1" above).
+            // Non-filter funclet (catch/finally/fault).
+            // CallEHFunclet restores r31 from the parent CONTEXT, so on entry
+            // r31 already denotes the parent managed frame pointer.
             //
-            // We need to do two things:
-            //   1. Compute parent_CallerSP and store it as our PSPSym (so the GC/EH walker
-            //      can find the parent frame from this funclet's frame).
-            //   2. Re-establish r31 (FP) = parent_r31 (= parent_SP on PPC64LE, since FP==SP),
-            //      so that the funclet body's accesses to parent-frame locals (which the JIT
-            //      compiled using the same FP-relative offsets as the parent function) land on
-            //      the correct parent-frame slots.
+            // Compute the parent CallerSP from that FP:
+            //     parent_CallerSP = parent_FP - fiFunction_CallerSP_to_FP_delta
             //
-            // The parent entry r1 at funclet call time = funclet_SP + funcletFrameSize.
-            // parent_CallerSP = parent_entry_r1 + totalFrameSize_parent
-            //                 = (funclet_SP + funcletFrameSize) + (-fiFunction_CallerSP_to_FP_delta)
-            //                   (fiFunction_CallerSP_to_FP_delta = genCallerSPtoFPdelta() = -totalFrameSize_parent)
-            //
-            // parent_r31 = parent_CallerSP + fiFunction_CallerSP_to_FP_delta
-            //            = parent_CallerSP - totalFrameSize_parent
-            //            = parent_entry_r1
-            //            = funclet_SP + funcletFrameSize
-            //
-
-            // Step 1: r5 = parent_CallerSP = funclet_SP + funcletFrameSize + (-fiFunction_CallerSP_to_FP_delta)
-            genInstrWithConstant(INS_addi, EA_PTRSIZE, REG_R5, REG_SPBASE,
-                                 funcletFrameSize + (-genFuncletInfo.fiFunction_CallerSP_to_FP_delta), REG_R0, false);
+            // r31 itself must remain unchanged because funclet body accesses to
+            // parent-frame locals are FP-relative.
+            genInstrWithConstant(INS_addi, EA_PTRSIZE, REG_R5, REG_FPBASE,
+                                 -genFuncletInfo.fiFunction_CallerSP_to_FP_delta, REG_R0, false);
 
             regSet.verifyRegUsed(REG_R5);
 
-            // Step 2: store parent_CallerSP as PSPSym in our funclet frame.
-            genInstrWithConstant(INS_std, EA_PTRSIZE, REG_R5, REG_SPBASE, genFuncletInfo.fiSP_to_PSP_slot_delta,
-                                 REG_R0, false);
-            // Step 3: re-establish FP (r31) = parent_r31 = parent_CallerSP + fiFunction_CallerSP_to_FP_delta
-            //                              = funclet_SP + funcletFrameSize
-            // This is the value r1 had on entry to this funclet (before stdu allocated the funclet frame).
-            // All funclet body code that accesses parent-frame locals does so via r31 using the same
-            // FP-relative offsets as the parent function _ so r31 must point at the parent frame base.
-            genInstrWithConstant(INS_addi, EA_PTRSIZE, REG_FPBASE, REG_R5,
-                                 genFuncletInfo.fiFunction_CallerSP_to_FP_delta, REG_R0, false);
+            // Store parent CallerSP as this funclet's PSPSym.
+            genInstrWithConstant(INS_std, EA_PTRSIZE, REG_R5, REG_SPBASE,
+                                 genFuncletInfo.fiSP_to_PSP_slot_delta, REG_R0, false);
         }
     }
 }
@@ -6623,6 +6609,7 @@ void CodeGen::genFuncletEpilog()
     compiler->unwindSaveReg(REG_R2, R2_save_offset);
 
     emit->emitIns_R(INS_mtlr, EA_PTRSIZE, REG_R0);
+    compiler->unwindNop();
     emit->emitIns(INS_blr);
     compiler->unwindReturn(REG_R0);
 
@@ -7385,8 +7372,4 @@ BasicBlock* CodeGen::genCallFinally(BasicBlock* block)
         return nextBlock;
     }
 }
-
-
-
-
 #endif // TARGET_POWERPC64
