@@ -108,14 +108,18 @@ target_ssize_t CodeGen::genStackPointerConstantAdjustmentLoopWithProbe(ssize_t s
 //     new_r1 + totalFrameSize - 8 + allocSize - 8  ← localloc block end (= caller_SP-16)
 //     caller_SP - 8    ← saved old r31 (unchanged in place, never moved)
 //
-//   targetReg (constant):    caller_SP - 8 - amount  = r31 - 8 - amount
-//   targetReg (non-constant): new_r1 + totalFrameSize - 8
+//   targetReg (constant):    r31 - 8 - amount  (= caller_SP - 8 - amount)
+//   targetReg (non-constant): new_r1 + totalFrameSize - 8  (= caller_SP - 8 - alignedSize)
 //
 // KEY INVARIANTS:
 //   1. copyBytes = totalFrameSize - 16  (copies locals+cookie, skips only prolog-r31)
 //      This keeps the GS cookie intact in the copied frame without a separate Step 5a.
 //   2. regSrc = new_r1 + allocSize + 8 (not old_r1+8) so successive locallocs read
 //      from the current live copy rather than the original (already-overwritten) frame.
+//   3. Zero loop count must be exactly allocSize (regCnt / amount).  The formula
+//      (r31-8) - targetReg is WRONG for multiple locallocs because r31 holds caller_SP
+//      after Step 1, so it accumulates all prior allocations in the count and zeroes
+//      previously-returned buffers.  Use regCnt / amount directly instead.
 //
 // r31 is loaded with caller_SP only to write the ELFv2 backchain at 0(new_r1).
 // After the copy, r31 is restored to new_r1 (BAILOUT) so FP-relative locals work.
@@ -159,8 +163,9 @@ void CodeGen::genLclHeap(GenTree* tree)
         amount = size->AsIntCon()->gtIconVal;
         if (amount == 0)
         {
-            // Zero size: return pointer = caller_SP - 16 (top of localloc area).
-            genInstrWithConstant(INS_addi, EA_PTRSIZE, targetReg, REG_FP, -16, REG_R0);
+            // Zero size: return pointer = caller_SP - 8 (top of the localloc area,
+            // immediately below the prolog-saved r31 slot which never moves).
+            genInstrWithConstant(INS_addi, EA_PTRSIZE, targetReg, REG_FP, -8, REG_R0);
             goto BAILOUT;
         }
         amount = AlignUp(amount, STACK_ALIGN);
@@ -274,13 +279,18 @@ void CodeGen::genLclHeap(GenTree* tree)
         // -----------------------------------------------------------------------
         // Step 5: zero localloc block.
         //
-        // The localloc buffer is placed immediately below caller_SP - 8
-        // (the prolog-saved r31 slot which never moves):
+        // For the N-th localloc call, new_r1_N = original_frame_base - sum(alloc_1..N).
+        // The buffer for call N occupies:
+        //   [new_r1_N + totalFrameSize - 8 .. new_r1_N + totalFrameSize - 8 + allocN)
         //
-        //   Constant path:    block = [caller_SP - 8 - amount .. caller_SP - 8)
-        //                     targetReg = r31 - 8 - amount  (r31 = caller_SP)
-        //   Non-constant path: block = [new_r1 + totalFrameSize - 8 .. caller_SP - 8)
-        //                     targetReg = new_r1 + (totalFrameSize - 8)
+        //   Constant path:    targetReg = r31 - 8 - amount   (r31 = caller_SP)
+        //                     zero count = amount
+        //   Non-constant path: targetReg = new_r1 + totalFrameSize - 8  (new_r1 = r1 after Step 3)
+        //                     zero count = regCnt  (this call's aligned allocSize ONLY)
+        //
+        // The zero count must be exactly allocSize for this call — never (r31-8)-targetReg,
+        // because r31 holds caller_SP after Step 1 and that difference accumulates all
+        // prior allocations, causing the zero loop to overwrite earlier buffers.
         //
         // NOTE: the GS cookie slot is at new_r1 + gsCookieOffset which is BELOW
         // the localloc buffer and was copied intact in Step 4.  No post-zero
@@ -315,12 +325,23 @@ void CodeGen::genLclHeap(GenTree* tree)
         else
         {
             // targetReg = new_r1 + (totalFrameSize - 8)
+            //
+            // The localloc buffer for this call occupies:
+            //   [new_r1 + totalFrameSize - 8 .. new_r1 + totalFrameSize - 8 + regCnt)
+            //
+            // Each successive localloc pushes new_r1 down by exactly its own allocSize,
+            // so this formula always points to the fresh, unoccupied region immediately
+            // above the top of the newly copied frame and below the prior allocations.
+            //
+            // The zero count is exactly regCnt (this allocation only).  The old formula
+            // regCtr = (r31-8) - targetReg was wrong: after the first localloc r31 holds
+            // caller_SP so (r31-8) - targetReg accumulates ALL prior allocations, causing
+            // the zero loop to overwrite previously-returned localloc buffers.
             genInstrWithConstant(INS_addi, EA_PTRSIZE, targetReg, REG_SPBASE,
                                  (ssize_t)(totalFrameSize - 8), REG_R0);
 
-            // regCtr = (r31 - 8) - targetReg = allocSize
-            emit->emitIns_R_R_I(INS_addi, EA_PTRSIZE, regCtr, REG_FP, -8);
-            emit->emitIns_R_R_R(INS_subf, EA_PTRSIZE, regCtr, targetReg, regCtr);
+            // regCtr = exactly this allocation's size — do NOT derive from (r31-8)-targetReg
+            emit->emitIns_Mov(INS_mov, EA_PTRSIZE, regCtr, regCnt, /* canSkip */ false);
 
             emit->emitIns_Mov(INS_mov, EA_PTRSIZE, regDst, targetReg, /* canSkip */ false);
             BasicBlock* zeroLoop = genCreateTempLabel();

@@ -1512,15 +1512,19 @@ int LinearScan::BuildNode(GenTree* tree)
 //    The number of sources consumed by this node.
 //
 // Notes:
-//    Temp register requirements mirror the ARM64 implementation.
+//    PPC64LE always initialises the localloc buffer (compInitMem-independent), so
+//    temp-register requirements differ from other architectures:
 //
-//  Size?                   Init Memory?    # temp regs
-//   0                          -               0
-//   const and <=UnrollLimit    -               0
-//   const and <PageSize        No              0
-//   >UnrollLimit               Yes             0
-//   Non-const                  Yes             0
-//   Non-const                  No              2
+//  Size?          # temp regs   registers
+//   0               0           —
+//   const != 0      3           regCtr + regSrc + regDst  (setInternalRegsDelayFree)
+//   Non-const       4           regCnt + regCtr + regSrc + regDst  (setInternalRegsDelayFree)
+//
+//  setInternalRegsDelayFree is set in both non-zero cases so LSRA guarantees that
+//  no internal register aliases the def (targetReg).  Without this guarantee the
+//  zero loop for large constant allocations (regCtr = amount overwrites targetReg)
+//  and the non-constant targetReg computation (subf targetReg, regCnt, r31) would
+//  silently corrupt the returned buffer pointer.
 //
 int LinearScan::BuildLclHeap(GenTree* tree)
 {
@@ -1547,6 +1551,10 @@ int LinearScan::BuildLclHeap(GenTree* tree)
 	           buildInternalIntRegisterDefForNode(tree); // regCtr (loop counter)
 	           buildInternalIntRegisterDefForNode(tree); // regSrc
 	           buildInternalIntRegisterDefForNode(tree); // regDst
+	           // The large-alloc zero loop sets targetReg first (correct buffer pointer)
+	           // then overwrites regCtr with `amount` for the loop counter.  If regCtr
+	           // aliases targetReg the result register is corrupted, so prevent aliasing.
+	           setInternalRegsDelayFree = true;
 	       }
 	   }
 	   else
@@ -1557,6 +1565,10 @@ int LinearScan::BuildLclHeap(GenTree* tree)
 	       buildInternalIntRegisterDefForNode(tree); // regSrc
 	       buildInternalIntRegisterDefForNode(tree); // regDst
 	       BuildUse(size);
+	       // Step 5 computes targetReg = r31 - 8 - regCnt, then copies regCnt into regCtr.
+	       // If any internal register aliases targetReg the computation is silently wrong,
+	       // so force LSRA to assign distinct physical registers.
+	       setInternalRegsDelayFree = true;
 	   }
 
 	   buildInternalRegisterUses();
