@@ -2825,10 +2825,44 @@ void CodeGen::genCodeForLclVar(GenTreeLclVar* tree)
         // targetType must be a normal scalar type and not a TYP_STRUCT
         assert(targetType != TYP_STRUCT);
 
-        instruction ins  = ins_Load(targetType);
-        emitAttr    attr = emitTypeSize(targetType);
+        instruction ins      = ins_Load(targetType);
+        emitAttr    attr     = emitTypeSize(targetType);
+        regNumber   targetReg = tree->GetRegNum();
 
-        GetEmitter()->emitIns_R_S(ins, attr, tree->GetRegNum(), varNum, 0);
+        // On PPC64LE, incoming stack parameters reside in the caller's stack frame.
+        // When localloc has been used, r1 may have been displaced downward by the
+        // localloc block(s) and the (r1 + genTotalFrameSize() + stackOffset) calculation
+        // no longer reaches the caller's frame.  Walk the ELFv2 backchain instead:
+        // 0(r1) always holds the original caller's SP.
+        //
+        // R0 cannot be used as the base register (rA) in D-form/DS-form load/store
+        // instructions on PPC64 (rA=0 means "use literal 0 as the address").
+        // Use R12 (volatile GPR scratch) when targetReg is a float register.
+        if (compiler->compLocallocUsed && varDsc->lvIsParam && !varDsc->lvIsRegArg)
+        {
+            int stackOffset = varDsc->GetStackOffset();
+
+            if (genIsValidFloatReg(targetReg))
+            {
+                // targetReg is a float register — use R12 as the GPR scratch.
+                // Step 1: R12 = caller's SP  (backchain word at 0(r1))
+                GetEmitter()->emitIns_R_R_I(INS_ld, EA_PTRSIZE, REG_R12, REG_SPBASE, 0);
+                // Step 2: load from caller's frame at stackOffset(R12)
+                GetEmitter()->emitIns_R_AR(ins, attr, targetReg, REG_R12, stackOffset);
+            }
+            else
+            {
+                // targetReg is a GPR — reuse it as both scratch and destination.
+                // Step 1: targetReg = caller's SP  (backchain word at 0(r1))
+                GetEmitter()->emitIns_R_R_I(INS_ld, EA_PTRSIZE, targetReg, REG_SPBASE, 0);
+                // Step 2: load parameter from caller's frame at stackOffset(targetReg)
+                GetEmitter()->emitIns_R_AR(ins, attr, targetReg, targetReg, stackOffset);
+            }
+        }
+        else
+        {
+            GetEmitter()->emitIns_R_S(ins, attr, targetReg, varNum, 0);
+        }
         genProduceReg(tree);
     }
 }
@@ -3659,18 +3693,50 @@ void CodeGen::genCodeForLclFld(GenTreeLclFld* tree)
                 {
                     // Field is on the incoming stack - load from caller's stack frame
                     int stackOffset = segment.GetStackOffset();
-                    
-                    // The incoming parameters are relative to the caller's SP (before our frame allocation)
-                    // After frame allocation (stdu r1, -frameSize(r1)), our SP is moved down
-                    // The incoming parameters are now at (current SP + frameSize + stackOffset)
-                    int frameSize = genTotalFrameSize();
-                    int adjustedOffset = stackOffset + frameSize;
-                    
-                    JITDUMP("[PPC64LE HFA DEBUG] genCodeForLclFld - Loading V%02u+%u from incoming stack: ABI offset=%d, adjusted offset=%d (frame=%d)\n",
-                           varNum, offs, stackOffset, adjustedOffset, frameSize);
-                    
-                    // Load from incoming parameter area
-                    emit->emitIns_R_AR(ins, attr, targetReg, REG_SPBASE, adjustedOffset);
+
+                    if (compiler->compLocallocUsed)
+                    {
+                        // When localloc has been used, r1 may have been moved down by the localloc
+                        // block(s). The ELFv2 backchain word at 0(r1) always holds the original
+                        // caller's SP, so load that first into a GPR scratch and then load the
+                        // field from the caller's frame using its ABI-relative stack offset.
+                        //
+                        // R0 cannot be used as the base register (rA) in D-form/DS-form
+                        // load/store instructions on PPC64 (rA=0 means "use literal 0").
+                        // Use R12 (volatile GPR scratch) when targetReg is a float register.
+                        JITDUMP("[PPC64LE HFA DEBUG] genCodeForLclFld - compLocallocUsed: loading V%02u+%u from caller SP via backchain: ABI offset=%d\n",
+                               varNum, offs, stackOffset);
+
+                        if (genIsValidFloatReg(targetReg))
+                        {
+                            // targetReg is a float register — use R12 as the GPR scratch.
+                            // Step 1: R12 = caller's SP  (backchain word at 0(r1))
+                            emit->emitIns_R_R_I(INS_ld, EA_PTRSIZE, REG_R12, REG_SPBASE, 0);
+                            // Step 2: load float field from caller's frame at stackOffset(R12)
+                            emit->emitIns_R_AR(ins, attr, targetReg, REG_R12, stackOffset);
+                        }
+                        else
+                        {
+                            // targetReg is a GPR — reuse it as both scratch and destination.
+                            // Step 1: targetReg = caller's SP  (backchain word at 0(r1))
+                            emit->emitIns_R_R_I(INS_ld, EA_PTRSIZE, targetReg, REG_SPBASE, 0);
+                            // Step 2: load field from caller's frame at stackOffset(targetReg)
+                            emit->emitIns_R_AR(ins, attr, targetReg, targetReg, stackOffset);
+                        }
+                    }
+                    else
+                    {
+                        // The incoming parameters are relative to the caller's SP (before our
+                        // frame allocation). After frame allocation (stdu r1, -frameSize(r1)),
+                        // our SP is moved down; the parameters are now at (r1 + frameSize + stackOffset).
+                        int frameSize      = genTotalFrameSize();
+                        int adjustedOffset = stackOffset + frameSize;
+
+                        JITDUMP("[PPC64LE HFA DEBUG] genCodeForLclFld - Loading V%02u+%u from incoming stack: ABI offset=%d, adjusted offset=%d (frame=%d)\n",
+                               varNum, offs, stackOffset, adjustedOffset, frameSize);
+
+                        emit->emitIns_R_AR(ins, attr, targetReg, REG_SPBASE, adjustedOffset);
+                    }
                     genProduceReg(tree);
                     return;
                 }
@@ -3678,8 +3744,35 @@ void CodeGen::genCodeForLclFld(GenTreeLclFld* tree)
         }
     }
     
-    // Normal case: load from local variable's home location
-    emit->emitIns_R_S(ins, attr, targetReg, varNum, offs);
+    // Normal case: load from local variable's home location.
+    // On PPC64LE, incoming stack parameters live in the caller's stack frame.
+    // When localloc has been used, r1 may have been displaced; walk the ELFv2
+    // backchain (0(r1) == original caller's SP) and access via GetStackOffset().
+    if (compiler->compLocallocUsed && varDsc->lvIsParam && !varDsc->lvIsRegArg)
+    {
+        int stackOffset = varDsc->GetStackOffset() + offs;
+
+        // R0 cannot be used as a base register in D-form/DS-form loads on PPC64.
+        // Use R12 as a GPR scratch when targetReg is a float register.
+        if (genIsValidFloatReg(targetReg))
+        {
+            // Step 1: R12 = caller's SP  (backchain word at 0(r1))
+            emit->emitIns_R_R_I(INS_ld, EA_PTRSIZE, REG_R12, REG_SPBASE, 0);
+            // Step 2: load float field from caller's frame at stackOffset(R12)
+            emit->emitIns_R_AR(ins, attr, targetReg, REG_R12, stackOffset);
+        }
+        else
+        {
+            // Step 1: targetReg = caller's SP  (backchain word at 0(r1))
+            emit->emitIns_R_R_I(INS_ld, EA_PTRSIZE, targetReg, REG_SPBASE, 0);
+            // Step 2: load field from caller's frame at stackOffset(targetReg)
+            emit->emitIns_R_AR(ins, attr, targetReg, targetReg, stackOffset);
+        }
+    }
+    else
+    {
+        emit->emitIns_R_S(ins, attr, targetReg, varNum, offs);
+    }
 
     genProduceReg(tree);
 }

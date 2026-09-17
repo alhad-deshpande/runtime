@@ -2678,14 +2678,24 @@ inline
 #ifdef TARGET_POWERPC64
         // For PPC64LE incoming parameters that are frame-pointer-based,
         // adjust the offset to account for the frame size since the offset is
-        // relative to the caller's SP but we're accessing from the callee's FP (which equals callee's SP)
+        // relative to the caller's SP but we're accessing from the callee's SP.
+        //
+        // When compLocallocUsed is true, r1 may have been displaced downward by
+        // one or more localloc blocks, so the simple (SP + totalFrameSize + offset)
+        // arithmetic no longer reaches the caller's frame.  In that case codegen
+        // emits a two-instruction sequence (ld scratchReg, 0(r1); load param,
+        // offset(scratchReg)) that bypasses lvaFrameAddress entirely, so this
+        // function will not be called for those parameters on that path.
+        // Nevertheless, return the raw ABI-relative offset here as a safe
+        // fallback so any remaining caller (e.g. debug dumps) gets a meaningful
+        // value instead of a stale genTotalFrameSize()-adjusted one.
         if (FPbased && varDsc->lvIsParam && (lvaDoneFrameLayout == Compiler::FINAL_FRAME_LAYOUT))
         {
             if (varDsc->lvIsSplit)
             {
                 // Split parameter: first part in register, second part on stack
                 regNumber regNum = varDsc->GetArgReg();
-                
+
                 // Check if this is a float register (HFA) or integer register (regular struct)
                 if (genIsValidFloatReg(regNum))
                 {
@@ -2700,30 +2710,44 @@ inline
                 }
                 else
                 {
-                    // Regular struct split parameter in integer registers (r3-r10)
-                    // For PPC64LE, the register portion should be saved in the parameter save area
-                    // which the caller has reserved at offsets 32-95 from the caller's SP.
-                    // The parameter save area starts at callee's FP + calleeFrameSize + 32.
-                    // For r10 (8th register), the offset is 32 + 7*8 = 88 from caller's SP.
-                    // From callee's FP: calleeFrameSize + 88.
-                    
+                    // Regular struct split parameter in integer registers (r3-r10).
+                    // The register portion is saved in the caller-reserved parameter save area
+                    // at offsets 32-95 from the caller's SP.
+                    //
+                    // When compLocallocUsed is true, codegen uses the backchain path instead
+                    // and does not call lvaFrameAddress for this variable; return the raw
+                    // caller-SP-relative offset as a safe fallback.
                     assert(regNum >= REG_R3 && regNum <= REG_R10);
                     int paramSaveOffset = 32 + ((regNum - REG_R3) * 8);
-                    
-                    // Calculate the base address from callee's FP
-                    // Example: For r10 with calleeFrameSize=224, paramSaveOffset=88
-                    // Base = 224 + 88 = 312
-                    // Field offset 0: 312 + 0 = 312 (r10 saved location)
-                    // Field offset 8: 312 + 8 = 320 (stack portion location)
-                    varOffset = codeGen->genTotalFrameSize() + paramSaveOffset;
+
+                    if (compLocallocUsed)
+                    {
+                        // Raw caller-SP-relative offset (base = caller SP, not callee SP).
+                        varOffset = paramSaveOffset;
+                    }
+                    else
+                    {
+                        // Normal path: adjust by total frame size to get callee-SP-relative offset.
+                        varOffset = codeGen->genTotalFrameSize() + paramSaveOffset;
+                    }
                     *pFPbased = FPbased;
                     return varOffset;
                 }
             }
             else if (!varDsc->lvIsRegArg)
             {
-                // Regular stack parameter
-                varOffset = varDsc->GetStackOffset() + codeGen->genTotalFrameSize();
+                // Regular stack parameter.
+                // When compLocallocUsed is true, codegen uses the backchain path instead and
+                // does not call lvaFrameAddress for this variable; return the raw
+                // caller-SP-relative offset (GetStackOffset()) as a safe fallback.
+                if (compLocallocUsed)
+                {
+                    varOffset = varDsc->GetStackOffset();
+                }
+                else
+                {
+                    varOffset = varDsc->GetStackOffset() + codeGen->genTotalFrameSize();
+                }
                 *pFPbased = FPbased;
                 return varOffset;
             }
