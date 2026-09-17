@@ -5897,7 +5897,15 @@ void Compiler::lvaFixVirtualFrameOffsets()
     else
     {
         // FP is used.
+        // PPC64LE: lvaAllocLocalAndSetVirtualOffset already encodes each local's
+        // final SP-relative offset directly (LINKAGE_AREA + paramSave + stkOffs).
+        // Adding compCalleeRegsPushed*8 here would shift every local up into the
+        // callee-saved register area and the TEMP_STORAGE scratch slots, causing
+        // the topmost local to land at FP_save_offset (totalFrameSize - 8) and
+        // clobber the saved r31 value written by the prolog.
+#if !defined(TARGET_POWERPC64)
         delta += (compCalleeRegsPushed << 3);
+#endif // !TARGET_POWERPC64
 
         if ((lvaMonAcquired != BAD_VAR_NUM) && !opts.IsOSR())
         {
@@ -5908,16 +5916,26 @@ void Compiler::lvaFixVirtualFrameOffsets()
             {
                 int offset = lvaTable[lvaPSPSym].GetStackOffset() + delta;
                 lvaTable[lvaPSPSym].SetStackOffset(offset);
+#if !defined(TARGET_POWERPC64)
+                // PPC64LE: offsets are already absolute; do not accumulate delta
+                // or the subsequent loop will shift all other locals incorrectly.
                 delta += TARGET_POINTER_SIZE;
+#endif // !TARGET_POWERPC64
             }
 
+#if !defined(TARGET_POWERPC64)
+            // PPC64LE: same reason — keep delta == 0 for the loop below.
             delta += lvaLclSize(lvaMonAcquired);
+#endif // !TARGET_POWERPC64
         }
         else if (lvaPSPSym != BAD_VAR_NUM)
         {
             int offset = lvaTable[lvaPSPSym].GetStackOffset() + delta;
             lvaTable[lvaPSPSym].SetStackOffset(offset);
+#if !defined(TARGET_POWERPC64)
+            // PPC64LE: same reason — keep delta == 0 for the loop below.
             delta += TARGET_POINTER_SIZE;
+#endif // !TARGET_POWERPC64
         }
 
         JITDUMP("--- delta bump %d for FP frame\n", delta);
@@ -7662,10 +7680,23 @@ int Compiler::lvaAllocateTemps(int stkOffs, bool mustDoubleAlign)
             lvaIncrementFrameSize(size);
 #ifdef TARGET_POWERPC64
             stkOffs += size;
+            // PPC64LE: embed the same LINKAGE_AREA + paramSave base that
+            // lvaAllocLocalAndSetVirtualOffset uses, so tdAdjustTempOffs(0)
+            // produces the correct absolute SP-relative offset.
+            {
+                const int LINKAGE_AREA_SIZE    = 32;
+                const int PARAM_SAVE_AREA_SIZE = 64;
+                int paramSaveArea = PARAM_SAVE_AREA_SIZE;
+                if (info.compArgsCount > 0 && compArgSize > PARAM_SAVE_AREA_SIZE)
+                {
+                    paramSaveArea = compArgSize;
+                }
+                temp->tdSetTempOffs(stkOffs + LINKAGE_AREA_SIZE + paramSaveArea);
+            }
 #else
             stkOffs -= size;
-#endif
             temp->tdSetTempOffs(stkOffs);
+#endif
         }
 #ifdef TARGET_ARM
         // Only required for the ARM platform that we have an accurate estimate for the spillTempSize
