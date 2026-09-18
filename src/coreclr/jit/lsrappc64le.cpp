@@ -376,32 +376,29 @@ int LinearScan::BuildCast(GenTreeCast* cast)
 {
     GenTree* src = cast->CastOp();
 
-    // Casts can have contained memory operands.
-    if (src->isContained())
-    {
-        return BuildOperandUses(src);
-    }
-
     SingleTypeRegSet candidates = RBM_NONE;
 
-    // For float <-> int casts, we may need specific register types
+    // For float <-> int casts, we may need specific register types.
+    // Note: srcType is only valid when src is not contained; for contained
+    // memory operands BuildOperandUses handles the source traversal and the
+    // float-path can never apply (memory operands are integral).
     var_types srcType = genActualType(src->TypeGet());
     var_types dstType = cast->TypeGet();
 
     if (varTypeIsFloating(srcType) && !varTypeIsFloating(dstType))
     {
-        // Float/Double to Int cast - source must be in float register
-        candidates = allRegs(TYP_FLOAT);
+        // Float/Double to Int cast - source must be in float register.
         // PowerPC64 needs an internal FP register to hold the converted value
-        // before transferring to integer register via stack
+        // before transferring to integer register via stack.
+        candidates = allRegs(TYP_FLOAT);
         buildInternalFloatRegisterDefForNode(cast);
     }
     else if (!varTypeIsFloating(srcType) && varTypeIsFloating(dstType))
     {
-        // Int to Float/Double cast - source must be in int register
-        candidates = allRegs(TYP_INT);
+        // Int to Float/Double cast - source must be in int register.
         // PowerPC64 needs an internal FP register to hold the integer value
-        // after loading from stack before conversion
+        // after loading from stack before conversion.
+        candidates = allRegs(TYP_INT);
         buildInternalFloatRegisterDefForNode(cast);
     }
 #ifdef TARGET_64BIT
@@ -423,12 +420,15 @@ int LinearScan::BuildCast(GenTreeCast* cast)
     }
 #endif // TARGET_64BIT
 
-    BuildUse(src, candidates);
-    // Build internal register definitions if any were requested
+    // BuildOperandUses handles both contained and non-contained sources.
+    // A def must always be built for the cast node itself, even when its
+    // source is a contained memory operand, so that the parent node can
+    // find the cast's RefPosition via defList.removeListNode().
+    int srcCount = BuildOperandUses(src, candidates);
     buildInternalRegisterUses();
     BuildDef(cast);
 
-    return 1;
+    return srcCount;
 }
 
 //------------------------------------------------------------------------

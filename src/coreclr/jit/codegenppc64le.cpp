@@ -7240,21 +7240,23 @@ void CodeGen::genIntCastOverflowCheck(GenTreeCast* cast, const GenIntCastDesc& d
 //
 void CodeGen::genIntToIntCast(GenTreeCast* cast)
 {
-    genConsumeRegs(cast->CastOp());
+    GenTree* const  src    = cast->CastOp();
+    genConsumeRegs(src);
 
     emitter*        emit    = GetEmitter();
     var_types       dstType = cast->CastToType();
-    var_types       srcType = genActualType(cast->CastOp()->TypeGet());
-    const regNumber srcReg  = cast->CastOp()->GetRegNum();
+    var_types       srcType = genActualType(src->TypeGet());
+    // srcReg is REG_NA when the source is a contained memory operand.
+    const regNumber srcReg  = src->isUsedFromReg() ? src->GetRegNum() : REG_NA;
     const regNumber dstReg  = cast->GetRegNum();
 
-    assert(genIsValidIntReg(srcReg));
     assert(genIsValidIntReg(dstReg));
 
     GenIntCastDesc desc(cast);
 
     if (desc.CheckKind() != GenIntCastDesc::CHECK_NONE)
     {
+        assert(genIsValidIntReg(srcReg));
         genIntCastOverflowCheck(cast, desc, srcReg);
     }
 
@@ -7302,14 +7304,73 @@ void CodeGen::genIntToIntCast(GenTreeCast* cast)
                 }
                 break;
 
+            // The LOAD_* cases arise when the cast source is a contained memory operand
+            // (either a non-enregistered local or a GT_IND). We must emit the load
+            // ourselves using the appropriate PPC64LE sign/zero-extending load instruction.
             case GenIntCastDesc::LOAD_ZERO_EXTEND_SMALL_INT:
             case GenIntCastDesc::LOAD_SIGN_EXTEND_SMALL_INT:
             case GenIntCastDesc::LOAD_ZERO_EXTEND_INT:
             case GenIntCastDesc::LOAD_SIGN_EXTEND_INT:
             case GenIntCastDesc::LOAD_SOURCE:
-                // These are handled by containment - should not reach here
-                unreached();
+            {
+                assert(src->isUsedFromMemory());
+
+                // Choose the load instruction based on the extend kind and size.
+                const unsigned loadSize = desc.ExtendSrcSize();
+                instruction    loadIns;
+
+                switch (desc.ExtendKind())
+                {
+                    case GenIntCastDesc::LOAD_ZERO_EXTEND_SMALL_INT:
+                        loadIns = (loadSize == 1) ? INS_lbz : INS_lhz;
+                        break;
+                    case GenIntCastDesc::LOAD_SIGN_EXTEND_SMALL_INT:
+                        // PPC64 has lha (sign-extend halfword) but no lba;
+                        // for bytes, load zero-extended then sign-extend in register.
+                        loadIns = (loadSize == 1) ? INS_lbz : INS_lha;
+                        break;
+                    case GenIntCastDesc::LOAD_ZERO_EXTEND_INT:
+                        loadIns = INS_lwz;
+                        break;
+                    case GenIntCastDesc::LOAD_SIGN_EXTEND_INT:
+                        loadIns = INS_lwa;
+                        break;
+                    default: // LOAD_SOURCE
+                        loadIns = ins_Load(src->TypeGet());
+                        break;
+                }
+
+                emitAttr loadAttr = EA_ATTR(loadSize == 0 ? genTypeSize(src->TypeGet()) : loadSize);
+
+                if (src->isUsedFromSpillTemp())
+                {
+                    assert(src->IsRegOptional());
+                    TempDsc* tmpDsc = getSpillTempDsc(src);
+                    unsigned tmpNum = tmpDsc->tdTempNum();
+                    regSet.tmpRlsTemp(tmpDsc);
+                    emit->emitIns_R_S(loadIns, loadAttr, dstReg, tmpNum, 0);
+                }
+                else if (src->OperIsLocal())
+                {
+                    emit->emitIns_R_S(loadIns, loadAttr, dstReg,
+                                      src->AsLclVarCommon()->GetLclNum(),
+                                      src->AsLclVarCommon()->GetLclOffs());
+                }
+                else
+                {
+                    assert(src->OperIs(GT_IND) && !src->AsIndir()->IsVolatile() && !src->AsIndir()->IsUnaligned());
+                    GenTree* addr   = src->AsIndir()->Addr();
+                    int      offset = static_cast<int>(src->AsIndir()->Offset());
+                    emit->emitIns_R_R_I(loadIns, loadAttr, dstReg, addr->GetRegNum(), offset);
+                }
+
+                // PPC64 has no load-byte-algebraic; sign-extend the byte after load.
+                if ((desc.ExtendKind() == GenIntCastDesc::LOAD_SIGN_EXTEND_SMALL_INT) && (loadSize == 1))
+                {
+                    emit->emitIns_R_R(INS_extsb, EA_PTRSIZE, dstReg, dstReg);
+                }
                 break;
+            }
 
             default:
                 unreached();
