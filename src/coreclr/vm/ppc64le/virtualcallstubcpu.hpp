@@ -6,7 +6,7 @@
 #ifndef _VIRTUAL_CALL_STUB_PPC64LE_H
 #define _VIRTUAL_CALL_STUB_PPC64LE_H
 
-#define DISPATCH_STUB_FIRST_DWORD 0xe80c0028 // ld r0,40(r12) — first instruction of DispatchStub
+#define DISPATCH_STUB_FIRST_DWORD 0xf981fff8 // std r12,-8(r1) — first instruction of DispatchStub
 #define RESOLVE_STUB_FIRST_DWORD  0xe94c00a8 // ld r10,168(r12) — first instruction of ResolveStub resolveEntryPoint
 
 #define USES_LOOKUP_STUBS   1
@@ -90,10 +90,10 @@ struct DispatchStub
 private:
     friend struct DispatchHolder;
 
-    UINT32 _entryPoint[10];  // 10 instructions (40 bytes)
-    size_t  _expectedMT;     // offset 40
-    PCODE _implTarget;       // oofset 48 
-    PCODE _failTarget;       // oofset 56
+    UINT32 _entryPoint[12];  // 12 instructions (48 bytes)
+    size_t  _expectedMT;     // offset 48
+    PCODE _implTarget;       // offset 56
+    PCODE _failTarget;       // offset 64
 };
 
 struct DispatchHolder
@@ -103,27 +103,63 @@ struct DispatchHolder
     void Initialize(DispatchHolder* pDispatchHolderRX, PCODE implTarget, PCODE failTarget, size_t expectedMT)
     {
         // r12 points to _entryPoint[0] (stub base), set by the caller.
-        // r9 is used as the MethodTable scratch: it is volatile and NOT an argument
-        // register in the relevant sense — r3 is the only argument that matters here
-        // (the 'this' pointer).  r4 must NOT be used because it carries the second
-        // argument (e.g. the key in TryInsert → GetHashCode) and the DispatchStub is
-        // a transparent trampoline with no save/restore frame.  r11 must NOT be used
-        // because it is the live VSD indirection-cell register (virtualStubParamInfo)
-        // consumed by the fail/resolve path.
-         _stub._entryPoint[0] = 0xe80c0028; // ld  r0, 40(r12)    ; _expectedMT  → r0
-        _stub._entryPoint[1] = 0xe9230000; // ld  r9, 0(r3)      ; actual MT from object → r9
-        _stub._entryPoint[2] = 0x7c090000; // cmpd cr0, r9, r0   ; compare actual vs expected MT
-        _stub._entryPoint[3] = 0x41820010; // beq target (+16)
-        _stub._entryPoint[4] = 0xe98c0038; // ld r12, 56(r12)
-        _stub._entryPoint[5] = 0x7d8903a6; // mtspr CTR, r12
-        _stub._entryPoint[6] = 0x4e800420; // bctr
-        _stub._entryPoint[7] = 0xe98c0030; // target: ld r12, 48(r12)
-        _stub._entryPoint[8] = 0x7d8903a6; // mtspr CTR, r12
-        _stub._entryPoint[9] = 0x4e800420; // bctr
-	
-	    _stub._expectedMT = expectedMT;
-	    _stub._implTarget = implTarget;
-	    _stub._failTarget = failTarget;
+        //
+        // r9 and r10 are live parameter-passing registers on PPC64LE ELFv2 ABI and
+        // MUST NOT be clobbered by this stub (which has no save/restore frame).
+        // r11 is the live VSD indirection-cell register (virtualStubParamInfo) and
+        // must also be preserved.  r0 is safe as scratch.  r12 is the stub base
+        // (set by bctr on entry) and can be used as scratch once we save it.
+        //
+        // To compare the object's MethodTable against _expectedMT without touching
+        // any argument register, we use the ELFv2 red zone (-8(r1)) as a temporary
+        // spill slot for r12 (the stub base).  The red zone is 512 bytes below SP
+        // and is guaranteed not to be modified by signal handlers when the process
+        // is executing in user space, so it is safe to use here.
+        //
+        // Sequence (12 instructions, 48 bytes):
+        //
+        //  [0]  std  r12, -8(r1)    ; spill stub base → red zone
+        //  [1]  ld   r0,   0(r3)    ; r0  = actual MethodTable from object (r3='this')
+        //  [2]  ld   r12, 48(r12)   ; r12 = _expectedMT   (using saved stub base)
+        //  [3]  cmpd cr0, r0, r12   ; compare actual MT vs expected MT
+        //  [4]  ld   r12, -8(r1)    ; restore stub base into r12
+        //  [5]  bne  +16            ; mismatch → [9] fail path
+        //  [6]  ld   r12, 56(r12)   ; impl path: r12 = _implTarget
+        //  [7]  mtctr r12
+        //  [8]  bctr
+        //  [9]  ld   r12, 64(r12)   ; fail path: r12 = _failTarget
+        // [10]  mtctr r12
+        // [11]  bctr
+        //
+        // Encodings:
+        //   std  r12,-8(r1)   : op=62 RS=12 RA=1 DS=-2(=0x3FFE) XO=0  → 0xF981FFF8
+        //   ld   r0,  0(r3)   : op=58 RT=0  RA=3  DS=0          XO=0  → 0xE8030000
+        //   ld   r12,48(r12)  : op=58 RT=12 RA=12 DS=12(=48/4)  XO=0  → 0xE98C0030
+        //   cmpd cr0,r0,r12   : op=31 BF=0 L=1 RA=0 RB=12 XO=0 Rc=0  → 0x7C206000
+        //   ld   r12,-8(r1)   : op=58 RT=12 RA=1  DS=-2(=0x3FFE)XO=0  → 0xE981FFF8
+        //   bne  +16          : op=16 BO=4 BI=2 BD=4 AA=0 LK=0        → 0x40820010
+        //   ld   r12,56(r12)  : op=58 RT=12 RA=12 DS=14(=56/4)  XO=0  → 0xE98C0038
+        //   mtctr r12         :                                        → 0x7D8903A6
+        //   bctr              :                                        → 0x4E800420
+        //   ld   r12,64(r12)  : op=58 RT=12 RA=12 DS=16(=64/4)  XO=0  → 0xE98C0040
+        //   mtctr r12         :                                        → 0x7D8903A6
+        //   bctr              :                                        → 0x4E800420
+        _stub._entryPoint[0]  = 0xF981FFF8; // std  r12,-8(r1)    ; spill stub base to red zone
+        _stub._entryPoint[1]  = 0xE8030000; // ld   r0,  0(r3)    ; r0 = actual MT from object
+        _stub._entryPoint[2]  = 0xE98C0030; // ld   r12,48(r12)   ; r12 = _expectedMT
+        _stub._entryPoint[3]  = 0x7C206000; // cmpd cr0,r0,r12    ; compare actual vs expected MT
+        _stub._entryPoint[4]  = 0xE981FFF8; // ld   r12,-8(r1)    ; restore stub base
+        _stub._entryPoint[5]  = 0x40820010; // bne  +16           ; mismatch → fail path [9]
+        _stub._entryPoint[6]  = 0xE98C0038; // ld   r12,56(r12)   ; impl path: r12 = _implTarget
+        _stub._entryPoint[7]  = 0x7D8903A6; // mtctr r12
+        _stub._entryPoint[8]  = 0x4E800420; // bctr
+        _stub._entryPoint[9]  = 0xE98C0040; // ld   r12,64(r12)   ; fail path: r12 = _failTarget
+        _stub._entryPoint[10] = 0x7D8903A6; // mtctr r12
+        _stub._entryPoint[11] = 0x4E800420; // bctr
+
+        _stub._expectedMT = expectedMT;
+        _stub._implTarget = implTarget;
+        _stub._failTarget = failTarget;
     }
 
     DispatchStub* stub()      { LIMITED_METHOD_CONTRACT; return &_stub; }

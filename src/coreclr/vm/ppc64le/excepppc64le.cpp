@@ -85,11 +85,15 @@ AdjustContextForVirtualStub(
 
     if (sk == STUB_CODE_BLOCK_VSD_DISPATCH_STUB)
     {
-        if (*PTR_DWORD(f_IP) != DISPATCH_STUB_FIRST_DWORD)
-	{
+        // The stub now starts with  std r12,-8(r1)  (DISPATCH_STUB_FIRST_DWORD) at [0],
+        // followed by  ld r0,0(r3)  at [1].  A null-this AV faults at [1], so f_IP
+        // points to [1].  Check that the instruction just before the fault site is the
+        // known first instruction of the stub.
+        if (*PTR_DWORD(f_IP - 4) != DISPATCH_STUB_FIRST_DWORD)
+        {
             _ASSERTE(!"AV in DispatchStub at unknown instruction");
-	    return FALSE;
-	}
+            return FALSE;
+        }
     }
     else
     if (sk == STUB_CODE_BLOCK_VSD_RESOLVE_STUB)
