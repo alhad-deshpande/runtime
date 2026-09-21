@@ -7,7 +7,7 @@
 #define _VIRTUAL_CALL_STUB_PPC64LE_H
 
 #define DISPATCH_STUB_FIRST_DWORD 0xf981fff8 // std r12,-8(r1) — first instruction of DispatchStub
-#define RESOLVE_STUB_FIRST_DWORD  0xe94c00a8 // ld r10,168(r12) — first instruction of ResolveStub resolveEntryPoint
+#define RESOLVE_STUB_FIRST_DWORD  0x398cffd0 // addi r12,r12,-48 — normalises r12 to struct base on direct-branch entry
 
 #define USES_LOOKUP_STUBS   1
 
@@ -237,12 +237,20 @@ struct ResolveHolder
 	   // r12 = stub base — never touched (resolveEntryPoint uses it for its loads).
 	   // No other registers are read or written.
 	   //
-	   // [0]  ori  r11,r11,1   ; set BACKPATCH_FLAG in indirection cell         → 0x616b0001
-	   // [1..11] nop × 11      ; fall through to resolveEntryPoint[0] at +48   → 0x60000000
+	   // [0]   ori  r11,r11,1   ; set BACKPATCH_FLAG in indirection cell        → 0x616b0001
+	   // [1..10] nop × 10       ; padding                                       → 0x60000000
+	   // [11]  addi r12,r12,48  ; advance r12 to struct base + 48 before        → 0x398c0030
+	   //                          falling into resolveEntryPoint[0], so that
+	   //                          both the fall-through path (r12=struct base)
+	   //                          and the direct-branch path (r12=struct base+48)
+	   //                          arrive at resolveEntryPoint[0] with the same
+	   //                          value (struct base + 48), which [0] then
+	   //                          normalises back to struct base via addi -48.
 	   //
 	   // Encoding:
-	   //   ori r11,r11,1: op=24 RS=11 RA=11 UI=1  → 0x616b0001
-	   //   nop:           ori r0,r0,0              → 0x60000000
+	   //   ori  r11,r11,1:  op=24 RS=11 RA=11 UI=1        → 0x616b0001
+	   //   nop:              ori r0,r0,0                   → 0x60000000
+	   //   addi r12,r12,48: op=14 RT=12 RA=12 SI=48        → 0x398c0030
 	   _stub._failEntryPoint[0]  = 0x616b0001; // ori  r11,r11,1  ; BACKPATCH_FLAG always
 	   _stub._failEntryPoint[1]  = 0x60000000; // nop
 	   _stub._failEntryPoint[2]  = 0x60000000; // nop
@@ -254,7 +262,7 @@ struct ResolveHolder
 	   _stub._failEntryPoint[8]  = 0x60000000; // nop
 	   _stub._failEntryPoint[9]  = 0x60000000; // nop
 	   _stub._failEntryPoint[10] = 0x60000000; // nop
-	   _stub._failEntryPoint[11] = 0x60000000; // nop
+	   _stub._failEntryPoint[11] = 0x398c0030; // addi r12,r12,+48 ; advance r12 for fall-through normalisation
 	
 	// -------------------------------
 	   // resolveEntryPoint (104 bytes = 26 instructions)
@@ -270,25 +278,50 @@ struct ResolveHolder
 	   // heap addresses are accessible.  The remaining slots are nops.
 	   //
 	   // r11 = VSD indirection cell (BACKPATCH_FLAG already set by failEntryPoint)
-	   // r12 = stub base
 	   // r10 = dispatch token (required by ResolveWorkerAsmStub/ChainLookup ABI)
 	   //
-	   // [0]  ld   r10,168(r12)   ; r10 = _token (dispatch token)   → 0xe94c00a8
-	   // [1]  ld   r12,176(r12)   ; r12 = _resolveWorkerTarget       → 0xe98c00b0
-	   // [2]  mtctr r12                                              → 0x7d8903a6
-	   // [3]  bctr                ; tail-call ResolveWorkerChainLookup→ 0x4e800420
-	   // [4..25] nop × 22                                            → 0x60000000
+	   // r12 on entry to resolveEntryPoint has TWO possible values:
 	   //
-	   // Encoding:
-	   //   ld r10,168(r12): op=58 RT=10 RA=12 DS=42(=168/4) XO=0   → 0xe94c00a8
-	   //   ld r12,176(r12): op=58 RT=12 RA=12 DS=44(=176/4) XO=0   → 0xe98c00b0
-	   //   mtctr r12:       XFX SPR=9 RS=12 XO=467                  → 0x7d8903a6
-	   //   bctr:                                                     → 0x4e800420
-	       _stub._resolveEntryPoint[0]  = 0xe94c00a8; // ld    r10,168(r12) ; _token → r10
-	       _stub._resolveEntryPoint[1]  = 0xe98c00b0; // ld    r12,176(r12) ; _resolveWorkerTarget → r12
-	       _stub._resolveEntryPoint[2]  = 0x7d8903a6; // mtctr r12
-	       _stub._resolveEntryPoint[3]  = 0x4e800420; // bctr
-	       for (int i = 4; i < 26; i++)
+	   //  (a) Fall-through from failEntryPoint (DispatchStub miss path):
+	   //      failEntryPoint was entered via bctr, so r12 = &_failEntryPoint[0]
+	   //      = struct base (offset 0).  Fall-through leaves r12 unchanged.
+	   //
+	   //  (b) Direct bctr to resolveEntryPoint (BackPatchWorker patches call site
+	   //      directly to resolveEntryPoint after first miss):
+	   //      bctr sets r12 = &_resolveEntryPoint[0] = struct base + 48.
+	   //
+	   // Both paths must resolve _token (struct offset 168) and _resolveWorkerTarget
+	   // (struct offset 176) relative to r12.  We normalise r12 to the struct base
+	   // in resolveEntryPoint[0] by subtracting 48; path (a) then gives struct base,
+	   // path (b) also gives struct base.  Original offsets 168 and 176 are then
+	   // correct from that normalised base.
+	   //
+	   //   addi r12,r12,-48: op=14 RT=12 RA=12 SI=-48(=0xFFD0) → 0x398cffd0
+	   //   ld   r10,168(r12): op=58 RT=10 RA=12 DS=42(=168/4)  → 0xe94c00a8
+	   //   ld   r12,176(r12): op=58 RT=12 RA=12 DS=44(=176/4)  → 0xe98c00b0
+	   //   mtctr r12:         XFX SPR=9 RS=12 XO=467            → 0x7d8903a6
+	   //   bctr:                                                 → 0x4e800420
+	   //
+	   // NOTE: path (a) subtracts 48 from r12 = struct base, giving struct base - 48.
+	   // That would make offsets wrong for path (a).  Fix: make the last instruction
+	   // of failEntryPoint advance r12 by 48 before falling through, so path (a)
+	   // arrives at resolveEntryPoint[0] with r12 = struct base + 48, same as path (b).
+	   // resolveEntryPoint[0] then subtracts 48, and both paths yield struct base.
+	   //
+	   // failEntryPoint[11] = addi r12,r12,48  (op=14 RT=12 RA=12 SI=48) → 0x398c0030
+	   //
+	   // [0]  addi r12,r12,-48   ; normalise r12 → struct base          → 0x398cffd0
+	   // [1]  ld   r10,168(r12)  ; r10 = _token                         → 0xe94c00a8
+	   // [2]  ld   r12,176(r12)  ; r12 = _resolveWorkerTarget            → 0xe98c00b0
+	   // [3]  mtctr r12                                                  → 0x7d8903a6
+	   // [4]  bctr               ; tail-call ResolveWorkerChainLookup    → 0x4e800420
+	   // [5..25] nop × 21                                                → 0x60000000
+	       _stub._resolveEntryPoint[0]  = 0x398cffd0; // addi r12,r12,-48  ; normalise r12 → struct base
+	       _stub._resolveEntryPoint[1]  = 0xe94c00a8; // ld   r10,168(r12) ; _token → r10
+	       _stub._resolveEntryPoint[2]  = 0xe98c00b0; // ld   r12,176(r12) ; _resolveWorkerTarget → r12
+	       _stub._resolveEntryPoint[3]  = 0x7d8903a6; // mtctr r12
+	       _stub._resolveEntryPoint[4]  = 0x4e800420; // bctr
+	       for (int i = 5; i < 26; i++)
 	           _stub._resolveEntryPoint[i] = 0x60000000; // nop
     }
 
