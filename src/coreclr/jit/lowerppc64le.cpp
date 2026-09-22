@@ -97,9 +97,11 @@ bool Lowering::IsContainableImmed(GenTree* parentNode, GenTree* childNode) const
     switch (parentNode->OperGet())
     {
         case GT_ADD:
-        case GT_SUB:
-            // addi/addis support 16-bit signed immediate
-            // subi is encoded as addi with negated immediate
+            // addi supports 16-bit signed immediate
+            // GT_SUB is intentionally excluded: PowerPC has no "subfi" instruction,
+            // and genCodeForBinary/GT_SUB has no immediate-operand code path.
+            // Containing op2 for GT_SUB would leave op2->GetRegNum() == REG_NA and
+            // trigger assert(isGeneralRegister(reg2)) in emitIns_R_R_R.
             return isValidSimm16(immVal);
 
         case GT_EQ:

@@ -871,6 +871,10 @@ void CodeGen::genCodeForTreeNode(GenTree* treeNode)
             genCodeForBitCast(treeNode->AsOp());
             break;
 
+        case GT_CKFINITE:
+            genCkfinite(treeNode);
+            break;
+
         default:
             printf("ERROR: Unhandled tree node operation: %s (oper=%d)\n",
                    GenTree::OpName(treeNode->gtOper), treeNode->gtOper);
@@ -878,6 +882,102 @@ void CodeGen::genCodeForTreeNode(GenTree* treeNode)
                    varTypeName(treeNode->TypeGet()), treeNode->gtFlags);
             abort();
     }
+}
+
+//------------------------------------------------------------------------
+// genCkfinite: Generate code for the GT_CKFINITE opcode (IL ckfinite).
+//
+// Arguments:
+//    treeNode - The GT_CKFINITE node (type float or double)
+//
+// The IL ckfinite instruction throws System.ArithmeticException when the
+// top-of-stack floating-point value is NaN, +Inf, or -Inf.
+// Those special values share a common property: all exponent bits are 1.
+//
+//   float32: exponent = bits[30:23] (8 bits); all-ones mask = 0xFF
+//   float64: exponent = bits[62:52] (11 bits); all-ones mask = 0x7FF
+//
+// PowerPC64 has no fclass instruction, so we move the FP bits to a GPR
+// via a stack scratch slot, shift out the mantissa, mask the exponent,
+// and branch to ArithmeticException if exponent == all-ones.
+//
+// Pseudo-code (float32):
+//   stfs  fpReg, tmpOff(r1)      ; store float bit-pattern
+//   lwz   intReg, tmpOff(r1)     ; load as 32-bit integer
+//   srwi  intReg, intReg, 23     ; shift right to bring exponent to bits[7:0]
+//   andi. intReg, intReg, 0xFF   ; mask exponent field
+//   cmplwi intReg, 0xFF          ; all-ones == NaN or Inf?
+//   beq   <ArithmeticException>  ; throw if so
+//   fmr/nop  (copy to targetReg if needed)
+//
+// Pseudo-code (float64):
+//   stfd  fpReg, tmpOff(r1)
+//   ld    intReg, tmpOff(r1)
+//   srdi  intReg, intReg, 52
+//   andi. intReg, intReg, 0x7FF
+//   cmpldi intReg, 0x7FF
+//   beq   <ArithmeticException>
+//   fmr/nop
+//
+// Notes:
+//    LSRA (lsrappc64le.cpp GT_CKFINITE) already reserves one internal
+//    integer register for the bit-pattern work.
+//
+void CodeGen::genCkfinite(GenTree* treeNode)
+{
+    assert(treeNode->OperGet() == GT_CKFINITE);
+
+    GenTree*  op1        = treeNode->AsOp()->gtOp1;
+    var_types targetType = treeNode->TypeGet();
+    emitter*  emit       = GetEmitter();
+    emitAttr  attr       = emitActualTypeSize(treeNode);
+
+    assert(varTypeIsFloating(targetType));
+
+    // intReg is the internal scratch GPR reserved by LSRA.
+    regNumber intReg = internalRegisters.GetSingle(treeNode);
+    regNumber fpReg  = genConsumeReg(op1);
+
+    // Scratch stack slot — reuse the slot at (SP + frameSize - 16) already
+    // established for genIntToFloatCast / genFloatToIntCast / genCodeForBitCast.
+    int tmpOffset = genTotalFrameSize() - 16;
+
+    if (attr == EA_4BYTE)
+    {
+        // float32 ── exponent = bits[30:23], all-ones = 0xFF
+        emit->emitIns_R_R_I(INS_stfs, EA_4BYTE, fpReg,  REG_SPBASE, tmpOffset);
+        emit->emitIns_R_R_I(INS_lwz,  EA_4BYTE, intReg, REG_SPBASE, tmpOffset);
+        // srwi intReg, intReg, 23  (rlwinm rD, rA, 32-23=9, 0, 8)
+        emit->emitIns_R_R_I(INS_srwi, EA_4BYTE, intReg, intReg, 23);
+        // andi. intReg, intReg, 0xFF  — masks exponent and sets CR0
+        emit->emitIns_R_R_I(INS_andi, EA_4BYTE, intReg, intReg, 0xFF);
+        // cmplwi intReg, 0xFF  — if exponent == all-ones → NaN / Inf
+        emit->emitIns_R_I(INS_cmplwi, EA_4BYTE, intReg, 0xFF);
+    }
+    else
+    {
+        // float64 ── exponent = bits[62:52], all-ones = 0x7FF
+        assert(attr == EA_8BYTE);
+        emit->emitIns_R_R_I(INS_stfd, EA_8BYTE, fpReg,  REG_SPBASE, tmpOffset);
+        emit->emitIns_R_R_I(INS_ld,   EA_8BYTE, intReg, REG_SPBASE, tmpOffset);
+        // srdi intReg, intReg, 52
+        emit->emitIns_R_R_I(INS_srdi, EA_8BYTE, intReg, intReg, 52);
+        // andi. intReg, intReg, 0x7FF  — masks 11-bit exponent and sets CR0
+        emit->emitIns_R_R_I(INS_andi, EA_8BYTE, intReg, intReg, 0x7FF);
+        // cmpldi intReg, 0x7FF
+        emit->emitIns_R_I(INS_cmpldi, EA_8BYTE, intReg, 0x7FF);
+    }
+
+    // Throw System.ArithmeticException if exponent was all-ones.
+    genJumpToThrowHlpBlk(EJ_eq, SCK_ARITH_EXCPN);
+
+    // Finite value: copy to targetReg if it differs from the source FP register.
+    if (treeNode->GetRegNum() != fpReg)
+    {
+        inst_Mov(targetType, treeNode->GetRegNum(), fpReg, /* canSkip */ true);
+    }
+
+    genProduceReg(treeNode);
 }
 
 //------------------------------------------------------------------------
