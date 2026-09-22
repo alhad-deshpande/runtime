@@ -244,9 +244,9 @@ CodeGen::CodeGen(Compiler* theCompiler)
     /* Assume that we not fully interruptible */
 
     SetInterruptible(false);
-#if defined(TARGET_ARMARCH) || defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64)
+#if defined(TARGET_ARMARCH) || defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64) || defined(TARGET_POWERPC64)
     SetHasTailCalls(false);
-#endif // TARGET_ARMARCH || TARGET_LOONGARCH64 || TARGET_RISCV64
+#endif // TARGET_ARMARCH || TARGET_LOONGARCH64 || TARGET_RISCV64 || TARGET_POWERPC64
 #ifdef DEBUG
     genInterruptibleUsed = false;
     genCurDispOffset     = (unsigned)-1;

@@ -147,7 +147,7 @@ size_t emitter::emitSizeOfInsDsc(instrDesc* id) const
 
     // Check if this is a call instruction
     bool isCallIns = (id->idIns() == INS_bl) || (id->idIns() == INS_blr) ||
-                     (id->idIns() == INS_bctrl);
+                     (id->idIns() == INS_bctrl) || (id->idIns() == INS_bctr);
     
     if (isCallIns)
     {

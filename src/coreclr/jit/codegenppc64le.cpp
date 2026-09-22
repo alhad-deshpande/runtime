@@ -875,6 +875,10 @@ void CodeGen::genCodeForTreeNode(GenTree* treeNode)
             genCkfinite(treeNode);
             break;
 
+        case GT_JMP:
+            genJmpPlaceArgs(treeNode);
+            break;
+
         default:
             printf("ERROR: Unhandled tree node operation: %s (oper=%d)\n",
                    GenTree::OpName(treeNode->gtOper), treeNode->gtOper);
@@ -5093,6 +5097,22 @@ void CodeGen::genFnEpilog(BasicBlock* block)
 
     ScopedSetVariable<bool> _setGeneratingEpilog(&compiler->compGeneratingEpilog, true);
 
+    bool jmpEpilog = block->HasFlag(BBF_HAS_JMP);
+
+    GenTree* lastNode = block->lastNode();
+
+    // Method handle and address info used in case of jump epilog
+    CORINFO_METHOD_HANDLE methHnd = nullptr;
+    CORINFO_CONST_LOOKUP  addrInfo;
+    addrInfo.addr       = nullptr;
+    addrInfo.accessType = IAT_VALUE;
+
+    if (jmpEpilog && (lastNode->gtOper == GT_JMP))
+    {
+        methHnd = (CORINFO_METHOD_HANDLE)lastNode->AsVal()->gtVal1;
+        compiler->info.compCompHnd->getFunctionEntryPoint(methHnd, &addrInfo);
+    }
+
     regMaskTP regsToRestoreMask = regSet.rsGetModifiedCalleeSavedRegsMask();
 
     int totalFrameSize = genTotalFrameSize();
@@ -5202,8 +5222,71 @@ void CodeGen::genFnEpilog(BasicBlock* block)
 
     emit->emitIns_R(INS_mtlr, EA_PTRSIZE, REG_R0);
     compiler->unwindNop();
-    emit->emitIns(INS_blr);
-    compiler->unwindReturn(REG_R0);
+
+    if (jmpEpilog)
+    {
+        SetHasTailCalls(true);
+
+        noway_assert(block->KindIs(BBJ_RETURN));
+        noway_assert(block->GetFirstLIRNode() != nullptr);
+
+        GenTree* jmpNode = lastNode;
+        noway_assert(jmpNode->gtOper == GT_JMP);
+
+        assert(methHnd != nullptr);
+        assert(addrInfo.addr != nullptr);
+
+        emitter::EmitCallType callType;
+        void*                 addr;
+        regNumber             indCallReg;
+
+        switch (addrInfo.accessType)
+        {
+            case IAT_VALUE:
+            case IAT_PVALUE:
+                callType   = emitter::EC_INDIR_R;
+                indCallReg = REG_DEFAULT_HELPER_CALL_TARGET;
+                addr       = nullptr;
+                instGen_Set_Reg_To_Imm(EA_HANDLE_CNS_RELOC, indCallReg, (ssize_t)addrInfo.addr);
+                if (addrInfo.accessType == IAT_PVALUE)
+                {
+                    emit->emitIns_R_R_I(INS_ld, EA_PTRSIZE, indCallReg, indCallReg, 0);
+                    regSet.verifyRegUsed(indCallReg);
+                }
+                break;
+
+            case IAT_PPVALUE:
+            default:
+                NO_WAY("Unsupported JMP indirection");
+        }
+
+        // Move target address to CTR for indirect jump
+        emit->emitIns_R(INS_mtctr, EA_PTRSIZE, indCallReg);
+
+        // clang-format off
+        emit->emitIns_Call(callType,
+                           methHnd,
+                           INDEBUG_LDISASM_COMMA(nullptr)
+                           addr,
+                           0,          // argSize
+                           EA_UNKNOWN, // retSize
+                           EA_UNKNOWN, // secondRetSize
+                           gcInfo.gcVarPtrSetCur,
+                           gcInfo.gcRegGCrefSetCur,
+                           gcInfo.gcRegByrefSetCur,
+                           DebugInfo(),
+                           indCallReg, // ireg
+                           REG_NA,     // xreg
+                           0,          // xmul
+                           0,          // disp
+                           true);      // isJump
+        // clang-format on
+    }
+    else
+    {
+        emit->emitIns(INS_blr);
+        compiler->unwindReturn(REG_R0);
+    }
 
     compiler->unwindEndEpilog();
 }
