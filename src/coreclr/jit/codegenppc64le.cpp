@@ -163,9 +163,8 @@ void CodeGen::genLclHeap(GenTree* tree)
         amount = size->AsIntCon()->gtIconVal;
         if (amount == 0)
         {
-            // Zero size: return pointer = caller_SP - 8 (top of the localloc area,
-            // immediately below the prolog-saved r31 slot which never moves).
-            genInstrWithConstant(INS_addi, EA_PTRSIZE, targetReg, REG_FP, -8, REG_R0);
+            // Zero size: return null in targetReg
+            instGen_Set_Reg_To_Zero(EA_PTRSIZE, targetReg);
             goto BAILOUT;
         }
         amount = AlignUp(amount, STACK_ALIGN);
