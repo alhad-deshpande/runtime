@@ -5751,8 +5751,36 @@ int CodeGenInterface::genTotalFrameSize() const
 //
 void CodeGen::genProfilingLeaveCallback(unsigned helper)
 {
-    //_ASSERTE("!NYI");
-    abort();
+    assert((helper == CORINFO_HELP_PROF_FCN_LEAVE) || (helper == CORINFO_HELP_PROF_FCN_TAILCALL));
+
+    if (!compiler->compIsProfilerHookNeeded())
+    {
+        return;
+    }
+
+    compiler->info.compProfilerCallback = true;
+
+    ssize_t methHnd = (ssize_t)compiler->compProfilerMethHnd;
+    if (compiler->compProfilerMethHndIndirected)
+    {
+        instGen_Set_Reg_To_Imm(EA_PTR_DSP_RELOC, REG_PROFILER_LEAVE_ARG_FUNC_ID, methHnd);
+        GetEmitter()->emitIns_R_R_I(INS_ld, EA_PTRSIZE, REG_PROFILER_LEAVE_ARG_FUNC_ID,
+                                    REG_PROFILER_LEAVE_ARG_FUNC_ID, 0);
+    }
+    else
+    {
+        instGen_Set_Reg_To_Imm(EA_PTRSIZE, REG_PROFILER_LEAVE_ARG_FUNC_ID, methHnd);
+    }
+
+    gcInfo.gcMarkRegSetNpt(RBM_PROFILER_LEAVE_ARG_FUNC_ID);
+
+    ssize_t callerSPOffset = -compiler->lvaToCallerSPRelativeOffset(0, isFramePointerUsed());
+    genInstrWithConstant(INS_addi, EA_PTRSIZE, REG_PROFILER_LEAVE_ARG_CALLER_SP, genFramePointerReg(),
+                         callerSPOffset, REG_PROFILER_LEAVE_ARG_CALLER_SP);
+
+    gcInfo.gcMarkRegSetNpt(RBM_PROFILER_LEAVE_ARG_CALLER_SP);
+
+    genEmitHelperCall(helper, 0, EA_UNKNOWN);
 }
 
 //  move an immediate value into an integer register
@@ -5834,9 +5862,39 @@ void CodeGen::instGen_Set_Reg_To_Imm(emitAttr       size,
 //
 void CodeGen::genProfilingEnterCallback(regNumber initReg, bool* pInitRegZeroed)
 {
-    //_ASSERTE("!NYI");
-    return;
+    assert(compiler->compGeneratingProlog);
 
+    if (!compiler->compIsProfilerHookNeeded())
+    {
+        return;
+    }
+
+    ssize_t methHnd = (ssize_t)compiler->compProfilerMethHnd;
+    if (compiler->compProfilerMethHndIndirected)
+    {
+        instGen_Set_Reg_To_Imm(EA_PTR_DSP_RELOC, REG_PROFILER_ENTER_ARG_FUNC_ID, methHnd);
+        GetEmitter()->emitIns_R_R_I(INS_ld, EA_PTRSIZE, REG_PROFILER_ENTER_ARG_FUNC_ID,
+                                    REG_PROFILER_ENTER_ARG_FUNC_ID, 0);
+    }
+    else
+    {
+        instGen_Set_Reg_To_Imm(EA_PTRSIZE, REG_PROFILER_ENTER_ARG_FUNC_ID, methHnd);
+    }
+
+    ssize_t callerSPOffset = -compiler->lvaToCallerSPRelativeOffset(0, isFramePointerUsed());
+    genInstrWithConstant(INS_addi, EA_PTRSIZE, REG_PROFILER_ENTER_ARG_CALLER_SP, genFramePointerReg(),
+                         callerSPOffset, REG_PROFILER_ENTER_ARG_CALLER_SP);
+
+    genEmitHelperCall(CORINFO_HELP_PROF_FCN_ENTER, 0, EA_UNKNOWN);
+
+    // If initReg is trashed, either because it was an arg to the enter
+    // callback, or because the enter callback itself trashes it, then it needs
+    // to be zero'ed again before using.
+    if (((RBM_PROFILER_ENTER_TRASH | RBM_PROFILER_ENTER_ARG_FUNC_ID | RBM_PROFILER_ENTER_ARG_CALLER_SP) &
+         genRegMask(initReg)) != RBM_NONE)
+    {
+        *pInitRegZeroed = false;
+    }
 }
 
 /*****************************************************************************
