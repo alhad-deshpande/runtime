@@ -286,11 +286,6 @@ int LinearScan::BuildPutArgSplit(GenTreePutArgSplit* argNode)
                     // Need a float temp register for HFA stack fields
                     buildInternalFloatRegisterDefForNode(argNode);
                 }
-                else
-                {
-                    // Need an int temp register for non-HFA stack fields
-                    buildInternalIntRegisterDefForNode(argNode, allRegs(TYP_INT) & ~argMask);
-                }
             }
         }
 
@@ -317,12 +312,10 @@ int LinearScan::BuildPutArgSplit(GenTreePutArgSplit* argNode)
             // Build the use and get the RefPosition
             RefPosition* useRefPosition = BuildUse(node, sourceMask);
 
-            // For stack-bound fields (sourceRegCount >= gtNumRegs), mark as delayFree to ensure
-            // the value remains in the register until PUTARG_SPLIT completes
-            if (sourceRegCount >= argNode->gtNumRegs)
-            {
-                setDelayFree(useRefPosition);
-            }
+            // Note: Stack-bound fields (sourceRegCount >= gtNumRegs) should NOT be marked delayFree.
+            // Marking all stack fields delayFree forces LSRA to keep all field registers alive
+            // simultaneously across the PUTARG_SPLIT node, which exhausts all available registers
+            // and causes an assertion failure for large structs.
 
             sourceRegCount++;
         }

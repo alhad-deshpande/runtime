@@ -2991,6 +2991,12 @@ GenTree* Compiler::fgMorphMultiregStructArg(CallArg* arg)
 #ifdef TARGET_ARM
     if ((isSplit && (arg->NewAbiInfo.CountRegsAndStackSlots() > 4)) ||
         (!isSplit && arg->NewAbiInfo.HasAnyStackSegment()))
+#elif defined(TARGET_POWERPC64)
+    var_types ppc64leHfaType = TYP_UNDEF;
+    unsigned  ppc64leHfaSlots = 0;
+    bool isPpc64leHfa = (arg->GetSignatureClassHandle() != NO_CLASS_HANDLE) &&
+                        IsPpc64leHfaLikeStruct(this, arg->GetSignatureClassHandle(), &ppc64leHfaType, &ppc64leHfaSlots);
+    if ((isSplit && !isPpc64leHfa) || !arg->NewAbiInfo.HasAnyRegisterSegment())
 #else
     if (!arg->NewAbiInfo.HasAnyRegisterSegment())
 #endif
