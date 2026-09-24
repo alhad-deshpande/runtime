@@ -324,6 +324,16 @@ void emitter::emitIns_R_S(instruction ins, emitAttr attr, regNumber reg1, int va
     // Use frame pointer or stack pointer as base register
     regNumber reg2 = FPbased ? REG_FPBASE : REG_SPBASE;
 
+    // INS_lwa is a DS-form instruction and requires a 4-byte-aligned displacement.
+    // When the frame offset is not 4-byte aligned (e.g. a field at [FieldOffset(0x0f)]),
+    // fall back to the D-form INS_lwz and follow with extsw to restore sign-extension.
+    bool needExtsw = false;
+    if (ins == INS_lwa && (imm & 0x3) != 0)
+    {
+        ins       = INS_lwz;
+        needExtsw = true;
+    }
+
     /* Validate the instruction form and operand sizes */
     switch (ins)
     {
@@ -469,6 +479,13 @@ void emitter::emitIns_R_S(instruction ins, emitAttr attr, regNumber reg1, int va
 
     dispIns(id);
     appendToCurIG(id);
+
+    // Emit extsw to sign-extend the 32-bit value to 64 bits when we fell back from
+    // INS_lwa (DS-form, 4-byte-aligned only) to INS_lwz (D-form, any alignment).
+    if (needExtsw)
+    {
+        emitIns_R_R(INS_extsw, EA_8BYTE, reg1, reg1);
+    }
 }
 
 /*****************************************************************************
@@ -1144,6 +1161,16 @@ void emitter::emitIns_R_R_I(instruction ins,
         assert(isGeneralRegister(reg2));
     }
 
+    // INS_lwa is a DS-form instruction requiring a 4-byte-aligned displacement.
+    // When the offset is not aligned, fall back to INS_lwz (D-form) and track that
+    // we must emit extsw afterward to restore sign-extension semantics.
+    bool needExtsw = false;
+    if (ins == INS_lwa && (imm & 0x3) != 0)
+    {
+        ins       = INS_lwz;
+        needExtsw = true;
+    }
+
     // Check if immediate fits in instruction encoding
     bool fitsInImmediate = false;
     
@@ -1248,6 +1275,11 @@ void emitter::emitIns_R_R_I(instruction ins,
 
         dispIns(id4);
         appendToCurIG(id4);
+        // Emit extsw to sign-extend when we fell back from INS_lwa to INS_lwz.
+        if (needExtsw)
+        {
+            emitIns_R_R(INS_extsw, EA_8BYTE, reg1, reg1);
+        }
         return;
     }
 
@@ -1290,6 +1322,12 @@ void emitter::emitIns_R_R_I(instruction ins,
     
     dispIns(id);
     appendToCurIG(id);
+
+    // Emit extsw to sign-extend when we fell back from INS_lwa to INS_lwz.
+    if (needExtsw)
+    {
+        emitIns_R_R(INS_extsw, EA_8BYTE, reg1, reg1);
+    }
 }
 
 
@@ -1505,7 +1543,16 @@ void emitter::emitIns_R_AR(instruction ins, emitAttr attr, regNumber ireg, regNu
     emitAttr size = EA_SIZE(attr);
     ssize_t imm = offs;
     insFormat fmt = IF_NONE;
-    
+
+    // INS_lwa is a DS-form instruction requiring a 4-byte-aligned displacement.
+    // When the offset is not aligned, fall back to INS_lwz (D-form) and emit extsw after.
+    bool needExtsw = false;
+    if (ins == INS_lwa && (imm & 0x3) != 0)
+    {
+        ins       = INS_lwz;
+        needExtsw = true;
+    }
+
     /* Validate the instruction form and operand sizes */
     switch (ins)
     {
@@ -1588,6 +1635,12 @@ void emitter::emitIns_R_AR(instruction ins, emitAttr attr, regNumber ireg, regNu
 
     dispIns(id);
     appendToCurIG(id);
+
+    // Emit extsw to sign-extend when we fell back from INS_lwa to INS_lwz.
+    if (needExtsw)
+    {
+        emitIns_R_R(INS_extsw, EA_8BYTE, ireg, ireg);
+    }
 }
 
 void emitter::emitIns_AR_R(instruction ins, emitAttr attr, regNumber ireg, regNumber reg, int offs)
