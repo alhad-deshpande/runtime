@@ -26,13 +26,16 @@ Parameters :
 --*/
 void ExecuteHandlerOnCustomStack(int code, siginfo_t *siginfo, void *context, size_t customSp, SignalHandlerWorkerReturnPoint* returnPoint)
 {
-	ucontext_t *ucontext = (ucontext_t *)context;
+    ucontext_t *ucontext = (ucontext_t *)context;
     size_t faultSp = (size_t)MCREG_R1(ucontext->uc_mcontext);
     _ASSERTE(IS_ALIGNED(faultSp, 8));
 
     if (customSp == 0)
     {
-        customSp = faultSp;
+        // ELFv2 (PPC64LE ABI) defines no red zone: the region below SP is not
+        // reserved and may be clobbered at any time.  Use faultSp directly,
+        // rounded down to the required 16-byte stack alignment.
+        customSp = ALIGN_DOWN(faultSp, 16);
     }
 
     size_t fakeFrameReturnAddress;
@@ -45,24 +48,38 @@ void ExecuteHandlerOnCustomStack(int code, siginfo_t *siginfo, void *context, si
         fakeFrameReturnAddress = (size_t)SignalHandlerWorkerReturnOffset8 + (size_t)CallSignalHandlerWrapper8;
     }
 
-    // Build fake stack frame to enable the stack unwinder to unwind from signal_handler_worker to the faulting instruction
+    // Build a fake ELFv2 stack frame so that the stack unwinder can walk from
+    // signal_handler_worker back to the faulting instruction.
+    //
+    // ELFv2 frame layout (32-byte minimum frame):
+    //   sp+ 0 : back-chain word  → previous SP (faultSp)
+    //   sp+16 : saved LR slot   → faulting PC (for the unwinder)
+    //
+    // We allocate 32 bytes below customSp to hold this frame.
     size_t* saveArea = (size_t*)(customSp - 32);
-    saveArea[0] = faultSp;
-    saveArea[2] = (size_t)MCREG_Nip(ucontext->uc_mcontext);
+    saveArea[0] = faultSp;                                   // back-chain
+    saveArea[2] = (size_t)MCREG_Nip(ucontext->uc_mcontext); // saved LR = faulting PC
     size_t sp = customSp - 32;
 
-    // Switch the current context to the signal_handler_worker and the custom stack
+    // Switch execution to signal_handler_worker on the custom stack.
+    //
+    // RtlRestoreContext on PPC64LE:
+    //   - loads CONTEXT.R0 into r0, then executes  mtlr r0  → sets LR
+    //   - loads CONTEXT_NIP into CTR, then branches via  bctr
+    //
+    // Therefore:
+    //   Nip  = signal_handler_worker  (the branch target, dispatched via bctr)
+    //   R0   = fakeFrameReturnAddress (put into LR so the unwinder finds it)
     CONTEXT context2;
     RtlCaptureContext(&context2);
 
-    context2.Link = (size_t)signal_handler_worker;
-    context2.R0 = fakeFrameReturnAddress;
-    context2.R1 = sp;
-    context2.R3 = code;
-    context2.R4 = (size_t)siginfo;
-    context2.R5 = (size_t)context;
-    context2.R6 = (size_t)returnPoint;
-
+    context2.Nip = (size_t)signal_handler_worker;
+    context2.R0  = fakeFrameReturnAddress;
+    context2.R1  = sp;
+    context2.R3  = code;
+    context2.R4  = (size_t)siginfo;
+    context2.R5  = (size_t)context;
+    context2.R6  = (size_t)returnPoint;
 
     RtlRestoreContext(&context2, NULL);
 }
