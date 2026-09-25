@@ -4384,6 +4384,25 @@ void CodeGen::genCallInstruction(GenTreeCall* call)
             // This is correct for all call distances.
             uint64_t targetAddr = (uint64_t)addr;
 
+            // Special handling for CORINFO_HELP_PINVOKE_CALLI:
+            //
+            // REG_PINVOKE_TARGET_PARAM == REG_R12. genCallPlaceRegArgs has already placed
+            // the unmanaged function pointer into r12. The 5-instruction sequence below
+            // will overwrite r12 with GenericPInvokeCalliHelper's address. To preserve the
+            // unmanaged target across that clobber, move it to r0 first.
+            //
+            // r0 is the PPC64LE scratch register. It cannot be used as a memory base in
+            // D-form loads/stores (ld rD, 0(r0) treats r0 as literal 0), but it is fully
+            // valid as an ALU source operand (mr, sldi, ori, ...), which is all
+            // GenericPInvokeCalliHelper needs. The stub's effective calling convention is:
+            //   r0  = unmanaged target   (raw pointer)
+            //   r11 = VASigCookie*       (REG_PINVOKE_COOKIE_PARAM)
+            if (call->IsHelperCall() && (compiler->eeGetHelperNum(methHnd) == CORINFO_HELP_PINVOKE_CALLI))
+            {
+                // mr r0, r12  — save unmanaged target before r12 is clobbered
+                GetEmitter()->emitIns_Mov(INS_mov, EA_PTRSIZE, REG_R0, REG_R12, /* canSkip */ false);
+            }
+
             // lis r12, target@highest  (bits 63:48)
             GetEmitter()->emitIns_R_I(INS_lis,  EA_8BYTE, REG_R12, (targetAddr >> 48) & 0xFFFF);
             // ori r12, r12, target@higher  (bits 47:32)
@@ -4394,7 +4413,7 @@ void CodeGen::genCallInstruction(GenTreeCall* call)
             GetEmitter()->emitIns_R_I(INS_oris, EA_8BYTE, REG_R12, (targetAddr >> 16) & 0xFFFF);
             // ori r12, r12, target@l  (bits 15:0)
             GetEmitter()->emitIns_R_I(INS_ori,  EA_8BYTE, REG_R12, targetAddr & 0xFFFF);
-            // mtctr r12
+            // mtctr r12  — r12 == CTR satisfies ELFv2 GEP contract for callee
             GetEmitter()->emitIns_R(INS_mtctr, EA_8BYTE, REG_R12);
 
             // Indirect call through CTR

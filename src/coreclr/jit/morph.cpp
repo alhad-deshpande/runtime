@@ -2117,6 +2117,23 @@ void CallArgs::AddFinalArgsAndDetermineABIInfo(Compiler* comp, GenTreeCall* call
         arg.NewAbiInfo = abiInfo;
         arg.AbiInfo    = CallArgABIInformation();
 
+#if defined(TARGET_POWERPC64)
+        // For well-known args with a custom (fixed) register assignment, also
+        // populate the old-style AbiInfo so that Lowering creates a
+        // GT_PUTARG_REG pinned to that register and LSRA constrains the
+        // allocation accordingly.  Without this, GT_PUTARG_REG is created with
+        // REG_NA, LSRA allocates it to an arbitrary register, and
+        // genCallPlaceRegArgs may hit a register-swap problem when moving two
+        // fixed-register args into their ABI slots.
+        if (nonStdRegNum != REG_NA)
+        {
+            arg.AbiInfo.SetRegNum(0, nonStdRegNum);
+            arg.AbiInfo.NumRegs  = 1;
+            arg.AbiInfo.ArgType  = argSigType;
+            arg.AbiInfo.ByteSize = TARGET_POINTER_SIZE;
+        }
+#endif // TARGET_POWERPC64
+
         if (varTypeIsStruct(argSigType))
         {
             assert(argx == arg.GetEarlyNode());
@@ -2424,6 +2441,21 @@ void CallArgs::DetermineNewABIInfo(Compiler* comp, GenTreeCall* call)
             ABIPassingSegment segment = ABIPassingSegment::InRegister(nonStdRegNum, 0, TARGET_POINTER_SIZE);
             arg.NewAbiInfo            = ABIPassingInformation::FromSegment(comp, segment);
         }
+
+#if defined(TARGET_POWERPC64)
+        // Populate old-style AbiInfo for custom-register well-known args so that
+        // Lowering pins GT_PUTARG_REG to the correct register and LSRA does not
+        // allocate an arbitrary register, which would cause a destructive
+        // register-swap in genCallPlaceRegArgs for the two PInvoke CALLI params.
+        if (nonStdRegNum != REG_NA)
+        {
+            arg.AbiInfo    = CallArgABIInformation();
+            arg.AbiInfo.SetRegNum(0, nonStdRegNum);
+            arg.AbiInfo.NumRegs  = 1;
+            arg.AbiInfo.ArgType  = argSigType;
+            arg.AbiInfo.ByteSize = TARGET_POINTER_SIZE;
+        }
+#endif // TARGET_POWERPC64
     }
 
     m_argsStackSize               = classifier.StackSize();

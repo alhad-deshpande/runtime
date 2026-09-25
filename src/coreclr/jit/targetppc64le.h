@@ -212,6 +212,17 @@
   #define RBM_PINVOKE_COOKIE_PARAM          RBM_R11
 
   // GenericPInvokeCalliHelper unmanaged target Parameter
+  //
+  // We use REG_R12 (the designated call-target scratch), matching ARM64 which also uses
+  // REG_R12 for REG_PINVOKE_TARGET_PARAM.  On PPC64LE every direct helper call loads the
+  // helper address into r12 via a 5-instruction sequence before "mtctr r12; bctrl", which
+  // would overwrite r12 before GenericPInvokeCalliHelper can see it.  To avoid this,
+  // genCallInstruction emits "mr r0, r12" for CORINFO_HELP_PINVOKE_CALLI specifically,
+  // saving the unmanaged target to r0 before the r12 load.  GenericPInvokeCalliHelper
+  // therefore reads the unmanaged target from r0 (not r12).
+  //
+  // r12 is the right architectural choice: it is not an argument register (r3-r10) so a
+  // PInvoke CALLI to a function with all 8 integer arguments never conflicts.
   #define REG_PINVOKE_TARGET_PARAM          REG_R12
   #define RBM_PINVOKE_TARGET_PARAM          RBM_R12
 

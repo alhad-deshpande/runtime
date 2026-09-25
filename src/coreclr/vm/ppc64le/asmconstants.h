@@ -34,13 +34,17 @@ ASMCONSTANTS_C_ASSERT(SIZEOF__##classname == sizeof(classname));
 #define METHODDESC_REGNUM                     11
 #define METHODDESC_REGISTER                 %r11
 
-#if 0
-
-#define PINVOKE_CALLI_TARGET_REGNUM          10
-#define PINVOKE_CALLI_TARGET_REGISTER       r10
+// The unmanaged target is passed to GenericPInvokeCalliHelper in r0.
+// genCallInstruction emits "mr r0, r12" before loading the helper address into
+// r12, preserving the target (which genCallPlaceRegArgs placed in r12) across
+// the 5-instruction helper-address materialisation sequence.
+// r0 is the PPC64LE scratch register; it is valid for ALU ops but must not be
+// used as a base register in D-form memory instructions.
+#define PINVOKE_CALLI_TARGET_REGNUM          0
+#define PINVOKE_CALLI_TARGET_REGISTER       %r0
 
 #define PINVOKE_CALLI_SIGTOKEN_REGNUM        11
-#define PINVOKE_CALLI_SIGTOKEN_REGISTER     r11
+#define PINVOKE_CALLI_SIGTOKEN_REGISTER     %r11
 
 #define SIZEOF_GSCookie                             0x8
 ASMCONSTANTS_C_ASSERT(SIZEOF_GSCookie == sizeof(GSCookie));
@@ -49,17 +53,15 @@ ASMCONSTANTS_C_ASSERT(SIZEOF_GSCookie == sizeof(GSCookie));
 ASMCONSTANTS_C_ASSERT(OFFSETOF__Frame__m_Next
                     == offsetof(Frame, m_Next));
 
-#define               OFFSETOF__Thread__m_fPreemptiveGCDisabled     0x0C
+#define               OFFSETOF__Thread__m_fPreemptiveGCDisabled     0x04
 ASMCONSTANTS_C_ASSERT(OFFSETOF__Thread__m_fPreemptiveGCDisabled
                     == offsetof(Thread, m_fPreemptiveGCDisabled));
 #define Thread_m_fPreemptiveGCDisabled OFFSETOF__Thread__m_fPreemptiveGCDisabled
 
-#define               OFFSETOF__Thread__m_pFrame                    0x10
+#define               OFFSETOF__Thread__m_pFrame                    0x08
 ASMCONSTANTS_C_ASSERT(OFFSETOF__Thread__m_pFrame
                     == offsetof(Thread, m_pFrame));
 #define Thread_m_pFrame OFFSETOF__Thread__m_pFrame
-
-#endif
 
 #define DelegateObject___methodPtr      0x18
 ASMCONSTANTS_C_ASSERT(DelegateObject___methodPtr == offsetof(DelegateObject, _methodPtr));
@@ -106,11 +108,11 @@ ASMCONSTANTS_C_ASSERT(OFFSETOF__LazyMachState__m_CaptureNip
 ASMCONSTANTS_C_ASSERT(OFFSETOF__LazyMachState__m_CaptureSp
                     == offsetof(LazyMachState, m_CaptureSp));
 
-#if 0
-
 #define               OFFSETOF__VASigCookie__pNDirectILStub     0x8
 ASMCONSTANTS_C_ASSERT(OFFSETOF__VASigCookie__pNDirectILStub
                     == offsetof(VASigCookie, pNDirectILStub));
+
+#if 0
 
 #define               SIZEOF__FaultingExceptionFrame  (0x20 + SIZEOF__CONTEXT)
 ASMCONSTANTS_C_ASSERT(SIZEOF__FaultingExceptionFrame
@@ -120,28 +122,28 @@ ASMCONSTANTS_C_ASSERT(SIZEOF__FaultingExceptionFrame
 ASMCONSTANTS_C_ASSERT(OFFSETOF__FaultingExceptionFrame__m_fFilterExecuted
                     == offsetof(FaultingExceptionFrame, m_fFilterExecuted));
 
+#endif
+
 // For JIT_PInvokeBegin and JIT_PInvokeEnd helpers
 #define               OFFSETOF__InlinedCallFrame__m_Datum 0x10
 ASMCONSTANTS_C_ASSERT(OFFSETOF__InlinedCallFrame__m_Datum
                     == offsetof(InlinedCallFrame, m_Datum));
 
-#define               OFFSETOF__InlinedCallFrame__m_pCallSiteSP 0x20
+#define               OFFSETOF__InlinedCallFrame__m_pCallSiteSP 0x18
 ASMCONSTANTS_C_ASSERT(OFFSETOF__InlinedCallFrame__m_pCallSiteSP
                     == offsetof(InlinedCallFrame, m_pCallSiteSP));
 
-#define               OFFSETOF__InlinedCallFrame__m_pCallerReturnAddress 0x28
+#define               OFFSETOF__InlinedCallFrame__m_pCallerReturnAddress 0x20
 ASMCONSTANTS_C_ASSERT(OFFSETOF__InlinedCallFrame__m_pCallerReturnAddress
                     == offsetof(InlinedCallFrame, m_pCallerReturnAddress));
 
-#define               OFFSETOF__InlinedCallFrame__m_pCalleeSavedFP 0x30
+#define               OFFSETOF__InlinedCallFrame__m_pCalleeSavedFP 0x28
 ASMCONSTANTS_C_ASSERT(OFFSETOF__InlinedCallFrame__m_pCalleeSavedFP
                     == offsetof(InlinedCallFrame, m_pCalleeSavedFP));
 
-#define               OFFSETOF__InlinedCallFrame__m_pThread 0x38
+#define               OFFSETOF__InlinedCallFrame__m_pThread 0x30
 ASMCONSTANTS_C_ASSERT(OFFSETOF__InlinedCallFrame__m_pThread
                     == offsetof(InlinedCallFrame, m_pThread));
-
-#endif
 
 #define CallDescrData__pSrc                0x00
 #define CallDescrData__numStackSlots       0x08

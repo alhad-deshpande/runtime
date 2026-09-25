@@ -103,8 +103,11 @@ NESTED_ENTRY GenericPInvokeCalliGenILStub, _TEXT, NoHandler
     addis   %r2, %r12, (.TOC.-GenericPInvokeCalliGenILStub)@ha
     addi    %r2, %r2, (.TOC.-GenericPInvokeCalliGenILStub)@l
 .LGenericPInvokeCalliGenILStubBody:
-    mflr %r12
-    std %r12, 16(%r1)
+    // Pin the unmanaged target (r0) into r15 immediately so that r0 is free
+    // to be used for the standard ELFv2 LR save pattern below.
+    mr  %r15, %r0                  // r15 = unmanaged target (callee-saved, preserved across bl)
+    mflr %r0                       // r0  = real lr  (standard ELFv2: use r0 for LR save)
+    std %r0, 16(%r1)               // save lr into caller's linkage area
     std %r31, -8(%r1)
     stdu %r1, -496(%r1)
     std %r2, 24(%r1)               // save TOC in new frame for post-bl ld r2,24(r1) restore
@@ -176,16 +179,14 @@ NESTED_ENTRY GenericPInvokeCalliGenILStub, _TEXT, NoHandler
     stfd %f30, 472(%r1)
     stfd %f31, 480(%r1)
 
-    // Save original cookie (r11) and unmanaged target (r0) into callee-saved registers r14 and r15.
-    // r0 cannot be saved/restored by the frame-save machinery above (it is the scratch register
-    // with a special ABI role), so we pin it to a callee-saved register now.
+    // r15 = unmanaged target  (pinned at body entry, before mflr/std lr above)
+    // Save VASigCookie (r11) into r14 for preservation across the bl below.
     mr      %r14, %r11             // r14 = VASigCookie* (save for restore after call)
-    mr      %r15, %r0              // r15 = unmanaged target (raw pointer; save for restore)
 
     // Prepare arguments for GenericPInvokeCalliStubWorker:
     //   r3 = pTransitionBlock  (pointer to our frame's register save area, == r1 here)
     //   r4 = pVASigCookie      (r11, now in r14)
-    //   r5 = pUnmanagedTarget  (r0, now in r15)
+    //   r5 = pUnmanagedTarget  (r0 target, now in r15)
     mr      %r3, %r1               // arg1: pTransitionBlock
     mr      %r4, %r14              // arg2: pVASigCookie
     mr      %r5, %r15              // arg3: pUnmanagedTarget
@@ -193,7 +194,7 @@ NESTED_ENTRY GenericPInvokeCalliGenILStub, _TEXT, NoHandler
     bl      C_FUNC(GenericPInvokeCalliStubWorker)
     nop
 
-    // Restore original cookie and unmanaged target from callee-saved registers.
+    // Restore VASigCookie and unmanaged target from callee-saved registers.
     mr      %r11, %r14             // r11 = VASigCookie* (REG_PINVOKE_COOKIE_PARAM)
     mr      %r0, %r15              // r0  = unmanaged target (for GenericPInvokeCalliHelper hot path)
 
