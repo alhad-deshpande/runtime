@@ -114,6 +114,7 @@ build_runtime() {
 # =========================================================
 build_libs() {
   cd runtime
+  sed -i 's/17.12.0-beta1.24603.5/18.9.0-beta1.26405.2/g' eng/Versions.props
   ./build.sh libs 2>&1 | tee build_libs.log
 }
 
@@ -132,7 +133,18 @@ build_tests() {
 }
 
 # =========================================================
-# RUN TESTS
+# RUN CORECLR JIT TESTSUITE
+# =========================================================
+run_coreclr_tests() {
+  cd runtime
+  echo "Running full CoreCLR JIT testsuite..."
+  ./src/tests/run.sh Debug 2>&1 | tee tests.log
+  echo "Final passed test count:"
+  find artifacts/ -iname "*.log" | xargs grep -ni "Passed test:" | wc
+}
+
+# =========================================================
+# RUN 95 TESTS
 # =========================================================
 run_tests() {
   echo "Cloning JIT tests..."
@@ -148,13 +160,29 @@ run_tests() {
   chmod +x run_test.sh
 
   set +e
-  ./run_test.sh "$DOTNET_ROOT" "$RUNTIME_DIR"
-  EXIT_CODE=$?
+  ./run_test.sh "$DOTNET_ROOT" "$RUNTIME_DIR" 2>&1 | tee /tmp/jit_run_output.log
+  EXIT_CODE=${PIPESTATUS[0]}
   set -e
 
   if [ $EXIT_CODE -ne 0 ]; then
     echo " JIT Tests FAILED"
     exit $EXIT_CODE
+  fi
+
+  TOTAL=$(grep -i "Total Testcases Run" /tmp/jit_run_output.log | tail -1 | grep -oP '\d+' | tail -1)
+  PASSED=$(grep -i "Testcases Passed" /tmp/jit_run_output.log | tail -1 | grep -oP '\d+' | tail -1)
+
+  echo "Total Testcases Run : $TOTAL"
+  echo "Testcases Passed    : $PASSED"
+
+  if [ -z "$TOTAL" ] || [ -z "$PASSED" ]; then
+    echo "ERROR: Could not parse test summary counts from output."
+    exit 1
+  fi
+
+  if [ "$TOTAL" -ne "$PASSED" ]; then
+    echo "ERROR: Test summary mismatch — Total Testcases Run ($TOTAL) != Testcases Passed ($PASSED)"
+    exit 1
   fi
 
   echo " JIT Tests PASSED"
@@ -176,6 +204,9 @@ case "$STAGE" in
   build_tests)
     build_tests
     ;;
+  run_coreclr_tests)
+    run_coreclr_tests
+    ;;
   run_tests)
     run_tests
     ;;
@@ -185,6 +216,7 @@ case "$STAGE" in
     build_libs
     build_tests
     run_tests
+    run_coreclr_tests
     ;;
   *)
     echo "Invalid stage: $STAGE"

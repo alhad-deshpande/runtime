@@ -1,15 +1,9 @@
 name: JIT Testing Pipeline
 
 on:
-  push:
-    branches:
-      - ppc64le_coreclr_jit
   pull_request:
     branches:
       - ppc64le_coreclr_jit
-  workflow_dispatch:
-  schedule:
-    - cron: '30 23 * * *'
 
 concurrency:
   group: jit-testing-${{ github.ref }}
@@ -18,15 +12,17 @@ concurrency:
 jobs:
   jit-testing:
     runs-on: ubuntu-24.04-ppc64le-p10
+    # Only run when the PR originates from a branch within the same repository (not a fork)
+    if: github.event.pull_request.head.repo.full_name == github.repository
 
     steps:
       # ======================================
-      # Ensure correct branch
+      # Ensure PR targets the correct branch
       # ======================================
-      - name: Fail if not correct branch
-        if: github.ref != 'refs/heads/ppc64le_coreclr_jit'
+      - name: Fail if PR does not target ppc64le_coreclr_jit
+        if: github.base_ref != 'ppc64le_coreclr_jit'
         run: |
-          echo "This workflow is only allowed on ppc64le_coreclr_jit branch"
+          echo "This workflow is only allowed on PRs targeting the ppc64le_coreclr_jit branch"
           exit 1
 
       # ======================================
@@ -104,6 +100,17 @@ jobs:
           docker exec gha bash -c '
             set -euo pipefail
             /jit_testing.sh run_tests 2>&1 | tee /tmp/jit_tests.log
+          '
+
+      # ======================================
+      # RUN CORECLR JIT TESTSUITE
+      # ======================================
+      - name: Run CoreCLR JIT Testsuite
+        continue-on-error: true
+        run: |
+          docker exec gha bash -c '
+            set -euo pipefail
+            /jit_testing.sh run_coreclr_tests 2>&1 | tee /tmp/run_coreclr_tests.log
           '
 
       # ======================================
