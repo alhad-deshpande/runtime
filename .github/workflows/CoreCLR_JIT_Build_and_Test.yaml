@@ -6,11 +6,11 @@ on:
       - ppc64le_coreclr_jit
 
 concurrency:
-  group: jit-testing-${{ github.ref }}
+  group: CoreCLR-JIT-Build-and-Test-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  jit-testing:
+  CoreCLR-JIT-Build-and-Test:
     runs-on: ubuntu-24.04-ppc64le-p10
     # Only run when the PR originates from a branch within the same repository (not a fork)
     if: github.event.pull_request.head.repo.full_name == github.repository
@@ -55,8 +55,8 @@ jobs:
       # ======================================
       - name: Copy Script
         run: |
-          docker cp .github/workflows/jit_testing.sh gha:/jit_testing.sh
-          docker exec gha chmod +x /jit_testing.sh
+          docker cp .github/workflows/CoreCLR_JIT_Build_and_Test.sh gha:/CoreCLR_JIT_Build_and_Test.sh
+          docker exec gha chmod +x /CoreCLR_JIT_Build_and_Test.sh
 
       # ======================================
       # INSTALL + SETUP (runs once)
@@ -65,7 +65,7 @@ jobs:
         run: |
           docker exec gha bash -c '
             set -euo pipefail
-            /jit_testing.sh setup 2>&1 | tee /tmp/setup.log
+            /CoreCLR_JIT_Build_and_Test.sh setup 2>&1 | tee /tmp/setup.log
           '
 
       # ======================================
@@ -75,21 +75,21 @@ jobs:
         run: |
           docker exec gha bash -c '
             set -euo pipefail
-            /jit_testing.sh build_runtime 2>&1 | tee /tmp/build_runtime.log
+            /CoreCLR_JIT_Build_and_Test.sh build_runtime 2>&1 | tee /tmp/build_runtime.log
           '
 
       - name: Build Libraries
         run: |
           docker exec gha bash -c '
             set -euo pipefail
-            /jit_testing.sh build_libs 2>&1 | tee /tmp/build_libs.log
+            /CoreCLR_JIT_Build_and_Test.sh build_libs 2>&1 | tee /tmp/build_libs.log
           '
 
       - name: Build Tests
         run: |
           docker exec gha bash -c '
             set -euo pipefail
-            /jit_testing.sh build_tests 2>&1 | tee /tmp/build_tests.log
+            /CoreCLR_JIT_Build_and_Test.sh build_tests 2>&1 | tee /tmp/build_tests.log
           '
 
       # ======================================
@@ -99,7 +99,7 @@ jobs:
         run: |
           docker exec gha bash -c '
             set -euo pipefail
-            /jit_testing.sh run_tests 2>&1 | tee /tmp/jit_tests.log
+            /CoreCLR_JIT_Build_and_Test.sh run_tests 2>&1 | tee /tmp/jit_tests.log
           '
 
       # ======================================
@@ -110,7 +110,7 @@ jobs:
         run: |
           docker exec gha bash -c '
             set -euo pipefail
-            /jit_testing.sh run_coreclr_tests 2>&1 | tee /tmp/run_coreclr_tests.log
+            /CoreCLR_JIT_Build_and_Test.sh run_coreclr_tests 2>&1 | tee /tmp/run_coreclr_tests.log
           '
 
       # ======================================
