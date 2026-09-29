@@ -138,9 +138,13 @@ build_tests() {
 run_coreclr_tests() {
   cd runtime
   echo "Running full CoreCLR JIT testsuite..."
+  set +e
   ./src/tests/run.sh Debug 2>&1 | tee tests.log
+  EXIT_CODE=${PIPESTATUS[0]}
+  set -e
   echo "Final passed test count:"
   find artifacts/ -iname "*.log" | xargs grep -ni "Passed test:" | wc
+  exit $EXIT_CODE
 }
 
 # =========================================================
