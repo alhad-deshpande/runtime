@@ -2019,10 +2019,12 @@ void Compiler::lvaClassifyParameterABI()
                 reg = dsc->GetOtherArgReg();
             }
 #if defined(TARGET_POWERPC64)
-            else
+            else if (i < MAX_ARG_REG_COUNT)
             {
-                // PPC64LE can pass structs in up to 8 registers (r3-r10)
-                // For segments beyond the first two, use lvRegNumForSlot
+                // PPC64LE can pass structs in up to 8 registers (r3-r10).
+                // Segments beyond slot 1 that are still in registers use
+                // lvArgReg + slot offset; segments on the stack are handled
+                // by the IsPassedOnStack() branch below.
                 reg = dsc->lvRegNumForSlot(i);
             }
 #endif // TARGET_POWERPC64

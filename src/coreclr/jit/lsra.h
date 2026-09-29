@@ -1158,8 +1158,16 @@ private:
             }
             else if (tree->OperIs(GT_LCL_FLD))
             {
-                lclNum = tree->AsLclFld()->GetLclNum();
-                nodeType = "GT_LCL_FLD";
+                // Only override the type for an HFA struct parameter that is passed in float
+                // registers. Do NOT override for locals used in a return context (which use the
+                // integer return register r3), or any non-parameter locals.
+                unsigned candidateLclNum = tree->AsLclFld()->GetLclNum();
+                LclVarDsc* candidateVarDsc = compiler->lvaGetDesc(candidateLclNum);
+                if (candidateVarDsc->lvIsRegArg && genIsValidFloatReg(candidateVarDsc->GetArgReg()))
+                {
+                    lclNum   = candidateLclNum;
+                    nodeType = "GT_LCL_FLD";
+                }
             }
             
             // Check if the local variable is an HFA struct
@@ -1177,7 +1185,7 @@ private:
                         unsigned hfaSlots = 0;
                         
                         // Check if it's an HFA struct (up to 8 float/double fields = 64 bytes max)
-			if (typeHnd != NO_CLASS_HANDLE && IsPpc64leHfaLikeStruct(compiler, typeHnd, &hfaType, &hfaSlots))
+                        if (typeHnd != NO_CLASS_HANDLE && IsPpc64leHfaLikeStruct(compiler, typeHnd, &hfaType, &hfaSlots))
                         {
                             // Override type to HFA element type (TYP_FLOAT or TYP_DOUBLE)
                             JITDUMP("[PPC64LE HFA DEBUG] getDefType: %s for V%02u, overriding type from %s to %s (hfaSlots=%u)\n",
