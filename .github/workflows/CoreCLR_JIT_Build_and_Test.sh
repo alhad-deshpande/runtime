@@ -144,6 +144,10 @@ run_coreclr_tests() {
   set -e
   echo "Final passed test count:"
   find artifacts/ -iname "*.log" | xargs grep -ni "Passed test:" | wc
+  echo "Copying test logs to /tmp/Test_logs..."
+  mkdir -p /tmp/Test_logs
+  cp -r artifacts/tests/coreclr/linux.ppc64le.Debug/. /tmp/Test_logs/
+  echo "Test logs copied to /tmp/Test_logs"
   exit $EXIT_CODE
 }
 

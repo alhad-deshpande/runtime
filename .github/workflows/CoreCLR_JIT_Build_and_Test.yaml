@@ -1,4 +1,4 @@
-name: JIT Testing Pipeline
+name: CoreCLR JIT Build and Test
 
 on:
   pull_request:
@@ -120,6 +120,7 @@ jobs:
         if: always()
         run: |
           docker cp gha:/tmp ./logs 2>/dev/null || echo "No logs found"
+          docker cp gha:/tmp/Test_logs ./logs/Test_logs 2>/dev/null || echo "No Test_logs found"
         continue-on-error: true
 
       # ======================================
