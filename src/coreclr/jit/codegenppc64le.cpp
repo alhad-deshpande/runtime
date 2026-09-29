@@ -5224,10 +5224,20 @@ void CodeGen::genFnEpilog(BasicBlock* block)
         const int FP_save_offset = totalFrameSize + FP_backchain_save_offset;
         assert(FP_save_offset >= 0);
 
-        emit->emitIns_R_R_I(INS_ld, EA_PTRSIZE, REG_FP, REG_SPBASE, FP_save_offset);
-        compiler->unwindSaveReg(REG_FP, FP_save_offset);
-
-        emit->emitIns_R_R_I(INS_addi, EA_PTRSIZE, REG_SPBASE, REG_SPBASE, totalFrameSize);
+        if (totalFrameSize <= 32764)
+        {
+            // Small frame: deallocate with addi (fits in 16-bit immediate).
+            emit->emitIns_R_R_I(INS_addi, EA_PTRSIZE, REG_SPBASE, REG_SPBASE, totalFrameSize);
+        }
+        else
+        {
+            // Large frame: addi doesn't fit in 16-bit immediate.
+            // Restore SP via the ELFv2 backchain stored at [callee-SP+0] by the prolog.
+            emit->emitIns_R_R_I(INS_ld, EA_PTRSIZE, REG_SPBASE, REG_SPBASE, 0);
+        }
+        // SP is now caller-SP in both cases; FP was saved at caller_SP-8.
+        emit->emitIns_R_R_I(INS_ld, EA_PTRSIZE, REG_FP, REG_SPBASE, FP_backchain_save_offset);
+        compiler->unwindSaveReg(REG_FP, FP_backchain_save_offset);
         compiler->unwindAllocStack(totalFrameSize);
     }
 
@@ -5411,7 +5421,36 @@ void CodeGen::genPushCalleeSavedRegisters()
     // Save the incoming r31 relative to the established callee SP before
     // overwriting r31 with the current frame pointer. Then save the remaining
     // modified callee-saved registers in ascending register order.
-    GetEmitter()->emitIns_R_R_I(INS_stdu, EA_PTRSIZE, REG_SPBASE, REG_SPBASE, -totalFrameSize);
+    //
+    // stdu SP, -totalFrameSize(SP) requires a DS-form displacement (16-bit signed, 4-byte aligned).
+    // For large frames that exceed 32764 bytes, expand to the equivalent sequence:
+    //   load -totalFrameSize into R12 (5-instruction 64-bit constant sequence)
+    //   add  R12, SP, R12      ; R12 = new SP
+    //   std  SP, 0(R12)        ; store old SP backchain at new SP
+    //   mr   SP, R12           ; SP = new SP
+    if (totalFrameSize <= 32764)
+    {
+        GetEmitter()->emitIns_R_R_I(INS_stdu, EA_PTRSIZE, REG_SPBASE, REG_SPBASE, -totalFrameSize);
+    }
+    else
+    {
+        const ssize_t   negFrameSize = -(ssize_t)totalFrameSize;
+        const uint64_t  uimm         = static_cast<uint64_t>(negFrameSize);
+        const regNumber scratchReg   = REG_R12;
+
+        // Load -totalFrameSize into R12 using the 5-instruction 64-bit constant sequence.
+        GetEmitter()->emitIns_R_I(INS_lis,  EA_PTRSIZE, scratchReg, (ssize_t)((uimm >> 48) & 0xFFFF));
+        GetEmitter()->emitIns_R_I(INS_ori,  EA_PTRSIZE, scratchReg, (ssize_t)((uimm >> 32) & 0xFFFF));
+        GetEmitter()->emitIns_R_I(INS_sldi, EA_PTRSIZE, scratchReg, 32);
+        GetEmitter()->emitIns_R_I(INS_oris, EA_PTRSIZE, scratchReg, (ssize_t)((uimm >> 16) & 0xFFFF));
+        GetEmitter()->emitIns_R_I(INS_ori,  EA_PTRSIZE, scratchReg, (ssize_t)(uimm & 0xFFFF));
+        // R12 = new SP = old SP + (-totalFrameSize)
+        GetEmitter()->emitIns_R_R_R(INS_add, EA_PTRSIZE, scratchReg, REG_SPBASE, scratchReg);
+        // Store old SP (backchain) at new SP
+        GetEmitter()->emitIns_R_R_I(INS_std, EA_PTRSIZE, REG_SPBASE, scratchReg, 0);
+        // SP = new SP
+        GetEmitter()->emitIns_Mov(INS_mov, EA_PTRSIZE, REG_SPBASE, scratchReg, /* canSkip */ false);
+    }
     compiler->unwindAllocStack(totalFrameSize);
 
     // Save the incoming r31 at caller_SP - 8, expressed relative to the
@@ -6785,7 +6824,27 @@ void CodeGen::genFuncletProlog(BasicBlock* block)
     compiler->unwindSaveReg(REG_R0, LR_save_offset);
 
     // --- Allocate the frame: stdu writes the back-chain and updates r1 ---
-    emit->emitIns_R_R_I(INS_stdu, EA_PTRSIZE, REG_SPBASE, REG_SPBASE, -funcletFrameSize);
+    // For large funclet frames that exceed the DS-form limit, use the same
+    // lis/ori/sldi/oris/ori + add + std + mr expansion as the main prolog.
+    if (funcletFrameSize <= 32764)
+    {
+        emit->emitIns_R_R_I(INS_stdu, EA_PTRSIZE, REG_SPBASE, REG_SPBASE, -funcletFrameSize);
+    }
+    else
+    {
+        const ssize_t   negFrameSize = -(ssize_t)funcletFrameSize;
+        const uint64_t  uimm         = static_cast<uint64_t>(negFrameSize);
+        const regNumber scratchReg   = REG_R12;
+
+        emit->emitIns_R_I(INS_lis,  EA_PTRSIZE, scratchReg, (ssize_t)((uimm >> 48) & 0xFFFF));
+        emit->emitIns_R_I(INS_ori,  EA_PTRSIZE, scratchReg, (ssize_t)((uimm >> 32) & 0xFFFF));
+        emit->emitIns_R_I(INS_sldi, EA_PTRSIZE, scratchReg, 32);
+        emit->emitIns_R_I(INS_oris, EA_PTRSIZE, scratchReg, (ssize_t)((uimm >> 16) & 0xFFFF));
+        emit->emitIns_R_I(INS_ori,  EA_PTRSIZE, scratchReg, (ssize_t)(uimm & 0xFFFF));
+        emit->emitIns_R_R_R(INS_add, EA_PTRSIZE, scratchReg, REG_SPBASE, scratchReg);
+        emit->emitIns_R_R_I(INS_std, EA_PTRSIZE, REG_SPBASE, scratchReg, 0);
+        emit->emitIns_Mov(INS_mov, EA_PTRSIZE, REG_SPBASE, scratchReg, /* canSkip */ false);
+    }
     compiler->unwindAllocStack(funcletFrameSize);
 
     // Save incoming r31 at caller_SP - 8, expressed relative to funclet SP.
@@ -6943,14 +7002,24 @@ void CodeGen::genFuncletEpilog()
         }
     }
 
-    // Restore incoming r31 while r1 still denotes the fixed funclet SP.
+    // --- Restore FP and deallocate the frame ---
     const int FP_save_offset = funcletFrameSize + FP_backchain_save_offset;
     assert(FP_save_offset >= 0);
-    emit->emitIns_R_R_I(INS_ld, EA_PTRSIZE, REG_FP, REG_SPBASE, FP_save_offset);
-    compiler->unwindSaveReg(REG_FP, FP_save_offset);
 
-    // --- Deallocate the frame: r1 = caller-SP ---
-    emit->emitIns_R_R_I(INS_addi, EA_PTRSIZE, REG_SPBASE, REG_SPBASE, funcletFrameSize);
+    if (funcletFrameSize <= 32764)
+    {
+        // Small frame: deallocate with addi (fits in 16-bit immediate).
+        emit->emitIns_R_R_I(INS_addi, EA_PTRSIZE, REG_SPBASE, REG_SPBASE, funcletFrameSize);
+    }
+    else
+    {
+        // Large frame: addi doesn't fit in 16-bit immediate.
+        // Restore SP via the ELFv2 backchain stored at [callee-SP+0] by the prolog.
+        emit->emitIns_R_R_I(INS_ld, EA_PTRSIZE, REG_SPBASE, REG_SPBASE, 0);
+    }
+    // SP is now caller-SP in both cases; FP was saved at caller_SP-8.
+    emit->emitIns_R_R_I(INS_ld, EA_PTRSIZE, REG_FP, REG_SPBASE, FP_backchain_save_offset);
+    compiler->unwindSaveReg(REG_FP, FP_backchain_save_offset);
     compiler->unwindAllocStack(funcletFrameSize);
 
     // --- Restore LR and R2 from the caller's linkage area ---

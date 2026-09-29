@@ -292,6 +292,11 @@ emitAttr emitInsLoadStoreSize(instrDesc* id);
 bool IsRedundantMov(instruction ins, emitAttr size, regNumber dst, regNumber src, bool canSkip);
 bool IsMovInstruction(instruction ins);
 
+// Load imm into REG_R12 using the 5-instruction sequence (lis/ori/sldi/oris/ori), then
+// add baseReg to it.  Returns REG_R12 for use as the base of a follow-up load/store.
+// Only valid when baseReg is a frame-base register (SP or FP) — never REG_R12 itself.
+regNumber emitBuildLargeAddr(ssize_t imm, regNumber baseReg);
+
 public:
 inline static bool isFloatReg(regNumber reg)
 {
