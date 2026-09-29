@@ -300,6 +300,16 @@ bool Compiler::rpMustCreateEBPFrame(INDEBUG(const char** wbReason))
     }
 #endif // TARGET_RISCV64
 
+#ifdef TARGET_POWERPC64
+    // TODO-PPC64LE-NYI: This is temporary: force a frame pointer-based frame until genFnProlog
+    // can handle non-frame pointer frames.
+    if (!result)
+    {
+        INDEBUG(reason = "Temporary PPC64LE force frame pointer");
+        result = true;
+    }
+#endif // TARGET_POWERPC64
+
 #ifdef DEBUG
     if ((result == true) && (wbReason != nullptr))
     {
