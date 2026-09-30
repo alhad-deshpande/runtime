@@ -303,6 +303,52 @@ static void ppc64leNormalizeAttr(instruction ins, emitAttr& attr, emitAttr& size
 
 /*****************************************************************************
 *
+*  Load a 32-bit signed frame offset into REG_R12, then add baseReg, for
+*  displacements that don't fit in a 16-bit immediate.
+*
+*  Uses the same 5-instruction sequence as the general 64-bit constant loader
+*  (treating the sign-extended 32-bit offset as a 64-bit value):
+*    lis  R12, imm@highest   (bits 63:48 — always 0x0000 or 0xFFFF for sign-ext)
+*    ori  R12, R12, imm@higher (bits 47:32 — ditto)
+*    sldi R12, R12, 32
+*    oris R12, R12, imm@h    (bits 31:16)
+*    ori  R12, R12, imm@l    (bits 15:0)
+*  followed by:
+*    add  R12, baseReg, R12
+*
+*  Returns REG_R12 for use as the base of a follow-up load/store.
+*  R12 is a caller-saved volatile register that is never a base-register
+*  (frame base is always R1/SP or R31/FP) and the surrounding instrDesc
+*  sequence is atomic from the register-allocator's perspective.
+*/
+regNumber emitter::emitBuildLargeAddr(ssize_t imm, regNumber baseReg)
+{
+    const regNumber scratchReg = REG_R12;
+
+    // Treat as unsigned so right-shifts fill with 0, not sign bits.
+    // For a sign-extended 32-bit offset:
+    //   bits 63:32 are all 0s (positive) or all 1s (negative).
+    const uint64_t uimm = static_cast<uint64_t>(imm);
+
+    // lis R12, imm@highest  (bits 63:48)
+    emitIns_R_I(INS_lis,  EA_PTRSIZE, scratchReg, (ssize_t)((uimm >> 48) & 0xFFFF));
+    // ori R12, R12, imm@higher  (bits 47:32)
+    emitIns_R_I(INS_ori,  EA_PTRSIZE, scratchReg, (ssize_t)((uimm >> 32) & 0xFFFF));
+    // sldi R12, R12, 32
+    emitIns_R_I(INS_sldi, EA_PTRSIZE, scratchReg, 32);
+    // oris R12, R12, imm@h  (bits 31:16)
+    emitIns_R_I(INS_oris, EA_PTRSIZE, scratchReg, (ssize_t)((uimm >> 16) & 0xFFFF));
+    // ori R12, R12, imm@l  (bits 15:0)
+    emitIns_R_I(INS_ori,  EA_PTRSIZE, scratchReg, (ssize_t)(uimm & 0xFFFF));
+
+    // add R12, baseReg, R12
+    emitIns_R_R_R(INS_add, EA_PTRSIZE, scratchReg, baseReg, scratchReg);
+
+    return scratchReg;
+}
+
+/*****************************************************************************
+*
 *  Add an instruction referencing a register and a stack-based local variable.
 */
 void emitter::emitIns_R_S(instruction ins, emitAttr attr, regNumber reg1, int varx, int offs)
@@ -447,6 +493,25 @@ void emitter::emitIns_R_S(instruction ins, emitAttr attr, regNumber reg1, int va
 	           return;
     }
 
+    // When the displacement doesn't fit in a 16-bit signed immediate, synthesize
+    // the full address into REG_R12 (caller-saved scratch) and emit the load with
+    // a zero displacement.  REG_R12 is safe here: it is caller-saved, never used
+    // as a function argument, and not live across a single-instruction sequence.
+    bool fitsInImmediate = (ins == INS_ld || ins == INS_lwa)
+                               ? ((imm & 0x3) == 0 && imm >= -32768 && imm <= 32764)
+                               : (imm >= -32768 && imm <= 32767);
+
+    if (!fitsInImmediate)
+    {
+        regNumber scratchReg = emitBuildLargeAddr(imm, reg2);
+        emitIns_R_R_I(ins, attr, reg1, scratchReg, 0);
+        if (needExtsw)
+        {
+            emitIns_R_R(INS_extsw, EA_8BYTE, reg1, reg1);
+        }
+        return;
+    }
+
     // Validate immediate range for the selected instruction form.
     if ((ins == INS_lwa) || (ins == INS_ld))
     {
@@ -557,6 +622,19 @@ void emitter::emitIns_S_R(instruction ins, emitAttr attr, regNumber reg1, int va
             return;
     }
 
+    // When the displacement doesn't fit in a 16-bit signed immediate, build the full
+    // address into REG_R12 and emit the store with a zero displacement.
+    bool fitsInImmediate = (ins == INS_std)
+                               ? ((imm & 0x3) == 0 && imm >= -32768 && imm <= 32764)
+                               : (imm >= -32768 && imm <= 32767);
+
+    if (!fitsInImmediate)
+    {
+        regNumber scratchReg = emitBuildLargeAddr(imm, reg2);
+        emitIns_R_R_I(ins, attr, reg1, scratchReg, 0);
+        return;
+    }
+
     // Validate immediate range
     if (ins == INS_std)
     {
@@ -576,7 +654,6 @@ void emitter::emitIns_S_R(instruction ins, emitAttr attr, regNumber reg1, int va
     instrDesc* id = emitNewInstrLclVarPair(attr, imm);
 
     id->idIns(ins);
-    //id->idInsFmt(fmt);
     id->idInsOpt(INS_OPTS_NONE);
 
     id->idReg1(reg1);
@@ -1201,81 +1278,13 @@ void emitter::emitIns_R_R_I(instruction ins,
     
     if (!fitsInImmediate && isLoadStore)
     {
-        // Large offset: synthesise the address in a non-R0 scratch register, then
-        // emit the load/store with a 0 displacement from that register.
-        //
-        // We MUST NOT use REG_R0 as the base register for D-form / DS-form
-        // load/store instructions: on PowerPC, rA=0 means "use 0 as address"
-        // (not "use the value in GPR0").  Pick REG_R12 as the scratch; it is
-        // caller-saved and never live across an instruction sequence.
-        regNumber scratchReg = REG_R12;
+        // stdu is an update instruction — the base register (rA) must stay as SP so that
+        // SP gets updated.  Large stdu must be handled at the codegen level (genProlog),
+        // not here.  Assert so callers don't silently get wrong code.
+        assert(ins != INS_stdu);
 
-        // lis scratchReg, imm@ha  (high-adjusted 16 bits)
-        ssize_t immHa  = (ssize_t)(((imm + 0x8000) >> 16) & 0xFFFF);
-        ssize_t immLo  = (ssize_t)(imm & 0xFFFF);           // low 16 bits
-
-        instrDesc* id1 = emitNewInstrSmall(EA_PTRSIZE);
-        id1->idIns(INS_lis);
-        id1->idReg1(scratchReg);
-        id1->idSmallCns(immHa);
-        id1->idInsFmt(IF_RI_1B);
-        dispIns(id1);
-        appendToCurIG(id1);
-
-        // ori scratchReg, scratchReg, imm@l  (only if low bits are non-zero)
-        if (immLo != 0)
-        {
-            instrDesc* id2 = emitNewInstrSmall(EA_PTRSIZE);
-            id2->idIns(INS_ori);
-            id2->idReg1(scratchReg);
-            id2->idReg2(scratchReg);
-            id2->idSmallCns(immLo);
-            id2->idInsFmt(IF_RI_1D);
-            dispIns(id2);
-            appendToCurIG(id2);
-        }
-
-        // add scratchReg, base_reg, scratchReg
-        instrDesc* id3 = emitNewInstr(EA_PTRSIZE);
-        id3->idIns(INS_add);
-        id3->idReg1(scratchReg);
-        id3->idReg2(reg2);
-        id3->idReg3(scratchReg);
-        id3->idInsFmt(IF_RR_2A);
-        dispIns(id3);
-        appendToCurIG(id3);
-
-        // ins reg1, 0(scratchReg)  — displacement is 0, so always fits
-        instrDesc* id4 = emitNewInstrSmall(attr);
-        id4->idIns(ins);
-        id4->idReg1(reg1);
-        id4->idReg2(scratchReg);   // scratchReg != REG_R0, so rA≠0 is safe
-        id4->idSmallCns(0);
-
-        insFormat fmt4 = IF_NONE;
-        switch (ins)
-        {
-            case INS_ld:   fmt4 = IF_LS_2C; break;
-            case INS_lwa:  fmt4 = IF_LS_2E; break;
-            case INS_std:  fmt4 = IF_LS_2D; break;
-            case INS_lwz:  fmt4 = IF_LS_2A; break;
-            case INS_lbz:  fmt4 = IF_LS_2A; break;
-            case INS_lhz:  fmt4 = IF_LS_2A; break;
-            case INS_lha:  fmt4 = IF_LS_2A; break;
-            case INS_stw:  fmt4 = IF_LS_2B; break;
-            case INS_stb:  fmt4 = IF_LS_2B; break;
-            case INS_sth:  fmt4 = IF_LS_2B; break;
-            case INS_lfs:  fmt4 = IF_LS_2G; break;
-            case INS_lfd:  fmt4 = IF_LS_2H; break;
-            case INS_stfs: fmt4 = IF_LS_2I; break;
-            case INS_stfd: fmt4 = IF_LS_2J; break;
-            default:       fmt4 = IF_LS_2A; break;
-        }
-        id4->idInsFmt(fmt4);
-
-        dispIns(id4);
-        appendToCurIG(id4);
-        // Emit extsw to sign-extend when we fell back from INS_lwa to INS_lwz.
+        regNumber scratchReg = emitBuildLargeAddr(imm, reg2);
+        emitIns_R_R_I(ins, attr, reg1, scratchReg, 0);
         if (needExtsw)
         {
             emitIns_R_R(INS_extsw, EA_8BYTE, reg1, reg1);
