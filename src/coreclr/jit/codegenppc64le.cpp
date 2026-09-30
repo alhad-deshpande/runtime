@@ -1599,13 +1599,53 @@ void CodeGen::genEmitGSCookieCheck(bool pushReg)
 //
 void CodeGen::genIntrinsic(GenTreeIntrinsic* treeNode)
 {
-    // No GT_INTRINSIC nodes are fully implemented on PPC64LE yet.
-    // Use NYIRAW so the JIT emits CORJIT_SKIPPED and retries the method without
-    // the intrinsic expansion.  This is safe — the JIT will fall back to a
-    // managed call — and crucially avoids calling abort(), which raises SIGABRT,
-    // crashes the process, and triggers the fatal recursion in
-    // CLRException::GetThrowable when the exception constructors are being JITted.
-    NYIRAW("genIntrinsic: GT_INTRINSIC not yet implemented on PPC64LE");
+    // All unary math intrinsics on PPC64LE have a single floating-point source
+    // and produce a single floating-point result in the same register class.
+    GenTree* srcNode = treeNode->gtGetOp1();
+    assert(varTypeIsFloating(srcNode));
+    assert(srcNode->TypeGet() == treeNode->TypeGet());
+
+    genConsumeOperands(treeNode->AsOp());
+
+    regNumber dstReg = treeNode->GetRegNum();
+    regNumber srcReg = srcNode->GetRegNum();
+
+    switch (treeNode->gtIntrinsicName)
+    {
+        case NI_System_Math_Abs:
+            // fabs works for both float and double — clears the sign bit
+            GetEmitter()->emitIns_R_R(INS_fabs, emitActualTypeSize(treeNode), dstReg, srcReg);
+            break;
+
+        case NI_System_Math_Sqrt:
+            // fsqrt (double) / fsqrts (single)
+            if (treeNode->TypeIs(TYP_DOUBLE))
+                GetEmitter()->emitIns_R_R(INS_fsqrt, EA_8BYTE, dstReg, srcReg);
+            else
+                GetEmitter()->emitIns_R_R(INS_fsqrts, EA_4BYTE, dstReg, srcReg);
+            break;
+
+        case NI_System_Math_Ceiling:
+            GetEmitter()->emitIns_R_R(INS_frip, emitActualTypeSize(treeNode), dstReg, srcReg);
+            break;
+
+        case NI_System_Math_Floor:
+            GetEmitter()->emitIns_R_R(INS_frim, emitActualTypeSize(treeNode), dstReg, srcReg);
+            break;
+
+        case NI_System_Math_Truncate:
+            GetEmitter()->emitIns_R_R(INS_friz, emitActualTypeSize(treeNode), dstReg, srcReg);
+            break;
+
+        case NI_System_Math_Round:
+            GetEmitter()->emitIns_R_R(INS_frin, emitActualTypeSize(treeNode), dstReg, srcReg);
+            break;
+
+        default:
+            unreached();
+    }
+
+    genProduceReg(treeNode);
 }
 
 //---------------------------------------------------------------------

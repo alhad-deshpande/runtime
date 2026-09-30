@@ -117,6 +117,13 @@ INST(fdivs,       "fdivs",        0,      A_FORM,       0xEC000024)  // Floating
 INST(fdiv,        "fdiv",         0,      A_FORM,       0xFC000024)  // Floating Divide Double
 INST(fmr,         "fmr",          0,      X_FORM,       0xFC000090)  // Floating Move Register
 INST(fneg,        "fneg",         0,      X_FORM,       0xFC000050)  // Floating Negate
+INST(fabs,        "fabs",         0,      X_FORM,       0xFC000210)  // Floating Absolute Value
+INST(fsqrt,       "fsqrt",        0,      X_FORM,       0xFC00002C)  // Floating Square Root (double)
+INST(fsqrts,      "fsqrts",       0,      X_FORM,       0xEC00002C)  // Floating Square Root (single)
+INST(frim,        "frim",         0,      X_FORM,       0xFC0003D0)  // Floating Round toward -Inf (floor)
+INST(frip,        "frip",         0,      X_FORM,       0xFC000390)  // Floating Round toward +Inf (ceiling)
+INST(friz,        "friz",         0,      X_FORM,       0xFC000350)  // Floating Round toward Zero (truncate)
+INST(frin,        "frin",         0,      X_FORM,       0xFC000310)  // Floating Round to Nearest (round)
 INST(fcmpu,       "fcmpu",        0,      X_FORM,       0xFC000000)  // Floating Compare Unordered
 INST(fcmpo,       "fcmpo",        0,      X_FORM,       0xFC000020)  // Floating Compare Ordered
 INST(frsp,        "frsp",         0,      X_FORM,       0xFC000018)  // Floating Round to Single Precision

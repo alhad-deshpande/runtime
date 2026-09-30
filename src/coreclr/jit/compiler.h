@@ -12469,6 +12469,8 @@ const instruction INS_BREAKPOINT = INS_ebreak;
 
 #ifdef TARGET_POWERPC64
 const instruction INS_BREAKPOINT = INS_trap;
+const instruction INS_ABS        = INS_fabs;
+const instruction INS_SQRT       = INS_fsqrt;
 #endif // TARGET_POWERPC64
 
 /*****************************************************************************/

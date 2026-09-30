@@ -1118,23 +1118,11 @@ int LinearScan::BuildNode(GenTree* tree)
 
 	case GT_INTRINSIC:
 	{
-	    // PowerPC64 math intrinsics all use one float source and produce one float result,
-	    // except for the binary Min/Max variants which use two sources.
+	    // PowerPC64 math intrinsics all use one float source and produce one float result.
+	    // Max/Min have no scalar base-ISA instruction and fall back to managed calls, so
+	    // they never reach codegen as GT_INTRINSIC nodes.
 	    switch (tree->AsIntrinsic()->gtIntrinsicName)
 	    {
-	        case NI_System_Math_Max:
-	        case NI_System_Math_Min:
-	        case NI_System_Math_MaxNumber:
-	        case NI_System_Math_MinNumber:
-	        {
-	            assert(varTypeIsFloating(tree->gtGetOp1()));
-	            assert(varTypeIsFloating(tree->gtGetOp2()));
-	            srcCount = BuildBinaryUses(tree->AsOp());
-	            assert(dstCount == 1);
-	            BuildDef(tree);
-	            break;
-	        }
-
 	        case NI_System_Math_Abs:
 	        case NI_System_Math_Ceiling:
 	        case NI_System_Math_Floor:

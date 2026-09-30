@@ -1115,7 +1115,14 @@ void emitter::emitIns_R_R(instruction     ins,
             break;
  
         case INS_frsp:
-            // Floating-point round to single precision - frsp fD, fB
+        case INS_fabs:
+        case INS_fsqrt:
+        case INS_fsqrts:
+        case INS_frim:
+        case INS_frip:
+        case INS_friz:
+        case INS_frin:
+            // Floating-point unary operations - fD, fB
             assert(isFloatReg(reg1));
             assert(isFloatReg(reg2));
             fmt = IF_RR_1A;
@@ -2226,6 +2233,41 @@ size_t emitter::emitOutputInstr(insGroup* ig, instrDesc* id, BYTE** dp)
            ppc_frsp(dstRW, id->idReg1() - REG_F0, id->idReg2() - REG_F0);
            break;
 
+       case INS_fabs:
+           // fabs fD, fB - Floating Absolute Value (works for both float and double)
+           ppc_fabs(dstRW, id->idReg1() - REG_F0, id->idReg2() - REG_F0);
+           break;
+
+       case INS_fsqrt:
+           // fsqrt fD, fB - Floating Square Root (double)
+           ppc_fsqrt(dstRW, id->idReg1() - REG_F0, id->idReg2() - REG_F0);
+           break;
+
+       case INS_fsqrts:
+           // fsqrts fD, fB - Floating Square Root (single)
+           ppc_fsqrts(dstRW, id->idReg1() - REG_F0, id->idReg2() - REG_F0);
+           break;
+
+       case INS_frim:
+           // frim fD, fB - Floating Round toward -Infinity (floor)
+           ppc_frim(dstRW, id->idReg1() - REG_F0, id->idReg2() - REG_F0);
+           break;
+
+       case INS_frip:
+           // frip fD, fB - Floating Round toward +Infinity (ceiling)
+           ppc_frip(dstRW, id->idReg1() - REG_F0, id->idReg2() - REG_F0);
+           break;
+
+       case INS_friz:
+           // friz fD, fB - Floating Round toward Zero (truncate)
+           ppc_friz(dstRW, id->idReg1() - REG_F0, id->idReg2() - REG_F0);
+           break;
+
+       case INS_frin:
+           // frin fD, fB - Floating Round to Nearest (round)
+           ppc_frin(dstRW, id->idReg1() - REG_F0, id->idReg2() - REG_F0);
+           break;
+
        case INS_fcfid:
            // fcfid fD, fB - Floating Convert From Integer Doubleword (signed to double)
            ppc_fcfid(dstRW, id->idReg1() - REG_F0, id->idReg2() - REG_F0);
@@ -3105,7 +3147,14 @@ const char* emitter::emitDisInsName(code_t code, const BYTE* addr, instrDesc* id
 	case INS_fmr:     return "fmr     ";
 	case INS_fcmpu:   return "fcmpu   ";
 	case INS_fcmpo:   return "fcmpo   ";
-	case INS_frsp:    return "frsp    ";		  
+	case INS_frsp:    return "frsp    ";
+	case INS_fabs:    return "fabs    ";
+	case INS_fsqrt:   return "fsqrt   ";
+	case INS_fsqrts:  return "fsqrts  ";
+	case INS_frim:    return "frim    ";
+	case INS_frip:    return "frip    ";
+	case INS_friz:    return "friz    ";
+	case INS_frin:    return "frin    ";
 	case INS_fctiwz:  return "fctiwz  ";
 	case INS_fctidz:  return "fctidz  ";
 	case INS_fctiwuz: return "fctiwuz ";
