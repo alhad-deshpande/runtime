@@ -7768,6 +7768,23 @@ bool Compiler::IsTargetIntrinsic(NamedIntrinsic intrinsicName)
         default:
             return false;
     }
+#elif defined(TARGET_POWERPC64)
+    switch (intrinsicName)
+    {
+        // PowerPC64 has native scalar float instructions for these.
+        case NI_System_Math_Abs:
+        case NI_System_Math_Ceiling:
+        case NI_System_Math_Floor:
+        case NI_System_Math_Round:
+        case NI_System_Math_Sqrt:
+        case NI_System_Math_Truncate:
+            return true;
+
+        // Max/Min have no scalar base-ISA instruction on PPC64 (VSX not yet supported).
+        // All other intrinsics fall back to managed System.Math calls.
+        default:
+            return false;
+    }
 #else
     // TODO: This portion of logic is not implemented for other arch.
     // The reason for returning true is that on all other arch the only intrinsic
