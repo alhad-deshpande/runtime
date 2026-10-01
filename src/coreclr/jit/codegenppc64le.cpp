@@ -730,8 +730,7 @@ void CodeGen::genCodeForTreeNode(GenTree* treeNode)
         case GT_UDIV:
         case GT_MOD:
         case GT_UMOD:
-            genConsumeOperands(treeNode->AsOp());
-            genCodeForBinary(treeNode->AsOp());
+            genCodeForDivMod(treeNode->AsOp());
             break;
 
         case GT_AND:
@@ -1132,6 +1131,125 @@ void CodeGen::genCodeForMulHi(GenTreeOp* treeNode)
     emit->emitIns_R_R_R(ins, attr, targetReg, op1->GetRegNum(), op2->GetRegNum());
 
     genProduceReg(treeNode);
+}
+
+// Forward declaration — defined below after genCodeForDivMod.
+static bool ppc64UseWideArith(GenTree* op1, GenTree* op2);
+
+//------------------------------------------------------------------------
+// genCodeForDivMod: Emit software divide-by-zero (and signed-overflow) checks
+//                   for GT_DIV, GT_UDIV, GT_MOD, GT_UMOD on PPC64LE, then
+//                   delegate actual instruction emission to genCodeForBinary.
+//
+// On PowerPC64, the integer divide instructions (divw/divd/divwu/divdu) do NOT
+// raise SIGFPE on a zero divisor — they silently produce an architecturally
+// undefined result.  We must emit explicit software checks so that the CLR
+// can throw DivideByZeroException / ArithmeticException (MinInt / -1).
+//
+// Arguments:
+//    treeNode - GT_DIV, GT_UDIV, GT_MOD, or GT_UMOD tree node
+//
+void CodeGen::genCodeForDivMod(GenTreeOp* treeNode)
+{
+    assert(treeNode->OperIs(GT_DIV, GT_UDIV, GT_MOD, GT_UMOD));
+
+    GenTree* divisorOp = treeNode->gtGetOp2();
+
+    // Floating-point division never raises integer exceptions; fall straight through.
+    if (varTypeIsFloating(treeNode->TypeGet()))
+    {
+        genConsumeOperands(treeNode);
+        genCodeForBinary(treeNode);
+        return;
+    }
+
+    genConsumeOperands(treeNode);
+
+    ExceptionSetFlags exceptions = treeNode->OperExceptions(compiler);
+
+    //
+    // ── Divide-by-zero check ──────────────────────────────────────────────────
+    // Required for all four operations.
+    //
+    if ((exceptions & ExceptionSetFlags::DivideByZeroException) != ExceptionSetFlags::None)
+    {
+        if (divisorOp->IsIntegralConst(0))
+        {
+            // Divisor is the constant 0 — unconditionally throw.
+            genJumpToThrowHlpBlk(EJ_jmp, SCK_DIV_BY_ZERO);
+            genProduceReg(treeNode);
+            return;
+        }
+
+        // Divisor is in a register.  Compare it to zero and branch to the
+        // throw helper if equal.  Use cmpdi for 64-bit operands, cmpwi for 32-bit.
+        regNumber divisorReg = divisorOp->GetRegNum();
+        emitter*  emit       = GetEmitter();
+        bool      wide       = ppc64UseWideArith(treeNode->gtGetOp1(), divisorOp);
+        if (wide)
+            emit->emitIns_R_I(INS_cmpdi, EA_8BYTE, divisorReg, 0);
+        else
+            emit->emitIns_R_I(INS_cmpwi, EA_4BYTE, divisorReg, 0);
+        genJumpToThrowHlpBlk(EJ_eq, SCK_DIV_BY_ZERO);
+    }
+
+    //
+    // ── Overflow check (MinInt / -1 → ArithmeticException) ───────────────────
+    // Only for signed operations (GT_DIV, GT_MOD).
+    //
+    if (treeNode->OperIs(GT_DIV, GT_MOD))
+    {
+        if ((exceptions & ExceptionSetFlags::ArithmeticException) != ExceptionSetFlags::None)
+        {
+            regNumber dividendReg = treeNode->gtGetOp1()->GetRegNum();
+            regNumber divisorReg  = divisorOp->GetRegNum();
+            emitter*  emit        = GetEmitter();
+            bool      wide        = ppc64UseWideArith(treeNode->gtGetOp1(), divisorOp);
+
+            // We need a temporary register to build the -1 and MinInt constants.
+            // For GT_MOD, genCodeForBinary also needs an internal register (quotient
+            // temp), so use Extract() here to consume this slot while leaving the
+            // quotient slot intact.  For GT_DIV, GetSingle() is correct (sole temp).
+            regNumber tempReg = treeNode->OperIs(GT_MOD) ? internalRegisters.Extract(treeNode)
+                                                         : internalRegisters.GetSingle(treeNode);
+
+            // Load -1 into tempReg, then compare with the divisor.
+            // If divisor != -1 we can skip the dividend check.
+            // li rD, -1  is the canonical PPC64 "load signed immediate" (addi rD, 0, -1).
+            BasicBlock* sdivLabel = genCreateTempLabel();
+            if (wide)
+            {
+                emit->emitIns_R_I(INS_li, EA_8BYTE, tempReg, -1); // tempReg = -1
+                emit->emitIns_R_R(INS_cmpd, EA_8BYTE, tempReg, divisorReg);
+            }
+            else
+            {
+                emit->emitIns_R_I(INS_li, EA_4BYTE, tempReg, -1); // tempReg = -1
+                emit->emitIns_R_R(INS_cmpw, EA_4BYTE, tempReg, divisorReg);
+            }
+            inst_JMP(EJ_ne, sdivLabel); // divisor != -1, safe
+
+            // Divisor is -1.  Now check whether the dividend is MinInt.
+            // Build MinInt in tempReg by shifting the -1 already loaded:
+            //   wide:    tempReg = -1, sldi tempReg, tempReg, 63  → 0x8000000000000000
+            //   narrow:  tempReg = -1, slwi tempReg, tempReg, 31  → 0x80000000
+            if (wide)
+                emit->emitIns_R_R_I(INS_sldi, EA_8BYTE, tempReg, tempReg, 63);
+            else
+                emit->emitIns_R_R_I(INS_slwi, EA_4BYTE, tempReg, tempReg, 31);
+
+            if (wide)
+                emit->emitIns_R_R(INS_cmpd, EA_8BYTE, tempReg, dividendReg);
+            else
+                emit->emitIns_R_R(INS_cmpw, EA_4BYTE, tempReg, dividendReg);
+            genJumpToThrowHlpBlk(EJ_eq, SCK_OVERFLOW);
+
+            genDefineTempLabel(sdivLabel);
+        }
+    }
+
+    // Emit the actual divide/mod instruction.
+    genCodeForBinary(treeNode);
 }
 
 //------------------------------------------------------------------------
