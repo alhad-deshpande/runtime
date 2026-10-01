@@ -142,6 +142,7 @@ run_coreclr_tests() {
   ./src/tests/run.sh Debug 2>&1 | tee tests.log
   EXIT_CODE=${PIPESTATUS[0]}
   set -e
+  sleep 60
   echo "Final passed test count:"
   find artifacts/ -iname "*.log" | xargs grep -ni "Passed Test:" | wc
   echo "Copying test logs to /tmp/Test_logs..."
