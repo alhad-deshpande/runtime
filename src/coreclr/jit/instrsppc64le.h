@@ -182,6 +182,11 @@ INST(cntlzd,      "cntlzd",       0,      X_FORM,       0x7C000074)  // Count Le
 INST(brw,         "brw",          0,      X_FORM,       0x7C0001B6)  // Byte-Reverse Word  (ISA 3.1+; encode as brh fallback otherwise)
 INST(brd,         "brd",          0,      X_FORM,       0x7C000176)  // Byte-Reverse Doubleword (ISA 3.1+)
 
+// Long-branch trampoline helper: "bc <inverted-cond>, $+8"
+// BO is stored in idReg1, BI is stored in idReg2; BD is always 2 (skip the following b).
+// This is emitted as the first word of the two-instruction long conditional branch sequence.
+INST(bc_skip,     "bc_skip",      0,      B_FORM,       0x40000008)  // bc <inv-cond>, $+8 (long-branch trampoline)
+
 // clang-format on
 /*****************************************************************************/
 #undef INST

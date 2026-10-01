@@ -2830,6 +2830,13 @@ size_t emitter::emitOutputInstr(insGroup* ig, instrDesc* id, BYTE** dp)
            ppc_bcl (dstRW, 20, 31, 1);
            break;
 
+       case INS_bc_skip:
+           // Long-branch trampoline first word: bc <inverted-cond>, $+8
+           // BO is stored in idReg1, BI is stored in idReg2; BD is always 2 (word offset = +8 bytes).
+           // This skips the unconditional "b target" that follows when the condition is NOT taken.
+           ppc_bc(dstRW, (int)id->idReg1(), (int)id->idReg2(), 2);
+           break;
+
        // Floating-point arithmetic instructions
        case INS_fadds:
            // fadds fD, fA, fB - Floating Add Single
@@ -3081,6 +3088,7 @@ const char* emitter::emitDisInsName(code_t code, const BYTE* addr, instrDesc* id
         case INS_b:       return "b       ";
         case INS_bl:      return "bl      ";
         case INS_bcl:     return "bcl     ";
+        case INS_bc_skip: return "bc_skip ";
         case INS_blr:     return "blr     ";
         case INS_mflr:    return "mflr    ";
         case INS_mtlr:    return "mtlr    ";
@@ -3296,6 +3304,56 @@ void emitter::emitIns_J(instruction ins, BasicBlock* dst, int instrCount)
 
     //dispIns(id);
     appendToCurIG(id);
+}
+
+/*****************************************************************************
+ *
+ *  Emit a long conditional branch trampoline.
+ *
+ *  PowerPC B-form conditional branches only have a 14-bit signed offset (±32KB).
+ *  For large methods the target can be farther away.  Instead of patching the
+ *  emitter's jump-distance infrastructure (which assumes every instrDesc is
+ *  exactly 4 bytes), we expand the conditional branch inline into two 4-byte
+ *  instructions at code-generation time:
+ *
+ *      bc  <inverted-cond>, $+8   ; fall through (not-taken path)
+ *      b   <dst>                  ; I-form unconditional, ±32MB range
+ *
+ *  The first word is emitted via INS_bc_skip (a regular instrDesc whose BO/BI
+ *  are stored in idReg1/idReg2 and whose BD is hardcoded to 2 in emitOutputInstr).
+ *  The second word uses the existing emitIns_J(INS_b, dst) path.
+ */
+void emitter::emitIns_J_cond_long(instruction condIns, BasicBlock* dst)
+{
+    assert(dst != nullptr);
+    assert(dst->HasFlag(BBF_HAS_LABEL));
+
+    // Derive the inverted branch's BO and BI from the original condition instruction.
+    // PPC bc encoding: BO TRUE=12, BO FALSE=4; BI: EQ=2, LT=0, GT=1.
+    int bo, bi;
+    switch (condIns)
+    {
+        case INS_beq: bo = PPC_BR_FALSE; bi = PPC_BR_EQ; break; // inverted: bne
+        case INS_bne: bo = PPC_BR_TRUE;  bi = PPC_BR_EQ; break; // inverted: beq
+        case INS_blt: bo = PPC_BR_FALSE; bi = PPC_BR_LT; break; // inverted: bge
+        case INS_bge: bo = PPC_BR_TRUE;  bi = PPC_BR_LT; break; // inverted: blt
+        case INS_bgt: bo = PPC_BR_FALSE; bi = PPC_BR_GT; break; // inverted: ble
+        case INS_ble: bo = PPC_BR_TRUE;  bi = PPC_BR_GT; break; // inverted: bgt
+        default:
+            unreached();
+    }
+
+    // Emit the inverted bc $+8 as a plain (non-jump-list) instrDesc.
+    // BD=2 is hardcoded in emitOutputInstr for INS_bc_skip.
+    instrDesc* id = emitNewInstr(EA_4BYTE);
+    id->idIns(INS_bc_skip);
+    id->idInsFmt(IF_BI_0);
+    id->idReg1((regNumber)bo); // borrow register fields to carry BO
+    id->idReg2((regNumber)bi); // and BI
+    appendToCurIG(id);
+
+    // Emit the unconditional I-form branch to the real target (±32MB).
+    emitIns_J(INS_b, dst);
 }
 
 /*****************************************************************************
@@ -3536,7 +3594,11 @@ void emitter::emitJumpDistBind()
             }
             else
             {
-                // B-form conditional: 14-bit signed, word-aligned
+                // B-form conditional: 14-bit signed, word-aligned.
+                // After the long-branch trampoline refactor in inst_JMP, forward conditional
+                // branches are emitted as two instructions (bc_skip + b), so only backward
+                // short-loop uses of emitIns_J with a conditional still reach here.
+                // Those are always within a single IG and well within ±32KB.
                 assert((jmpDist >= -0x8000) && (jmpDist < 0x8000));
                 assert((jmpDist & 3) == 0); // Must be word-aligned
             }
