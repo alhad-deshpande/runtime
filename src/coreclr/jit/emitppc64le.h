@@ -443,6 +443,12 @@ void emitInsLoadStoreOp(instruction ins, emitAttr attr, regNumber dataReg, GenTr
 
 void emitIns_J(instruction ins, BasicBlock* dst, int instrCount = 0);
 
+// Emit a long conditional branch trampoline:
+//   bc <inverted-cond>, $+8   (skip the unconditional branch if condition not taken)
+//   b  <dst>                  (unconditional I-form branch, ±32MB range)
+// Use this instead of emitIns_J(condIns, dst) when the target may be farther than ±32KB.
+void emitIns_J_cond_long(instruction condIns, BasicBlock* dst);
+
 void emitIns_R_C(instruction ins, emitAttr attr, regNumber reg, CORINFO_FIELD_HANDLE fldHnd, int offs);
 
 void emitIns_R_R_C(instruction ins, emitAttr attr, regNumber reg1, regNumber reg2, CORINFO_FIELD_HANDLE fldHnd, int offs);

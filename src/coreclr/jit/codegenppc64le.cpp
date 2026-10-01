@@ -3690,11 +3690,34 @@ void CodeGen::inst_SETCC(GenCondition condition, var_types type, regNumber dstRe
 //------------------------------------------------------------------------
 // inst_JMP: Generate a jump instruction.
 //
+// For conditional branches we always emit the two-instruction long-branch
+// trampoline:
+//
+//   bc <inverted-cond>, $+8   ; skip the unconditional branch (not-taken path)
+//   b  <tgtBlock>             ; I-form unconditional branch (±32MB)
+//
+// This avoids the ±32KB limit of B-form conditional branches without any
+// emitter infrastructure changes (since idCodeSize() is fixed at 4 bytes for
+// all PPC64LE instructions).  Unconditional branches (EJ_jmp) are emitted
+// directly via emitIns_J(INS_b, ...) and are safe at ±32MB.
+//
 void CodeGen::inst_JMP(emitJumpKind jmp, BasicBlock* tgtBlock)
 {
     assert(tgtBlock != nullptr);
 
-    GetEmitter()->emitIns_J(emitter::emitJumpKindToIns(jmp), tgtBlock);
+    instruction ins = emitter::emitJumpKindToIns(jmp);
+
+    if (ins == INS_b)
+    {
+        // Unconditional branch: I-form, ±32MB — no trampoline needed.
+        GetEmitter()->emitIns_J(INS_b, tgtBlock);
+    }
+    else
+    {
+        // Conditional branch: B-form has only ±32KB range.
+        // Always expand to the safe two-instruction trampoline.
+        GetEmitter()->emitIns_J_cond_long(ins, tgtBlock);
+    }
 }
 
 
