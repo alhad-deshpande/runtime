@@ -1174,6 +1174,217 @@ static bool ppc64UseWideArith(GenTree* op1, GenTree* op2)
 }
 
 //------------------------------------------------------------------------
+// genAddOverflowCheck: Generate overflow check for GT_ADD.
+//
+void CodeGen::genAddOverflowCheck(GenTreeOp* treeNode, emitAttr attr, regNumber targetReg, regNumber op1reg, regNumber op2reg, bool isImmediate)
+{
+    emitter* emit = GetEmitter();
+    GenTree* op1 = treeNode->gtGetOp1();
+    GenTree* op2 = treeNode->gtGetOp2();
+    bool is64Bit = (EA_SIZE(attr) == EA_8BYTE) || ppc64UseWideArith(op1, op2);
+    bool isUnsigned = ((treeNode->gtFlags & GTF_UNSIGNED) != 0);
+    regNumber tempReg = internalRegisters.GetSingle(treeNode);
+
+    if (isUnsigned)
+    {
+        // Unsigned addition: target = op1 + op2
+        // Save op1 into tempReg before addition in case targetReg aliases op1reg
+        emit->emitIns_Mov(INS_mov, attr, tempReg, op1reg, /* canSkip */ false);
+        if (isImmediate)
+        {
+            ssize_t imm = op2->AsIntConCommon()->IconValue();
+            emit->emitIns_R_R_I(INS_addi, attr, targetReg, op1reg, imm);
+        }
+        else
+        {
+            emit->emitIns_R_R_R(INS_add, attr, targetReg, op1reg, op2reg);
+        }
+
+        // Unsigned overflow if target < saved_op1
+        emit->emitIns_R_R(is64Bit ? INS_cmpld : INS_cmplw, attr, targetReg, tempReg);
+        genJumpToThrowHlpBlk(EJ_lt, SCK_OVERFLOW);
+    }
+    else if (isImmediate)
+    {
+        ssize_t imm = op2->AsIntConCommon()->IconValue();
+        emit->emitIns_Mov(INS_mov, attr, tempReg, op1reg, /* canSkip */ false);
+        emit->emitIns_R_R_I(INS_addi, attr, targetReg, op1reg, imm);
+
+        instruction cmpIns = is64Bit ? INS_cmpd : INS_cmpw;
+        if (imm > 0)
+        {
+            emit->emitIns_R_R(cmpIns, attr, targetReg, tempReg);
+            genJumpToThrowHlpBlk(EJ_lt, SCK_OVERFLOW);
+        }
+        else if (imm < 0)
+        {
+            emit->emitIns_R_R(cmpIns, attr, targetReg, tempReg);
+            genJumpToThrowHlpBlk(EJ_gt, SCK_OVERFLOW);
+        }
+    }
+    else
+    {
+        // Signed register addition: target = op1 + op2
+        // Save op1 into tempReg before addition
+        emit->emitIns_Mov(INS_mov, attr, tempReg, op1reg, /* canSkip */ false);
+        emit->emitIns_R_R_R(INS_add, attr, targetReg, op1reg, op2reg);
+
+        instruction cmpIns = is64Bit ? INS_cmpd : INS_cmpw;
+        BasicBlock* op2Negative = genCreateTempLabel();
+        BasicBlock* done = genCreateTempLabel();
+
+        // Check if op2 < 0
+        emit->emitIns_R_I(is64Bit ? INS_cmpdi : INS_cmpwi, attr, op2reg, 0);
+        inst_JMP(EJ_lt, op2Negative);
+
+        // op2 >= 0: overflow if target < saved_op1
+        emit->emitIns_R_R(cmpIns, attr, targetReg, tempReg);
+        genJumpToThrowHlpBlk(EJ_lt, SCK_OVERFLOW);
+        inst_JMP(EJ_jmp, done);
+
+        // op2 < 0: overflow if target > saved_op1
+        genDefineTempLabel(op2Negative);
+        emit->emitIns_R_R(cmpIns, attr, targetReg, tempReg);
+        genJumpToThrowHlpBlk(EJ_gt, SCK_OVERFLOW);
+
+        genDefineTempLabel(done);
+    }
+}
+
+//------------------------------------------------------------------------
+// genSubOverflowCheck: Generate overflow check for GT_SUB.
+//
+void CodeGen::genSubOverflowCheck(GenTreeOp* treeNode, emitAttr attr, regNumber targetReg, regNumber op1reg, regNumber op2reg)
+{
+    emitter* emit = GetEmitter();
+    GenTree* op1 = treeNode->gtGetOp1();
+    GenTree* op2 = treeNode->gtGetOp2();
+    bool is64Bit = (EA_SIZE(attr) == EA_8BYTE) || ppc64UseWideArith(op1, op2);
+    bool isUnsigned = ((treeNode->gtFlags & GTF_UNSIGNED) != 0);
+    regNumber tempReg = internalRegisters.GetSingle(treeNode);
+
+    if (isUnsigned)
+    {
+        // Unsigned subtraction: op1 - op2 < 0 (i.e. op1 < op2) overflows
+        // Check condition before subtraction in case targetReg aliases op1reg or op2reg
+        emit->emitIns_R_R(is64Bit ? INS_cmpld : INS_cmplw, attr, op1reg, op2reg);
+        genJumpToThrowHlpBlk(EJ_lt, SCK_OVERFLOW);
+        emit->emitIns_R_R_R(INS_subf, attr, targetReg, op2reg, op1reg);
+    }
+    else
+    {
+        // Signed subtraction: target = op1 - op2
+        // Save op1 into tempReg before subf in case targetReg aliases op1reg
+        emit->emitIns_Mov(INS_mov, attr, tempReg, op1reg, /* canSkip */ false);
+        emit->emitIns_R_R_R(INS_subf, attr, targetReg, op2reg, op1reg);
+
+        instruction cmpIns = is64Bit ? INS_cmpd : INS_cmpw;
+        BasicBlock* op2Negative = genCreateTempLabel();
+        BasicBlock* done = genCreateTempLabel();
+
+        // Check if op2 < 0
+        emit->emitIns_R_I(is64Bit ? INS_cmpdi : INS_cmpwi, attr, op2reg, 0);
+        inst_JMP(EJ_lt, op2Negative);
+
+        // op2 >= 0: overflow if target > saved_op1
+        emit->emitIns_R_R(cmpIns, attr, targetReg, tempReg);
+        genJumpToThrowHlpBlk(EJ_gt, SCK_OVERFLOW);
+        inst_JMP(EJ_jmp, done);
+
+        // op2 < 0: overflow if target < saved_op1
+        genDefineTempLabel(op2Negative);
+        emit->emitIns_R_R(cmpIns, attr, targetReg, tempReg);
+        genJumpToThrowHlpBlk(EJ_lt, SCK_OVERFLOW);
+
+        genDefineTempLabel(done);
+    }
+}
+
+//------------------------------------------------------------------------
+// genMulOverflowCheck: Generate overflow check for GT_MUL.
+//
+void CodeGen::genMulOverflowCheck(GenTreeOp* treeNode, emitAttr attr, regNumber targetReg, regNumber op1reg, regNumber op2reg)
+{
+    emitter* emit = GetEmitter();
+    GenTree* op1 = treeNode->gtGetOp1();
+    GenTree* op2 = treeNode->gtGetOp2();
+    bool is64Bit = (EA_SIZE(attr) == EA_8BYTE) || ppc64UseWideArith(op1, op2);
+    bool isUnsigned = ((treeNode->gtFlags & GTF_UNSIGNED) != 0);
+    regNumber tempReg = internalRegisters.GetSingle(treeNode);
+
+    if (is64Bit)
+    {
+        if (isUnsigned)
+        {
+            // Compute high 64 bits into tempReg first before targetReg potentially clobbers op1reg/op2reg
+            emit->emitIns_R_R_R(INS_mulhdu, attr, tempReg, op1reg, op2reg);
+            emit->emitIns_R_R_R(INS_mulld, attr, targetReg, op1reg, op2reg);
+            emit->emitIns_R_I(INS_cmpldi, attr, tempReg, 0);
+            genJumpToThrowHlpBlk(EJ_ne, SCK_OVERFLOW);
+        }
+        else
+        {
+            // Compute high 64 bits into tempReg first before targetReg potentially clobbers op1reg/op2reg
+            emit->emitIns_R_R_R(INS_mulhd, attr, tempReg, op1reg, op2reg);
+            emit->emitIns_R_R_R(INS_mulld, attr, targetReg, op1reg, op2reg);
+
+            BasicBlock* targetNegative = genCreateTempLabel();
+            BasicBlock* done = genCreateTempLabel();
+
+            emit->emitIns_R_I(INS_cmpdi, attr, targetReg, 0);
+            inst_JMP(EJ_lt, targetNegative);
+
+            // target >= 0: mulhd must be 0
+            emit->emitIns_R_I(INS_cmpdi, attr, tempReg, 0);
+            genJumpToThrowHlpBlk(EJ_ne, SCK_OVERFLOW);
+            inst_JMP(EJ_jmp, done);
+
+            // target < 0: mulhd must be -1
+            genDefineTempLabel(targetNegative);
+            emit->emitIns_R_I(INS_cmpdi, attr, tempReg, -1);
+            genJumpToThrowHlpBlk(EJ_ne, SCK_OVERFLOW);
+
+            genDefineTempLabel(done);
+        }
+    }
+    else
+    {
+        if (isUnsigned)
+        {
+            // Compute high 32 bits into tempReg first before targetReg potentially clobbers op1reg/op2reg
+            emit->emitIns_R_R_R(INS_mulhwu, attr, tempReg, op1reg, op2reg);
+            emit->emitIns_R_R_R(INS_mullw, attr, targetReg, op1reg, op2reg);
+            emit->emitIns_R_I(INS_cmplwi, attr, tempReg, 0);
+            genJumpToThrowHlpBlk(EJ_ne, SCK_OVERFLOW);
+        }
+        else
+        {
+            // Compute high 32 bits into tempReg first before targetReg potentially clobbers op1reg/op2reg
+            emit->emitIns_R_R_R(INS_mulhw, attr, tempReg, op1reg, op2reg);
+            emit->emitIns_R_R_R(INS_mullw, attr, targetReg, op1reg, op2reg);
+
+            BasicBlock* targetNegative = genCreateTempLabel();
+            BasicBlock* done = genCreateTempLabel();
+
+            emit->emitIns_R_I(INS_cmpwi, attr, targetReg, 0);
+            inst_JMP(EJ_lt, targetNegative);
+
+            // target >= 0: mulhw must be 0
+            emit->emitIns_R_I(INS_cmpwi, attr, tempReg, 0);
+            genJumpToThrowHlpBlk(EJ_ne, SCK_OVERFLOW);
+            inst_JMP(EJ_jmp, done);
+
+            // target < 0: mulhw must be -1
+            genDefineTempLabel(targetNegative);
+            emit->emitIns_R_I(INS_cmpwi, attr, tempReg, -1);
+            genJumpToThrowHlpBlk(EJ_ne, SCK_OVERFLOW);
+
+            genDefineTempLabel(done);
+        }
+    }
+}
+
+//------------------------------------------------------------------------
 // genCodeForBinary: Generate code for many binary arithmetic operators
 //
 // Arguments:
@@ -1238,7 +1449,11 @@ void CodeGen::genCodeForBinary(GenTreeOp* treeNode)
               switch (oper)
               {
                   case GT_ADD:
-                      if (isImmediate)
+                      if (treeNode->gtOverflow())
+                      {
+                          genAddOverflowCheck(treeNode, attr, targetReg, op1reg, op2reg, isImmediate);
+                      }
+                      else if (isImmediate)
                       {
                           ssize_t imm = op2->AsIntConCommon()->IconValue();
                           // addi: add immediate (16-bit signed immediate)
@@ -1254,17 +1469,31 @@ void CodeGen::genCodeForBinary(GenTreeOp* treeNode)
                       break;
 
                   case GT_SUB:
-                      // PowerPC64LE doesn't have subi, use addi with negated immediate
-                      // or use subf (subtract from) instruction
-                      ins = INS_subf;
-                      emit->emitIns_R_R_R(ins, attr, targetReg, op2reg, op1reg); // Note: operands reversed for subf
+                      if (treeNode->gtOverflow())
+                      {
+                          genSubOverflowCheck(treeNode, attr, targetReg, op1reg, op2reg);
+                      }
+                      else
+                      {
+                          // PowerPC64LE doesn't have subi, use addi with negated immediate
+                          // or use subf (subtract from) instruction
+                          ins = INS_subf;
+                          emit->emitIns_R_R_R(ins, attr, targetReg, op2reg, op1reg); // Note: operands reversed for subf
+                      }
                       break;
 
                   case GT_MUL:
-                      // Use mulld (64-bit) when either operand is 64-bit, mullw (32-bit) otherwise.
-                      // See ppc64UseWideArith for the full rationale.
-                      ins = ppc64UseWideArith(op1, op2) ? INS_mulld : INS_mullw;
-                      emit->emitIns_R_R_R(ins, attr, targetReg, op1reg, op2reg);
+                      if (treeNode->gtOverflow())
+                      {
+                          genMulOverflowCheck(treeNode, attr, targetReg, op1reg, op2reg);
+                      }
+                      else
+                      {
+                          // Use mulld (64-bit) when either operand is 64-bit, mullw (32-bit) otherwise.
+                          // See ppc64UseWideArith for the full rationale.
+                          ins = ppc64UseWideArith(op1, op2) ? INS_mulld : INS_mullw;
+                          emit->emitIns_R_R_R(ins, attr, targetReg, op1reg, op2reg);
+                      }
                       break;
 
                   case GT_DIV:
