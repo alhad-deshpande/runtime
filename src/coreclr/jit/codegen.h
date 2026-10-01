@@ -286,6 +286,10 @@ protected:
                               ssize_t     imm,
                               regNumber   tmpReg,
                               bool        inUnwindRegion = false);
+
+    void genAddOverflowCheck(GenTreeOp* treeNode, emitAttr attr, regNumber targetReg, regNumber op1reg, regNumber op2reg, bool isImmediate);
+    void genSubOverflowCheck(GenTreeOp* treeNode, emitAttr attr, regNumber targetReg, regNumber op1reg, regNumber op2reg);
+    void genMulOverflowCheck(GenTreeOp* treeNode, emitAttr attr, regNumber targetReg, regNumber op1reg, regNumber op2reg);
 #endif
 
 #if defined(TARGET_ARM64)
