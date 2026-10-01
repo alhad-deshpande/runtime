@@ -1273,27 +1273,54 @@ int LinearScan::BuildNode(GenTree* tree)
                   FALLTHROUGH;
 
               case GT_DIV:
-              case GT_UDIV:
-  	            // Division operations don't need internal registers
-    	            srcCount = BuildBinaryUses(tree->AsOp());
-      	            buildInternalRegisterUses();
-		    assert(dstCount == 1);
-		    BuildDef(tree);
-		    break;
+              {
+                    // GT_DIV may need a temporary register for the signed-overflow
+                    // check (MinInt / -1) emitted by genCodeForDivMod.
+                    ExceptionSetFlags exceptions = tree->OperExceptions(compiler);
+                    if ((exceptions & ExceptionSetFlags::ArithmeticException) != ExceptionSetFlags::None)
+                    {
+                        buildInternalIntRegisterDefForNode(tree);
+                    }
+                    srcCount = BuildBinaryUses(tree->AsOp());
+                    buildInternalRegisterUses();
+                    assert(dstCount == 1);
+                    BuildDef(tree);
+              }
+              break;
 
-	      case GT_MOD:
+              case GT_UDIV:
+                    // Unsigned division never needs an overflow check; no internal registers.
+                    srcCount = BuildBinaryUses(tree->AsOp());
+                    buildInternalRegisterUses();
+                    assert(dstCount == 1);
+                    BuildDef(tree);
+                    break;
+
+       case GT_MOD:
               case GT_UMOD:
-	      {
-		    // PowerPC64 doesn't have a direct MOD instruction
-  	            // We compute: remainder = dividend - (quotient * divisor)
-		    // This requires a temporary register to hold the quotient
-		    buildInternalIntRegisterDefForNode(tree);
-		    srcCount = BuildBinaryUses(tree->AsOp());
-		    buildInternalRegisterUses();
-		    assert(dstCount == 1);
-		    BuildDef(tree);
-	      }
-	      break;
+       {
+      // PowerPC64 doesn't have a direct MOD instruction.
+      // We compute: remainder = dividend - (quotient * divisor)
+      // which always needs a temp register to hold the quotient.
+      buildInternalIntRegisterDefForNode(tree);
+
+      // GT_MOD signed-overflow check (MinInt / -1) in genCodeForDivMod
+      // also needs a temp register; it uses Extract() so it consumes a
+      // separate slot, leaving the quotient temp for genCodeForBinary.
+      if (tree->OperIs(GT_MOD))
+      {
+          ExceptionSetFlags exceptions = tree->OperExceptions(compiler);
+          if ((exceptions & ExceptionSetFlags::ArithmeticException) != ExceptionSetFlags::None)
+          {
+              buildInternalIntRegisterDefForNode(tree);
+          }
+      }
+      srcCount = BuildBinaryUses(tree->AsOp());
+      buildInternalRegisterUses();
+      assert(dstCount == 1);
+      BuildDef(tree);
+       }
+       break;
 
 	      case GT_MULHI:
               {

@@ -8771,9 +8771,9 @@ DONE_MORPHING_CHILDREN:
 
             break;
 
-#if defined(TARGET_ARM64) || defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64)
+#if defined(TARGET_ARM64) || defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64) || defined(TARGET_POWERPC64)
         case GT_DIV:
-#if defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64)
+#if defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64) || defined(TARGET_POWERPC64)
         case GT_MOD:
 #endif
         {
@@ -8802,7 +8802,7 @@ DONE_MORPHING_CHILDREN:
         }
         break;
         case GT_UDIV:
-#if defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64)
+#if defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64) || defined(TARGET_POWERPC64)
         case GT_UMOD:
 #endif
         {
@@ -8817,7 +8817,7 @@ DONE_MORPHING_CHILDREN:
             }
         }
         break;
-#endif // defined(TARGET_ARM64) || defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64)
+#endif // defined(TARGET_ARM64) || defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64) || defined(TARGET_POWERPC64)
 
         case GT_ADD:
 
