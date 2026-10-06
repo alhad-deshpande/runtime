@@ -5494,10 +5494,10 @@ const CodeGen::GenConditionDesc CodeGen::GenConditionDesc::map[32]
 
     { EJ_eq }, // FEQ   (index 16) - Float Equal
     { EJ_ne }, // FNE   (index 17) - Float Not Equal
-    { EJ_lt }, // FLT   (index 18) - Float Less Than
-    { EJ_le }, // FLE   (index 19) - Float Less or Equal
-    { EJ_ge }, // FGE   (index 20) - Float Greater or Equal
-    { EJ_gt }, // FGT   (index 21) - Float Greater Than
+    { EJ_lt }, // FLT   (index 18) - Float Less Than (ordered): branch if LT=1, NaN->no branch ✓
+    { EJ_lt, GT_OR, EJ_eq }, // FLE (index 19) - Float Less or Equal (ordered): LT=1 OR EQ=1; NaN->no branch ✓
+    { EJ_gt, GT_OR, EJ_eq }, // FGE (index 20) - Float Greater or Equal (ordered): GT=1 OR EQ=1; NaN->no branch ✓
+    { EJ_gt }, // FGT   (index 21) - Float Greater Than (ordered): branch if GT=1, NaN->no branch ✓
     { },       // O     (index 22) - Overflow (not used on PPC)
     { },       // NO    (index 23) - No Overflow (not used on PPC)
 
