@@ -144,15 +144,7 @@ void CodeGen::genLclHeap(GenTree* tree)
     BasicBlock* endLabel       = nullptr;
 
     // -----------------------------------------------------------------------
-    // Step 1: r31 ← caller_SP (= 0(r1)).
-    // r31 is clobbered here; the epilog restores it from the prolog-saved slot
-    // at caller_SP - 8.  We need caller_SP in r31 so we can write the correct
-    // ELFv2 backchain word (0(new_r1) = caller_SP) after moving SP.
-    // -----------------------------------------------------------------------
-    emit->emitIns_R_R_I(INS_ld, EA_PTRSIZE, REG_FP, REG_SPBASE, 0);
-
-    // -----------------------------------------------------------------------
-    // Step 2: determine allocSize (aligned to STACK_ALIGN)
+    // Step 1: determine allocSize (aligned to STACK_ALIGN)
     // -----------------------------------------------------------------------
     size_t    amount = 0;
     regNumber regCnt = REG_NA; // holds allocSize for non-constant path
@@ -163,9 +155,10 @@ void CodeGen::genLclHeap(GenTree* tree)
         amount = size->AsIntCon()->gtIconVal;
         if (amount == 0)
         {
-            // Zero size: return null in targetReg
+            // Zero size: return null in targetReg without modifying SP/FP
             instGen_Set_Reg_To_Zero(EA_PTRSIZE, targetReg);
-            goto BAILOUT;
+            genProduceReg(tree);
+            return;
         }
         amount = AlignUp(amount, STACK_ALIGN);
     }
@@ -186,6 +179,14 @@ void CodeGen::genLclHeap(GenTree* tree)
         emit->emitIns_R_R_I(INS_srdi, EA_PTRSIZE, regCnt, regCnt, 4); // regCnt >>= 4
         emit->emitIns_R_R_I(INS_sldi, EA_PTRSIZE, regCnt, regCnt, 4); // regCnt <<= 4 (bottom 4 bits cleared)
     }
+
+    // -----------------------------------------------------------------------
+    // Step 2: r31 ← caller_SP (= 0(r1)).
+    // r31 is clobbered here; the epilog restores it from the prolog-saved slot
+    // at caller_SP - 8.  We need caller_SP in r31 so we can write the correct
+    // ELFv2 backchain word (0(new_r1) = caller_SP) after moving SP.
+    // -----------------------------------------------------------------------
+    emit->emitIns_R_R_I(INS_ld, EA_PTRSIZE, REG_FP, REG_SPBASE, 0);
 
     // -----------------------------------------------------------------------
     // Step 3: move SP down by allocSize and immediately write backchain.
@@ -355,11 +356,10 @@ void CodeGen::genLclHeap(GenTree* tree)
     }
 
 BAILOUT:
-    // r31 currently holds caller_SP (loaded at Step 1).
+    // r31 holds caller_SP (loaded at Step 2).
     // Restore r31 = new frame base (= new r1) so that FP-relative locals are correct.
     // The prolog-saved r31 slot at caller_SP - 8 is untouched; the epilog uses it.
     GetEmitter()->emitIns_Mov(INS_mov, EA_PTRSIZE, REG_FP, REG_SPBASE, /* canSkip */ false);
-    GetEmitter()->emitIns_R_R_I(INS_std,  EA_PTRSIZE, REG_FP, REG_SPBASE, -8);
     if (endLabel != nullptr)
         genDefineTempLabel(endLabel);
 
