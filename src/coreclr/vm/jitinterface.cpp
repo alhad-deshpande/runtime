@@ -13603,7 +13603,7 @@ interpreterFallback = ShouldNotUseInterpreterFallback(ftnDesc, ftnName);
  
         FILE* fp = fopen(filename, "a");
  
-        if (fp != nullptr)
+/*        if (fp != nullptr)
         {
             if (interpreterFallback)
             {
@@ -13614,9 +13614,9 @@ interpreterFallback = ShouldNotUseInterpreterFallback(ftnDesc, ftnName);
                     fprintf(fp,"Interpreting -> %s:%s\n",ftnDesc->m_pszDebugClassName,ftnName);
             }
  
-            fclose(fp);
+            //fclose(fp);
         }
-
+*/
         /*static char filename[64];
         static bool logFileInitialized = false;
 
@@ -13640,10 +13640,10 @@ interpreterFallback = ShouldNotUseInterpreterFallback(ftnDesc, ftnName);
                 }
                 fclose(fp);
         }*/
-#endif
 
     if (interpreterFallback == false)
     {
+         fprintf(fp,"Defualt Interpreting -> %s:%s\n",ftnDesc->m_pszDebugClassName,ftnName);
         // If we're doing an "import_only" compilation, it's for verification, so don't interpret.
         // (We assume that importation is completely architecture-independent, or at least nearly so.)
         if (FAILED(ret) &&
@@ -13668,6 +13668,7 @@ interpreterFallback = ShouldNotUseInterpreterFallback(ftnDesc, ftnName);
     {
 	EX_TRY
 	{
+            fprintf(fp,"Try Jitting -> %s:%s\n",ftnDesc->m_pszDebugClassName,ftnName);
             ret = CompileMethodWithEtwWrapper(jitMgr,
                                           comp,
                                           info,
@@ -13678,12 +13679,14 @@ interpreterFallback = ShouldNotUseInterpreterFallback(ftnDesc, ftnName);
 	EX_CATCH
 	{
 	    interpreterFallback = false;
+            fprintf(fp,"Fallback Interpreting -> %s:%s\n",ftnDesc->m_pszDebugClassName,ftnName);
 	}
 	EX_END_CATCH(SwallowAllExceptions)
     }
 
     if (interpreterFallback == true)
     {
+        fprintf(fp,"Default Jitting -> %s:%s\n",ftnDesc->m_pszDebugClassName,ftnName);
         // If we're doing an "import_only" compilation, it's for verification, so don't interpret.
         // (We assume that importation is completely architecture-independent, or at least nearly so.)
         if (FAILED(ret) &&
@@ -13703,9 +13706,12 @@ interpreterFallback = ShouldNotUseInterpreterFallback(ftnDesc, ftnName);
             }
         }
     }
+    fclose(fp);
+#endif
 #else
     if (FAILED(ret))
     {
+        //fprintf(stderr,,"VIAKS -> Jitting -> %s:%s\n",ftnDesc->m_pszDebugClassName,ftnName);
         ret = jitMgr->m_jit->compileMethod( comp,
                                             info,
                                             CORJIT_FLAGS::CORJIT_FLAG_CALL_GETJITFLAGS,
