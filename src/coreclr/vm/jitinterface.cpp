@@ -13643,7 +13643,7 @@ interpreterFallback = ShouldNotUseInterpreterFallback(ftnDesc, ftnName);
 
     if (interpreterFallback == false)
     {
-         fprintf(fp,"Defualt Interpreting -> %s:%s\n",ftnDesc->m_pszDebugClassName,ftnName);
+         fprintf(fp,"Default Interpreting -> %s:%s\n",ftnDesc->m_pszDebugClassName,ftnName);
         // If we're doing an "import_only" compilation, it's for verification, so don't interpret.
         // (We assume that importation is completely architecture-independent, or at least nearly so.)
         if (FAILED(ret) &&
@@ -13668,7 +13668,6 @@ interpreterFallback = ShouldNotUseInterpreterFallback(ftnDesc, ftnName);
     {
 	EX_TRY
 	{
-            fprintf(fp,"Try Jitting -> %s:%s\n",ftnDesc->m_pszDebugClassName,ftnName);
             ret = CompileMethodWithEtwWrapper(jitMgr,
                                           comp,
                                           info,
