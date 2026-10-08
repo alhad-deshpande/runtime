@@ -149,34 +149,26 @@
   #define REG_JUMP_THUNK_PARAM     REG_R12
   #define RBM_JUMP_THUNK_PARAM     RBM_R12
 
-  /* Read and Write Barriers are yet to be implemented for ppc64le\asmhelpers.asm */
-
-  // ARM64 write barrier ABI (see vm\arm64\asmhelpers.asm, vm\arm64\asmhelpers.S):
+  // PPC64LE write barrier ABI (see vm/ppc64le/jithelpers.S):
   // CORINFO_HELP_ASSIGN_REF (JIT_WriteBarrier), CORINFO_HELP_CHECKED_ASSIGN_REF (JIT_CheckedWriteBarrier):
   //     On entry:
-  //       x14: the destination address of the store
-  //       x15: the object reference to be stored
+  //       r3: the destination address (LHS of the assignment)
+  //       r4: the object reference (RHS of the assignment)
   //     On exit:
-  //       x12: trashed
-  //       x14: incremented by 8
-  //       x15: trashed
-  //       x17: trashed (ip1) if FEATURE_USE_SOFTWARE_WRITE_WATCH_FOR_GC_HEAP
+  //       r3: trashed (incremented by 8)
+  //       r5: trashed
+  //       r6: trashed
+  //       r7: trashed
   // CORINFO_HELP_ASSIGN_BYREF (JIT_ByRefWriteBarrier):
   //     On entry:
-  //       x13: the source address (points to object reference to write)
-  //       x14: the destination address (object reference written here)
+  //       r3: the destination address
+  //       r4: the source address
   //     On exit:
-  //       x12: trashed
-  //       x13: incremented by 8
-  //       x14: incremented by 8
-  //       x15: trashed
-  //       x17: trashed (ip1) if FEATURE_USE_SOFTWARE_WRITE_WATCH_FOR_GC_HEAP
-  //
-  // Note that while x17 (ip1) is currently only trashed under FEATURE_USE_SOFTWARE_WRITE_WATCH_FOR_GC_HEAP,
-  // it is expected to be set in the future for R2R. Consider it trashed to avoid later breaking changes.
-
-  /* ppc64lemarker - currently implementing the register set for the lsra, hence removing the unrelated register values */
-  /* to fix build errors - please visit back and update values accordingly.					    */
+  //       r3: incremented by 8 (still valid byref)
+  //       r4: incremented by 8 (still valid byref)
+  //       r5: trashed
+  //       r6: trashed
+  //       r7: trashed
 
   #define REG_WRITE_BARRIER_DST          REG_R3
   #define RBM_WRITE_BARRIER_DST          RBM_R3
@@ -195,16 +187,21 @@
   #define RBM_CALLEE_TRASH_NOGC          (RBM_R5|RBM_R6|RBM_R7|RBM_DEFAULT_HELPER_CALL_TARGET)
 
   // Registers killed by CORINFO_HELP_ASSIGN_REF and CORINFO_HELP_CHECKED_ASSIGN_REF.
-  #define RBM_CALLEE_TRASH_WRITEBARRIER         (RBM_R14|RBM_CALLEE_TRASH_NOGC)
+  // The JIT_WriteBarrier / JIT_CheckedWriteBarrier stubs (jithelpers.S) on PPC64LE trash:
+  //   r3 (dst)  : incremented by 8 on exit — must be in kill set (RBM_WRITE_BARRIER_DST)
+  //   r5, r6, r7: scratch — covered by RBM_CALLEE_TRASH_NOGC
+  //   r12       : call-target scratch — covered by RBM_DEFAULT_HELPER_CALL_TARGET
+  #define RBM_CALLEE_TRASH_WRITEBARRIER         (RBM_WRITE_BARRIER_DST|RBM_CALLEE_TRASH_NOGC)
 
   // Registers no longer containing GC pointers after CORINFO_HELP_ASSIGN_REF and CORINFO_HELP_CHECKED_ASSIGN_REF.
   #define RBM_CALLEE_GCTRASH_WRITEBARRIER       RBM_CALLEE_TRASH_NOGC
 
   // Registers killed by CORINFO_HELP_ASSIGN_BYREF.
+  // dst (r3) and src (r4) are both modified by the byref stub.
   #define RBM_CALLEE_TRASH_WRITEBARRIER_BYREF   (RBM_WRITE_BARRIER_DST_BYREF | RBM_WRITE_BARRIER_SRC_BYREF | RBM_CALLEE_TRASH_NOGC)
 
   // Registers no longer containing GC pointers after CORINFO_HELP_ASSIGN_BYREF.
-  // Note that x13 and x14 are still valid byref pointers after this helper call, despite their value being changed.
+  // Note that r3 and r4 are still valid byref pointers after this helper call, despite their value being changed.
   #define RBM_CALLEE_GCTRASH_WRITEBARRIER_BYREF RBM_CALLEE_TRASH_NOGC
 
   // GenericPInvokeCalliHelper VASigCookie Parameter
