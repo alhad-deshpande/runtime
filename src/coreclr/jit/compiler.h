@@ -8835,6 +8835,7 @@ public:
                           // instruction and the current location.
     void unwindSaveReg(regNumber reg, int offset);
     void unwindReturn(regNumber reg);
+    void unwindRestoreSPFromBackchain();
 #endif // defined(TARGET_POWERPC64)
 
     //
