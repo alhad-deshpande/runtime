@@ -1053,16 +1053,39 @@ void CodeGen::genCodeForBitCast(GenTreeOp* treeNode)
         }
         else
         {
-            // FPR → GPR: store the FP word, then load as an integer bit-pattern.
-            emit->emitIns_R_R_I(INS_stfd, EA_8BYTE, srcReg, REG_SPBASE, tmpOffset);
-            if (genTypeSize(targetType) == 4)
+            // FPR → GPR: store the FP bit-pattern, then reload as an integer.
+            //
+            // The store instruction must be chosen based on the *source* type, not
+            // the target size, because PPC64 FPRs always hold single-precision
+            // values in 64-bit double-precision format internally:
+            //
+            //   TYP_FLOAT  → stfs: converts the internal double to a 32-bit IEEE 754
+            //                      single-precision word and stores exactly 4 bytes.
+            //                      Using stfd here would store the full 8-byte double
+            //                      representation (e.g. 0x3FF0000000000000 for 1.0f),
+            //                      and lwz at offset 0 would read the LE low word
+            //                      (0x00000000) instead of the float32 bits (0x3F800000).
+            //   TYP_DOUBLE → stfd: stores the 8-byte double bit-pattern unchanged.
+            if (srcType == TYP_FLOAT)
             {
-                // 32-bit target: pick up the low 32 bits (LE: offset 0).
-                emit->emitIns_R_R_I(INS_lwz, EA_4BYTE, targetReg, REG_SPBASE, tmpOffset);
+                // float32 source: store the 32-bit IEEE 754 bit-pattern, then read
+                // it back as a 32-bit integer.
+                emit->emitIns_R_R_I(INS_stfs, EA_4BYTE, srcReg, REG_SPBASE, tmpOffset);
+                emit->emitIns_R_R_I(INS_lwz,  EA_4BYTE, targetReg, REG_SPBASE, tmpOffset);
             }
             else
             {
-                emit->emitIns_R_R_I(INS_ld, EA_8BYTE, targetReg, REG_SPBASE, tmpOffset);
+                // float64 source: store the 64-bit double bit-pattern, then load
+                // 4 or 8 bytes depending on the integer target width.
+                emit->emitIns_R_R_I(INS_stfd, EA_8BYTE, srcReg, REG_SPBASE, tmpOffset);
+                if (genTypeSize(targetType) == 4)
+                {
+                    emit->emitIns_R_R_I(INS_lwz, EA_4BYTE, targetReg, REG_SPBASE, tmpOffset);
+                }
+                else
+                {
+                    emit->emitIns_R_R_I(INS_ld, EA_8BYTE, targetReg, REG_SPBASE, tmpOffset);
+                }
             }
         }
     }
@@ -4894,7 +4917,7 @@ void CodeGen::genCodeForIndir(GenTreeIndir* tree)
 #ifdef FEATURE_SIMD
     if (tree->TypeGet() == TYP_SIMD12)
     {
-	abort();
+        abort();
     }
 #endif
 
@@ -4906,12 +4929,28 @@ void CodeGen::genCodeForIndir(GenTreeIndir* tree)
 
     if (tree->IsVolatile())
     {
-	// Issue a full memory barrier before a volatile load
-	// PowerPC64: hwsync provides a full memory barrier
-	instGen(INS_hwsync);
+        // Issue a full memory barrier before a volatile load
+        // PowerPC64: hwsync provides a full memory barrier
+        instGen(INS_hwsync);
     }
 
     GetEmitter()->emitInsLoadStoreOp(ins, emitActualTypeSize(type), targetReg, tree);
+
+    // PowerPC64 has no sign-extending byte load (no lba instruction).
+    // lbz always zero-extends; for a signed byte (TYP_BYTE) we must follow
+    // up with extsb to sign-extend to the full register width so that
+    // subsequent sign-extending casts (e.g. conv.i8 / extsw) see the correct
+    // value.  Likewise, lhz zero-extends 16-bit values; for TYP_SHORT we
+    // use extsh.  TYP_UBYTE and TYP_USHORT are unsigned and are correctly
+    // left zero-extended by lbz / lhz.
+    if (type == TYP_BYTE)
+    {
+        GetEmitter()->emitIns_R_R(INS_extsb, EA_PTRSIZE, targetReg, targetReg);
+    }
+    else if (type == TYP_SHORT)
+    {
+        GetEmitter()->emitIns_R_R(INS_extsh, EA_PTRSIZE, targetReg, targetReg);
+    }
 
     genProduceReg(tree);
 }
