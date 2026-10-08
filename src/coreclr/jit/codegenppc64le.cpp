@@ -5622,7 +5622,7 @@ void CodeGen::genFnEpilog(BasicBlock* block)
         // ld r1, 0(r1): r1 = caller_SP (ELFv2 backchain written by genLclHeap at 0(new_r1))
         // The backchain word holds the value of caller_SP, so a single load is sufficient.
         emit->emitIns_R_R_I(INS_ld, EA_PTRSIZE, REG_SPBASE, REG_SPBASE, 0);
-        compiler->unwindAllocStack(totalFrameSize);
+        compiler->unwindRestoreSPFromBackchain();
 
         // Localloc unwind semantics are handled separately. Preserve the
         // existing machine-code restore from caller_SP - 8 for now.

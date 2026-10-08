@@ -418,6 +418,12 @@ ExecuteCodes:
         {
             ContextRecord->R1 = ContextRecord->R31;
         }
+        // restore_sp_from_backchain (11100010): R1 = *(R1)
+        // Corresponds to machine instruction: ld r1, 0(r1)
+        else if (CurCode == 0xE2)
+        {
+            ContextRecord->R1 = MEMORY_READ_QWORD(UnwindParams, ContextRecord->R1);
+        }
         // nop (11100011): no action
         else if (CurCode == 0xE3)
         {

@@ -237,6 +237,26 @@ void Compiler::unwindNop()
     INDEBUG(pu->uwiAddingNOP = false);
 }
 
+// Restore SP from the ELFv2 backchain at 0(r1).
+// This corresponds to:
+//
+//     ld r1, 0(r1)
+//
+// restore_sp_from_backchain: 11100010 -- R1 = *(R1)
+void Compiler::unwindRestoreSPFromBackchain()
+{
+    UnwindInfo* pu = &funCurrentFunc()->uwi;
+
+#ifdef DEBUG
+    if (verbose)
+    {
+        printf("unwindRestoreSPFromBackchain: adding restore_sp_from_backchain\n");
+    }
+#endif
+
+    pu->AddCode(0xE2);
+}
+
 // The instructions between the last captured "current state" and the current instruction
 // are in the prolog but have no effect for unwinding. Emit the appropriate NOP unwind codes
 // for them.
@@ -411,7 +431,7 @@ unsigned GetUnwindSizeFromUnwindHeader(BYTE b1)
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // B0-BF
         2, 2, 2, 2, 2, 2, 2, 2, 3, 2, 2, 2, 3, 2, 2, 2, // C0-CF
         3, 2, 2, 2, 2, 2, 3, 2, 3, 2, 3, 2, 3, 3, 2, 1, // D0-DF
-        4, 1, 3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // E0-EF
+        4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // E0-EF
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1  // F0-FF
     };
 
