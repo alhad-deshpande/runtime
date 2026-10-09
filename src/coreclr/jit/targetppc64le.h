@@ -138,9 +138,10 @@
   // This is a general scratch register that does not conflict with the argument registers
   #define REG_SCRATCH              REG_R0
 
-  // This is a general register that can be optionally reserved for other purposes during codegen
-  #define REG_OPT_RSVD             REG_R13
-  #define RBM_OPT_RSVD             RBM_R13
+  // R13 is the thread pointer per the PPC64LE ELFv2 ABI and must never be used by the JIT.
+  // There is no optional reserved register on this target.
+  #define REG_OPT_RSVD             REG_NA
+  #define RBM_OPT_RSVD             RBM_NONE
 
   // Where is the exception object on entry to the handler block?
   #define REG_EXCEPTION_OBJECT     REG_R3
@@ -274,8 +275,10 @@
   // The registers trashed by the CORINFO_HELP_INIT_PINVOKE_FRAME helper.
   #define RBM_INIT_PINVOKE_FRAME_TRASH  RBM_CALLEE_TRASH
 
-  #define RBM_VALIDATE_INDIRECT_CALL_TRASH (RBM_INT_CALLEE_TRASH & ~(RBM_R0 | RBM_R1 | RBM_R2 | RBM_R3 | RBM_R4 | RBM_R5 | RBM_R6 | RBM_R7 | RBM_R8 | RBM_R9 | RBM_R10 | RBM_R11 | RBM_R12 | RBM_R13))
-  #define REG_VALIDATE_INDIRECT_CALL_ADDR REG_R13
+  // R13 is the thread pointer per the PPC64LE ELFv2 ABI and must never be used by the JIT.
+  // R12 is the designated call-target scratch register and is safe here.
+  #define RBM_VALIDATE_INDIRECT_CALL_TRASH (RBM_INT_CALLEE_TRASH & ~(RBM_R0 | RBM_R1 | RBM_R2 | RBM_R3 | RBM_R4 | RBM_R5 | RBM_R6 | RBM_R7 | RBM_R8 | RBM_R9 | RBM_R10 | RBM_R11 | RBM_R12))
+  #define REG_VALIDATE_INDIRECT_CALL_ADDR REG_R12
   // REG_DISPATCH_INDIRECT_CALL_ADDR must differ from REG_R11 (VirtualStubParamInfo /
   // VSD indirection-cell register) to avoid clobbering it in CFG-protected indirect
   // calls. REG_R12 is already the designated call-target register on PPC64LE
