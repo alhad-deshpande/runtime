@@ -114,7 +114,6 @@ build_runtime() {
 # =========================================================
 build_libs() {
   cd runtime
-  sed -i 's/17.12.0-beta1.24603.5/18.9.0-beta1.26405.2/g' eng/Versions.props
   ./build.sh libs 2>&1 | tee build_libs.log
 }
 
