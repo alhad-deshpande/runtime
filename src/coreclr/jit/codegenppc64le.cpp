@@ -1733,11 +1733,41 @@ void CodeGen::genCodeForBinary(GenTreeOp* treeNode)
                     break;
 
 		default:
-                      unreached();
-              }
-          }
+		                    unreached();
+		            }
 
-          genProduceReg(treeNode);
+		            // On PPC64LE, arithmetic instructions (add, addi, subf, mullw, etc.)
+		            // always operate on the full 64-bit register width and do NOT
+		            // automatically truncate to 32 bits.  For a TYP_INT result this
+		            // leaves the upper 32 bits in an undefined state, causing wrong
+		            // values whenever the register is later read as a full 64-bit
+		            // quantity — e.g. a function return value read by the XUnit wrapper
+		            // appearing as garbage (e.g. -20643852 instead of 100).
+		            //
+		            // Fix: sign-extend the 32-bit result to 64 bits with `extsw` so
+		            // that bits[32:63] are always a clean sign-extension of bit[31].
+		            //
+		            // The check is on the *target* type only:
+		            //   - TYP_INT covers all cases where 32-bit semantics are required
+		            //     regardless of what the operand types were.
+		            //   - TYP_LONG / TYP_I_IMPL results are already full-width; no fix
+		            //     needed.
+		            //   - Floating-point results are never in integer registers.
+		            //   - Overflow-checking nodes throw before reaching here, so they
+		            //     are correctly excluded by the !gtOverflow() guard.
+		            // gtOverflow() asserts OperMayOverflow() — only GT_ADD/GT_SUB/GT_MUL
+		            // support the overflow flag.  For GT_DIV, GT_UDIV, GT_MOD, GT_UMOD,
+		            // GT_AND, GT_OR, GT_XOR (which never have an overflow variant) we skip
+		            // the gtOverflow() call entirely and always emit extsw.
+		            if (!varTypeIsFloating(targetType) &&
+		                (genActualType(targetType) == TYP_INT) &&
+		                (!treeNode->OperMayOverflow() || !treeNode->gtOverflow()))
+		            {
+		                emit->emitIns_R_R(INS_extsw, EA_8BYTE, targetReg, targetReg);
+		            }
+		        }
+
+		        genProduceReg(treeNode);
 }
 
 //------------------------------------------------------------------------
@@ -1782,6 +1812,16 @@ void CodeGen::genCodeForNegNot(GenTree* tree)
         // GT_NOT: bitwise complement — PowerPC has no single NOT instruction;
         // implement as NOR rA, rS, rS  (A NOR A == ~A)
         GetEmitter()->emitIns_R_R_R(INS_nor, attr, targetReg, op1reg, op1reg);
+    }
+
+    // `neg` and `nor` on PPC64LE always produce a full 64-bit result.
+    // For TYP_INT nodes the upper 32 bits must be sign-extended so that
+    // any subsequent 64-bit use (comparison, return, pointer arithmetic)
+    // sees the correct value.  Source type is not checked — target type
+    // alone determines whether the 32-bit result semantics are required.
+    if (!varTypeIsFloating(tree->TypeGet()) && (genActualType(tree->TypeGet()) == TYP_INT))
+    {
+        GetEmitter()->emitIns_R_R(INS_extsw, EA_8BYTE, targetReg, targetReg);
     }
 
     genProduceReg(tree);
@@ -1857,7 +1897,10 @@ void CodeGen::genCodeForBswap(GenTree* tree)
     else
     {
         // 32-bit byte-reverse: use brw (ISA 3.1).
+        // brw on PPC64 zeroes the upper 32 bits of the destination register.
+        // Sign-extend to keep the TYP_INT result canonical.
         emit->emitIns_R_R(INS_brw, EA_4BYTE, targetReg, srcReg);
+        emit->emitIns_R_R(INS_extsw, EA_8BYTE, targetReg, targetReg);
     }
 
     genProduceReg(tree);
@@ -3310,6 +3353,16 @@ void CodeGen::genSimpleReturn(GenTree* treeNode)
 
     // For PPC64LE, use inst_Mov to move the return value to the appropriate return register
     inst_Mov(targetType, retReg, op1->GetRegNum(), /* canSkip */ !movRequired);
+
+    // On PPC64LE all integer instructions operate on 64-bit registers and do not
+    // automatically truncate to 32 bits.  A TYP_INT return value must be sign-
+    // extended into the full 64-bit return register (r3) so that the caller reads
+    // the correct value.  Without this, dirty upper 32 bits propagate to the caller
+    // and produce a garbage result (e.g. -918421516 instead of 100).
+    if (!varTypeIsFloating(targetType) && (genActualType(targetType) == TYP_INT))
+    {
+        GetEmitter()->emitIns_R_R(INS_extsw, EA_8BYTE, retReg, retReg);
+    }
 }
 
 //------------------------------------------------------------------------
@@ -3666,7 +3719,18 @@ void CodeGen::genCodeForShift(GenTree* tree)
         // Emit: targetReg = operandReg SHIFT shiftReg
         GetEmitter()->emitIns_R_R_R(ins, size, targetReg, operandReg, shiftReg);
     }
-    
+
+    // On PPC64LE shift instructions (slwi/slw/srwi/srw/srawi/sraw/rlwinm/rlwnm) operate
+    // on the low 32 bits of the source register and leave the upper 32 bits in a
+    // defined but NOT sign-extended state (slwi/slw/srwi/srw zero the upper 32 bits;
+    // srawi/sraw sign-extend from bit 31 of the *shifted* result, which is correct for
+    // GT_RSH but still needs normalisation for all other cases consumed as TYP_INT).
+    // Sign-extend unconditionally for any TYP_INT result to keep the register canonical.
+    if (!varTypeIsFloating(targetType) && (genActualType(targetType) == TYP_INT))
+    {
+        GetEmitter()->emitIns_R_R(INS_extsw, EA_8BYTE, targetReg, targetReg);
+    }
+
     genProduceReg(tree);
 }
 
@@ -4564,6 +4628,16 @@ void CodeGen::genCall(GenTreeCall* call)
             if (call->GetRegNum() != returnReg)
             {
                 inst_Mov(returnType, call->GetRegNum(), returnReg, /* canSkip */ false);
+            }
+
+            // On PPC64LE the callee's return register (r3) holds a 64-bit value.
+            // For TYP_INT returns, sign-extend the low 32 bits into the full 64-bit
+            // destination register so the caller always sees a clean value regardless
+            // of whether the callee happened to leave upper bits dirty.
+            if (!varTypeIsFloating(returnType) && (genActualType(returnType) == TYP_INT))
+            {
+                regNumber destReg = (call->GetRegNum() != returnReg) ? call->GetRegNum() : returnReg;
+                GetEmitter()->emitIns_R_R(INS_extsw, EA_8BYTE, destReg, destReg);
             }
         }
 
