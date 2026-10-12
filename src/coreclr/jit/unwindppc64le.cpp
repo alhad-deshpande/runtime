@@ -257,6 +257,21 @@ void Compiler::unwindRestoreSPFromBackchain()
     pu->AddCode(0xE2);
 }
 
+// Restore the caller's R31 from caller_SP - 8.
+// The caller SP is obtained from the current frame's backchain.
+void Compiler::unwindRestoreR31CallerSP()
+{
+    UnwindInfo* pu = &funCurrentFunc()->uwi;
+
+#ifdef DEBUG
+    if (verbose)
+    {
+        printf("unwindRestoreR31CallerSP: adding restore_r31_from_backchain\n");
+    }
+#endif
+
+    pu->AddCode(0xE6);
+}
 // The instructions between the last captured "current state" and the current instruction
 // are in the prolog but have no effect for unwinding. Emit the appropriate NOP unwind codes
 // for them.

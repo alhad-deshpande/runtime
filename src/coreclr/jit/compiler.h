@@ -8836,6 +8836,7 @@ public:
     void unwindSaveReg(regNumber reg, int offset);
     void unwindReturn(regNumber reg);
     void unwindRestoreSPFromBackchain();
+    void unwindRestoreR31CallerSP();
 #endif // defined(TARGET_POWERPC64)
 
     //

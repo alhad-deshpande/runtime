@@ -424,7 +424,17 @@ ExecuteCodes:
         {
             ContextRecord->R1 = MEMORY_READ_QWORD(UnwindParams, ContextRecord->R1);
         }
-        // nop (11100011): no action
+        // restore_r31_from_backchain_minus_8:
+	// Restore the caller's R31 using the caller SP in the backchain.
+	else if (CurCode == 0xE6)
+	{
+	    ULONG_PTR callerSP =
+		MEMORY_READ_QWORD(UnwindParams, ContextRecord->R1);
+
+	    ContextRecord->R31 =
+		MEMORY_READ_QWORD(UnwindParams, callerSP - 8);
+	}
+	// nop (11100011): no action
         else if (CurCode == 0xE3)
         {
             // nothing
