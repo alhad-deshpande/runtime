@@ -5700,6 +5700,17 @@ void CodeGen::genFnEpilog(BasicBlock* block)
         }
     }
 
+    for (int regNum = REG_F14; regNum <= REG_F31; regNum++)
+    {
+        regNumber reg     = (regNumber)regNum;
+        regMaskTP regMask = genRegMask(reg);
+
+        if ((maskRestoreRegsFloat & regMask) != RBM_NONE)
+        {
+            offset += REGSIZE_BYTES;
+        }
+    }
+
     compiler->unwindBegEpilog();
 
     for (int regNum = REG_F31; regNum >= REG_F14; regNum--)
