@@ -1536,52 +1536,40 @@ int LinearScan::BuildNode(GenTree* tree)
 //
 int LinearScan::BuildLclHeap(GenTree* tree)
 {
-	   int srcCount = 0;
+    int srcCount = 0;
 
-	   // genLclHeap register requirements:
-	   //
-	   //   Constant size (non-zero):
-	   //     3 internal regs — regCtr (loop counter) + regSrc + regDst
-	   //
-	   //   Non-constant size:
-	   //     4 internal regs — regCnt (aligned allocSize) + regCtr + regSrc + regDst
-	   //     1 source        — the size operand
-	   //
-	   // r13 is reserved for TLS in the PPC64LE Linux ABI and must NOT be used.
-	   // r0 is the 8-byte copy/zero scratch (not LSRA-allocated).
-	   GenTree* size = tree->gtGetOp1();
-	   if (size->IsCnsIntOrI())
-	   {
-	       assert(size->isContained());
-	       size_t sizeVal = size->AsIntCon()->gtIconVal;
-	       if (sizeVal != 0)
-	       {
-	           buildInternalIntRegisterDefForNode(tree); // regCtr (loop counter)
-	           buildInternalIntRegisterDefForNode(tree); // regSrc
-	           buildInternalIntRegisterDefForNode(tree); // regDst
-	           // The large-alloc zero loop sets targetReg first (correct buffer pointer)
-	           // then overwrites regCtr with `amount` for the loop counter.  If regCtr
-	           // aliases targetReg the result register is corrupted, so prevent aliasing.
-	           setInternalRegsDelayFree = true;
-	       }
-	   }
-	   else
-	   {
-	       srcCount = 1;
-	       buildInternalIntRegisterDefForNode(tree); // regCnt (aligned allocSize)
-	       buildInternalIntRegisterDefForNode(tree); // regCtr (loop counter)
-	       buildInternalIntRegisterDefForNode(tree); // regSrc
-	       buildInternalIntRegisterDefForNode(tree); // regDst
-	       BuildUse(size);
-	       // Step 5 computes targetReg = r31 - 8 - regCnt, then copies regCnt into regCtr.
-	       // If any internal register aliases targetReg the computation is silently wrong,
-	       // so force LSRA to assign distinct physical registers.
-	       setInternalRegsDelayFree = true;
-	   }
+    // Stationary genLclHeap register requirements:
+    // Constant nonzero: regNewSP, regDst, regCtr (3 internal registers).
+    // Variable size:    regCnt, regNewSP, regDst, regCtr (4).
+    // Reuse regDst/regCtr after stack probing to zero the returned buffer.
+    // r13 is TLS, and r0 is a physical scratch rather than an LSRA temp.
+    GenTree* size = tree->gtGetOp1();
+    if (size->IsCnsIntOrI())
+    {
+        assert(size->isContained());
+        size_t sizeVal = size->AsIntCon()->gtIconVal;
+        if (sizeVal != 0)
+        {
+            buildInternalIntRegisterDefForNode(tree); // regNewSP
+            buildInternalIntRegisterDefForNode(tree); // regDst
+            buildInternalIntRegisterDefForNode(tree); // regCtr
+            setInternalRegsDelayFree = true;
+        }
+    }
+    else
+    {
+        srcCount = 1;
+        buildInternalIntRegisterDefForNode(tree); // regCnt
+        buildInternalIntRegisterDefForNode(tree); // regNewSP
+        buildInternalIntRegisterDefForNode(tree); // regDst
+        buildInternalIntRegisterDefForNode(tree); // regCtr
+        BuildUse(size);
+        setInternalRegsDelayFree = true;
+    }
 
-	   buildInternalRegisterUses();
-	   BuildDef(tree);
-	   return srcCount;
+    buildInternalRegisterUses();
+    BuildDef(tree);
+    return srcCount;
 }
 
 #ifdef FEATURE_HW_INTRINSICS

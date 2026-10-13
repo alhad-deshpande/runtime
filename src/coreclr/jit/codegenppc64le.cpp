@@ -136,18 +136,21 @@ void CodeGen::genLclHeap(GenTree* tree)
     var_types type      = genActualType(size->gtType);
     emitAttr  easz      = emitTypeSize(type);
 
-    noway_assert((genActualType(size->gtType) == TYP_INT) || (genActualType(size->gtType) == TYP_I_IMPL));
+    noway_assert((type == TYP_INT) || (type == TYP_I_IMPL));
     noway_assert(isFramePointerUsed());
     noway_assert(genStackLevel == 0);
 
-    const int   totalFrameSize = genTotalFrameSize();
-    BasicBlock* endLabel       = nullptr;
+    // Keep r31 at the prolog-created fixed frame base (S0).  Incoming caller
+    // SP is available throughout the method at 0(r31); both the original
+    // backchain at 0(r31) and the active one at 0(r1) must remain valid.
+    // The extra region below the returned buffer holds the live call area.
+    // TODO: Confirm this conservative size with PPC64LE ABI call-site tests.
+    const size_t outArea  = 32 + roundUp(compiler->lvaOutgoingArgSpaceSize, STACK_ALIGN);
+    const size_t pageSize = compiler->eeGetPageSize();
+    BasicBlock* endLabel = nullptr;
 
-    // -----------------------------------------------------------------------
-    // Step 1: determine allocSize (aligned to STACK_ALIGN)
-    // -----------------------------------------------------------------------
     size_t    amount = 0;
-    regNumber regCnt = REG_NA; // holds allocSize for non-constant path
+    regNumber regCnt = REG_NA;
 
     if (size->IsCnsIntOrI())
     {
@@ -155,7 +158,6 @@ void CodeGen::genLclHeap(GenTree* tree)
         amount = size->AsIntCon()->gtIconVal;
         if (amount == 0)
         {
-            // Zero size: return null in targetReg without modifying SP/FP
             instGen_Set_Reg_To_Zero(EA_PTRSIZE, targetReg);
             genProduceReg(tree);
             return;
@@ -169,200 +171,114 @@ void CodeGen::genLclHeap(GenTree* tree)
         emit->emitIns_R_I(INS_cmpdi, easz, targetReg, 0);
         inst_JMP(EJ_eq, endLabel);
 
-        regCnt = internalRegisters.Extract(tree);
+        regCnt = internalRegisters.Extract(tree); // aligned user allocation size
         inst_Mov(type, regCnt, targetReg, /* canSkip */ true);
-        // Round up to STACK_ALIGN (16): add 15, then clear the bottom 4 bits.
-        // andi. only has a 16-bit unsigned immediate and cannot encode ~0xF correctly
-        // as a 64-bit mask.  Use srdi+sldi instead: shift right 4 then shift left 4
-        // zeroes bits 63:60 (IBM numbering) = clears the bottom 4 bits (LE LSBs).
         emit->emitIns_R_R_I(INS_addi, EA_PTRSIZE, regCnt, regCnt, STACK_ALIGN - 1);
-        emit->emitIns_R_R_I(INS_srdi, EA_PTRSIZE, regCnt, regCnt, 4); // regCnt >>= 4
-        emit->emitIns_R_R_I(INS_sldi, EA_PTRSIZE, regCnt, regCnt, 4); // regCnt <<= 4 (bottom 4 bits cleared)
+        emit->emitIns_R_R_I(INS_srdi, EA_PTRSIZE, regCnt, regCnt, 4);
+        emit->emitIns_R_R_I(INS_sldi, EA_PTRSIZE, regCnt, regCnt, 4);
     }
 
-    // -----------------------------------------------------------------------
-    // Step 2: r31 ← caller_SP (= 0(r1)).
-    // r31 is clobbered here; the epilog restores it from the prolog-saved slot
-    // at caller_SP - 8.  We need caller_SP in r31 so we can write the correct
-    // ELFv2 backchain word (0(new_r1) = caller_SP) after moving SP.
-    // -----------------------------------------------------------------------
-    emit->emitIns_R_R_I(INS_ld, EA_PTRSIZE, REG_FP, REG_SPBASE, 0);
+    // LSRA reserves 3 registers for a nonzero constant and 4 for a variable:
+    // regCnt (variable only), regNewSP, regDst, regCtr. The last two are
+    // reused for probing and zero initialization, not extracted twice.
+    regNumber regNewSP = internalRegisters.Extract(tree);
+    regNumber regDst   = internalRegisters.Extract(tree);
+    regNumber regCtr   = internalRegisters.Extract(tree);
 
-    // -----------------------------------------------------------------------
-    // Step 3: move SP down by allocSize and immediately write backchain.
-    //   new_r1 = r1 - allocSize
-    //   0(new_r1) = caller_SP  (held in r31)
-    // -----------------------------------------------------------------------
+    // Probe downward one page at a time, without modifying the live r1.
+    // The final backchain write also touches the end of a partial page.
+    // R0 holds pageSize during the probing loop; afterward it is scratch.
     if (size->IsCnsIntOrI())
     {
-        genInstrWithConstant(INS_addi, EA_PTRSIZE, REG_SPBASE, REG_SPBASE,
-                             -(ssize_t)amount, REG_R0);
+        const size_t allocTotal = amount + outArea;
+        if (allocTotal >= pageSize)
+        {
+            emit->emitIns_Mov(INS_mov, EA_PTRSIZE, regDst, REG_SPBASE, /* canSkip */ false);
+            instGen_Set_Reg_To_Imm(EA_PTRSIZE, regCtr, (ssize_t)allocTotal);
+            instGen_Set_Reg_To_Imm(EA_PTRSIZE, REG_R0, (ssize_t)pageSize);
+
+            BasicBlock* probeLoop = genCreateTempLabel();
+            genDefineTempLabel(probeLoop);
+            emit->emitIns_R_R_R(INS_subf, EA_PTRSIZE, regDst, REG_R0, regDst);
+            emit->emitIns_R_R_I(INS_std, EA_PTRSIZE, REG_R0, regDst, 0);
+            emit->emitIns_R_R_R(INS_subf, EA_PTRSIZE, regCtr, REG_R0, regCtr);
+            emit->emitIns_R_R(INS_cmpd, EA_PTRSIZE, regCtr, REG_R0);
+            inst_JMP(EJ_ge, probeLoop);
+        }
+
+        genInstrWithConstant(INS_addi, EA_PTRSIZE, regNewSP, REG_SPBASE,
+                             -(ssize_t)allocTotal, REG_R0);
     }
     else
     {
-        // subf r1, regCnt, r1  →  r1 = r1 - regCnt
-        emit->emitIns_R_R_R(INS_subf, EA_PTRSIZE, REG_SPBASE, regCnt, REG_SPBASE);
-    }
-    emit->emitIns_R_R_I(INS_std, EA_PTRSIZE, REG_FP, REG_SPBASE, 0);
+        // regCtr = alignedUserSize + outArea; regCnt stays live for zeroing.
+        instGen_Set_Reg_To_Imm(EA_PTRSIZE, REG_R0, (ssize_t)outArea);
+        emit->emitIns_R_R_R(INS_add, EA_PTRSIZE, regCtr, regCnt, REG_R0);
+        emit->emitIns_Mov(INS_mov, EA_PTRSIZE, regDst, REG_SPBASE, /* canSkip */ false);
+        instGen_Set_Reg_To_Imm(EA_PTRSIZE, REG_R0, (ssize_t)pageSize);
 
-    // -----------------------------------------------------------------------
-    // Step 4: copy current frame contents downward to new position.
-    //
-    // Source: new_r1 + allocSize + 8  (= old_r1 + 8, skip the backchain word).
-    //   Computed as new_r1 + allocSize + 8 so successive locallocs always read
-    //   from the CURRENT (already-relocated) copy of the frame, not the stale
-    //   original which earlier localloc copies have partially overwritten.
-    //
-    //   Constant allocSize: regSrc = new_r1 + amount + 8
-    //   Variable allocSize: regSrc = new_r1 + regCnt + 8
-    //
-    // Destination: new_r1 + 8
-    //
-    // Count: copy all frame words except:
-    //   - the backchain at new_r1+0           (written fresh in Step 3)
-    //   - prolog-saved r31 at caller_SP-8     (stays fixed, never moved)
-    //
-    //   copyBytes = totalFrameSize - 16
-    //     src: old_r1 + 8  ..  old_r1 + totalFrameSize - 8  (exclusive)
-    //     dst: new_r1 + 8  ..  new_r1 + totalFrameSize - 8  (exclusive)
-    //
-    //   This INCLUDES the GS security cookie at old_r1+(totalFrameSize-16),
-    //   so it is relocated intact and no post-copy restore is needed.
-    //
-    // r0 = 8-byte copy/zero scratch (not LSRA-allocated)
-    // -----------------------------------------------------------------------
+        BasicBlock* probeDone = genCreateTempLabel();
+        emit->emitIns_R_R(INS_cmpd, EA_PTRSIZE, regCtr, REG_R0);
+        inst_JMP(EJ_lt, probeDone);
+
+        BasicBlock* probeLoop = genCreateTempLabel();
+        genDefineTempLabel(probeLoop);
+        emit->emitIns_R_R_R(INS_subf, EA_PTRSIZE, regDst, REG_R0, regDst);
+        emit->emitIns_R_R_I(INS_std, EA_PTRSIZE, REG_R0, regDst, 0);
+        emit->emitIns_R_R_R(INS_subf, EA_PTRSIZE, regCtr, REG_R0, regCtr);
+        emit->emitIns_R_R(INS_cmpd, EA_PTRSIZE, regCtr, REG_R0);
+        inst_JMP(EJ_ge, probeLoop);
+        genDefineTempLabel(probeDone);
+
+        // Restore the original total count (regCtr was used by the probe).
+        instGen_Set_Reg_To_Imm(EA_PTRSIZE, REG_R0, (ssize_t)outArea);
+        emit->emitIns_R_R_R(INS_add, EA_PTRSIZE, regCtr, regCnt, REG_R0);
+        emit->emitIns_R_R_R(INS_subf, EA_PTRSIZE, regNewSP, regCtr, REG_SPBASE);
+    }
+
+    // Initialize the new backchain BEFORE making the new SP live.
+    // Never modify r31: all fixed-frame and GC-info offsets depend on it.
+    emit->emitIns_R_R_I(INS_ld, EA_PTRSIZE, REG_R0, REG_FPBASE, 0);
+    emit->emitIns_R_R_I(INS_std, EA_PTRSIZE, REG_R0, regNewSP, 0);
+    emit->emitIns_Mov(INS_mov, EA_PTRSIZE, REG_SPBASE, regNewSP, /* canSkip */ false);
+
+    genInstrWithConstant(INS_addi, EA_PTRSIZE, targetReg, REG_SPBASE,
+                         (ssize_t)outArea, REG_R0);
+
+    // Preserve the existing implementation's unconditional zeroing behavior.
+    instGen_Set_Reg_To_Zero(EA_PTRSIZE, REG_R0);
+    if (size->IsCnsIntOrI() && (amount <= compiler->getUnrollThreshold(Compiler::UnrollKind::Memset)))
     {
-        const int copyBytes = totalFrameSize - 16;
-
-        // Constant path:     Extract regCtr, regSrc, regDst  (3 regs)
-        // Non-constant path: regCnt already extracted in Step 2; then regCtr, regSrc, regDst
-        regNumber regCtr = internalRegisters.Extract(tree); // loop counter (NOT r13/TLS)
-        regNumber regSrc = internalRegisters.Extract(tree);
-        regNumber regDst = internalRegisters.Extract(tree);
-
-        // regSrc = new_r1 + allocSize + 8  (the current live frame base + 8)
-        // This correctly sources from the most-recently-relocated copy when
-        // localloc is called multiple times in the same function.
+        for (ssize_t off = 0; off < (ssize_t)amount; off += REGSIZE_BYTES)
+        {
+            emit->emitIns_R_R_I(INS_std, EA_PTRSIZE, REG_R0, targetReg, off);
+        }
+    }
+    else
+    {
         if (size->IsCnsIntOrI())
         {
-            // Constant path: new_r1 is already in r1; amount is the aligned size.
-            genInstrWithConstant(INS_addi, EA_PTRSIZE, regSrc, REG_SPBASE,
-                                 (ssize_t)(amount + 8), REG_R0);
+            instGen_Set_Reg_To_Imm(EA_PTRSIZE, regCtr, (ssize_t)amount);
         }
         else
         {
-            // Non-constant path: regCnt holds the aligned allocSize.
-            // regSrc = r1 + regCnt + 8
-            emit->emitIns_R_R_I(INS_addi, EA_PTRSIZE, regSrc, REG_SPBASE, 8);
-            emit->emitIns_R_R_R(INS_add, EA_PTRSIZE, regSrc, regSrc, regCnt);
-        }
-
-        // regDst = new_r1 + 8
-        genInstrWithConstant(INS_addi, EA_PTRSIZE, regDst, REG_SPBASE,
-                             8, REG_R0);
-
-        // Copy loop: copyBytes = totalFrameSize - 24, 8 bytes per iteration.
-        if (copyBytes > 0)
-        {
-            instGen_Set_Reg_To_Imm(EA_PTRSIZE, regCtr, copyBytes);
-            BasicBlock* copyLoop = genCreateTempLabel();
-            genDefineTempLabel(copyLoop);
-            emit->emitIns_R_R_I(INS_ld,   EA_PTRSIZE, REG_R0, regSrc, 0);
-            emit->emitIns_R_R_I(INS_std,  EA_PTRSIZE, REG_R0, regDst, 0);
-            emit->emitIns_R_R_I(INS_addi, EA_PTRSIZE, regSrc, regSrc,   8);
-            emit->emitIns_R_R_I(INS_addi, EA_PTRSIZE, regDst, regDst,   8);
-            emit->emitIns_R_R_I(INS_addi, EA_PTRSIZE, regCtr, regCtr,  -8);
-            emit->emitIns_R_I(INS_cmpdi,  EA_PTRSIZE, regCtr, 0);
-            inst_JMP(EJ_gt, copyLoop);
-        }
-
-        // -----------------------------------------------------------------------
-        // Step 5: zero localloc block.
-        //
-        // For the N-th localloc call, new_r1_N = original_frame_base - sum(alloc_1..N).
-        // The buffer for call N occupies:
-        //   [new_r1_N + totalFrameSize - 8 .. new_r1_N + totalFrameSize - 8 + allocN)
-        //
-        //   Constant path:    targetReg = r31 - 8 - amount   (r31 = caller_SP)
-        //                     zero count = amount
-        //   Non-constant path: targetReg = new_r1 + totalFrameSize - 8  (new_r1 = r1 after Step 3)
-        //                     zero count = regCnt  (this call's aligned allocSize ONLY)
-        //
-        // The zero count must be exactly allocSize for this call — never (r31-8)-targetReg,
-        // because r31 holds caller_SP after Step 1 and that difference accumulates all
-        // prior allocations, causing the zero loop to overwrite earlier buffers.
-        //
-        // NOTE: the GS cookie slot is at new_r1 + gsCookieOffset which is BELOW
-        // the localloc buffer and was copied intact in Step 4.  No post-zero
-        // restore is required.
-        // -----------------------------------------------------------------------
-        instGen_Set_Reg_To_Zero(EA_PTRSIZE, REG_R0);
-
-        if (size->IsCnsIntOrI())
-        {
-            // targetReg = r31 - 8 - amount  (r31 = caller_SP)
-            genInstrWithConstant(INS_addi, EA_PTRSIZE, targetReg, REG_FP,
-                                 -(ssize_t)(8 + amount), regCtr);
-
-            if (amount <= compiler->getUnrollThreshold(Compiler::UnrollKind::Memset))
-            {
-                for (ssize_t off = 0; off < (ssize_t)amount; off += REGSIZE_BYTES)
-                    emit->emitIns_R_R_I(INS_std, EA_PTRSIZE, REG_R0, targetReg, off);
-            }
-            else
-            {
-                emit->emitIns_Mov(INS_mov, EA_PTRSIZE, regDst, targetReg, /* canSkip */ false);
-                instGen_Set_Reg_To_Imm(EA_PTRSIZE, regCtr, (ssize_t)amount);
-                BasicBlock* zeroLoop = genCreateTempLabel();
-                genDefineTempLabel(zeroLoop);
-                emit->emitIns_R_R_I(INS_std,  EA_PTRSIZE, REG_R0, regDst, 0);
-                emit->emitIns_R_R_I(INS_addi, EA_PTRSIZE, regDst, regDst,   8);
-                emit->emitIns_R_R_I(INS_addi, EA_PTRSIZE, regCtr, regCtr,  -8);
-                emit->emitIns_R_I(INS_cmpdi,  EA_PTRSIZE, regCtr, 0);
-                inst_JMP(EJ_gt, zeroLoop);
-            }
-        }
-        else
-        {
-            // targetReg = new_r1 + (totalFrameSize - 8)
-            //
-            // The localloc buffer for this call occupies:
-            //   [new_r1 + totalFrameSize - 8 .. new_r1 + totalFrameSize - 8 + regCnt)
-            //
-            // Each successive localloc pushes new_r1 down by exactly its own allocSize,
-            // so this formula always points to the fresh, unoccupied region immediately
-            // above the top of the newly copied frame and below the prior allocations.
-            //
-            // The zero count is exactly regCnt (this allocation only).  The old formula
-            // regCtr = (r31-8) - targetReg was wrong: after the first localloc r31 holds
-            // caller_SP so (r31-8) - targetReg accumulates ALL prior allocations, causing
-            // the zero loop to overwrite previously-returned localloc buffers.
-            genInstrWithConstant(INS_addi, EA_PTRSIZE, targetReg, REG_SPBASE,
-                                 (ssize_t)(totalFrameSize - 8), REG_R0);
-
-            // regCtr = exactly this allocation's size — do NOT derive from (r31-8)-targetReg
             emit->emitIns_Mov(INS_mov, EA_PTRSIZE, regCtr, regCnt, /* canSkip */ false);
-
-            emit->emitIns_Mov(INS_mov, EA_PTRSIZE, regDst, targetReg, /* canSkip */ false);
-            BasicBlock* zeroLoop = genCreateTempLabel();
-            genDefineTempLabel(zeroLoop);
-            emit->emitIns_R_R_I(INS_std,  EA_PTRSIZE, REG_R0, regDst, 0);
-            emit->emitIns_R_R_I(INS_addi, EA_PTRSIZE, regDst, regDst,   8);
-            emit->emitIns_R_R_I(INS_addi, EA_PTRSIZE, regCtr, regCtr,  -8);
-            emit->emitIns_R_I(INS_cmpdi,  EA_PTRSIZE, regCtr, 0);
-            inst_JMP(EJ_gt, zeroLoop);
         }
-        // GS cookie was copied intact in Step 4 — no Step 5a needed.
+        emit->emitIns_Mov(INS_mov, EA_PTRSIZE, regDst, targetReg, /* canSkip */ false);
+
+        BasicBlock* zeroLoop = genCreateTempLabel();
+        genDefineTempLabel(zeroLoop);
+        emit->emitIns_R_R_I(INS_std, EA_PTRSIZE, REG_R0, regDst, 0);
+        emit->emitIns_R_R_I(INS_addi, EA_PTRSIZE, regDst, regDst, 8);
+        emit->emitIns_R_R_I(INS_addi, EA_PTRSIZE, regCtr, regCtr, -8);
+        emit->emitIns_R_I(INS_cmpdi, EA_PTRSIZE, regCtr, 0);
+        inst_JMP(EJ_gt, zeroLoop);
     }
 
-BAILOUT:
-    // r31 holds caller_SP (loaded at Step 2).
-    // Restore r31 = new frame base (= new r1) so that FP-relative locals are correct.
-    // The prolog-saved r31 slot at caller_SP - 8 is untouched; the epilog uses it.
-    GetEmitter()->emitIns_Mov(INS_mov, EA_PTRSIZE, REG_FP, REG_SPBASE, /* canSkip */ false);
     if (endLabel != nullptr)
+    {
         genDefineTempLabel(endLabel);
-
+    }
     genProduceReg(tree);
 }
 
@@ -5702,6 +5618,15 @@ void CodeGen::genFnEpilog(BasicBlock* block)
 
     compiler->unwindBegEpilog();
 
+    // After localloc, r1 points below the fixed frame while r31 still
+    // points to the stationary frame. Saved registers are r1-relative in
+    // this epilog, so pivot back before restoring them.
+    if (compiler->compLocallocUsed)
+    {
+        GetEmitter()->emitIns_Mov(INS_mov, EA_PTRSIZE, REG_SPBASE, REG_FP, /* canSkip */ false);
+        compiler->unwindSetFrameReg(REG_FPBASE, 0);
+    }
+
     for (int regNum = REG_F31; regNum >= REG_F14; regNum--)
     {
         regNumber reg     = (regNumber)regNum;
@@ -6031,6 +5956,13 @@ void CodeGen::genPushCalleeSavedRegisters()
             compiler->unwindSaveReg(reg, offset);
             offset += REGSIZE_BYTES;
         }
+    }
+    // For localloc, R31 remains the stationary fixed-frame base while
+    // R1 may move downward. Restore the virtual SP to R31 before
+    // unwinding the fixed-frame callee-saved register slots.
+    if (compiler->compLocallocUsed)
+    {
+        compiler->unwindSetFrameReg(REG_FPBASE, 0);
     }
 
     JITDUMP("    frame pointer offset from SP=0\n");

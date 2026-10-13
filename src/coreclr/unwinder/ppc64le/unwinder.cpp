@@ -424,15 +424,21 @@ ExecuteCodes:
         {
             ContextRecord->R1 = MEMORY_READ_QWORD(UnwindParams, ContextRecord->R1);
         }
-        // restore_r31_from_backchain_minus_8:
+	// restore_r31_from_backchain_minus_8:
 	// Restore the caller's R31 using the caller SP in the backchain.
 	else if (CurCode == 0xE6)
 	{
 	    ULONG_PTR callerSP =
 		MEMORY_READ_QWORD(UnwindParams, ContextRecord->R1);
 
+	    ULONG_PTR savedR31Address = callerSP - 8;
+
 	    ContextRecord->R31 =
-		MEMORY_READ_QWORD(UnwindParams, callerSP - 8);
+		MEMORY_READ_QWORD(UnwindParams, savedR31Address);
+
+	    // Record where the original R31 was saved so stack walking
+	    // and exception continuation use the correct register value.
+		    UPDATE_CONTEXT_POINTERS(UnwindParams, 31, savedR31Address);
 	}
 	// nop (11100011): no action
         else if (CurCode == 0xE3)
