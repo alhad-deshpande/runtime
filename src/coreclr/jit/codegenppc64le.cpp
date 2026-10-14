@@ -4282,16 +4282,23 @@ void CodeGen::genCodeForLclFld(GenTreeLclFld* tree)
             {
                 if (segment.IsPassedInRegister())
                 {
-                    // Field is passed in a register - LSRA has already assigned the correct register
-                    // No load needed, just produce the register
-                    JITDUMP("[PPC64LE HFA DEBUG] genCodeForLclFld - V%02u+%u already in register %s (passed in register)\n",
-                           varNum, offs, getRegName(targetReg));
-                    genProduceReg(tree);
-                    return;
+                    if (!varDsc->lvDoNotEnregister)
+                    {
+                        // Field is passed in a register AND the variable was not homed to the stack.
+                        // LSRA has already assigned the correct incoming register as the result
+                        // register, so no load is needed.
+                        JITDUMP("[PPC64LE HFA DEBUG] genCodeForLclFld - V%02u+%u already in register %s (passed in register, not DNER)\n",
+                               varNum, offs, getRegName(targetReg));
+                        genProduceReg(tree);
+                        return;
+                    }
+                    // lvDoNotEnregister: the prolog homed f1 to the variable's stack slot.
+                    // Break out of the loop so we fall through to the normal emitIns_R_S load.
+                    break;
                 }
                 else
                 {
-                    // Field is on the incoming stack - load from caller's stack frame
+                    // Field was passed on the caller's stack - load from caller's stack frame.
                     int stackOffset = segment.GetStackOffset();
 
                     if (compiler->compLocallocUsed)
