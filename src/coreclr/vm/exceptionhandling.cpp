@@ -582,7 +582,15 @@ void ExceptionTracker::UpdateNonvolatileRegisters(CONTEXT *pContextRecord, REGDI
     UPDATEREG(R28);
     UPDATEREG(R29);
     UPDATEREG(R30);
-    UPDATEREG(R31);
+    // R31 is the JIT frame pointer (established as "mr r31, r1" in the prolog).
+    // The unwind save_reg for R31 records the *caller's* saved r31 in the
+    // backchain slot; restoring that value here would replace CONTEXT.R31 (callee
+    // SP) with the caller's r31 before ClrRestoreNonvolatileContext resumes after
+    // a catch handler, causing frame-relative local variable loads to read from
+    // the wrong address.  The frame pointer is correctly reconstructed by the
+    // unwinder's alloc codes (CONTEXT.R31 = callee SP after VirtualUnwindCallFrame),
+    // so skip the UPDATEREG here.
+    // UPDATEREG(R31);  -- intentionally omitted for PPC64LE frame pointer
 #else
     PORTABILITY_ASSERT("ExceptionTracker::UpdateNonvolatileRegisters");
 #endif
