@@ -424,6 +424,15 @@ ExecuteCodes:
         {
             ContextRecord->R1 = MEMORY_READ_QWORD(UnwindParams, ContextRecord->R1);
         }
+	// restore_r31_from_sp_minus8 (11100111):
+        // Restore caller R31 from the slot at caller SP - 8.
+        // R1 must already represent the restored caller SP.
+        else if (CurCode == 0xE7)
+        {
+            ULONG_PTR Address = ContextRecord->R1 - 8;
+            ContextRecord->R31 = MEMORY_READ_QWORD(UnwindParams, Address);
+            UPDATE_CONTEXT_POINTERS(UnwindParams, 31, Address);
+        }
         // nop (11100011): no action
         else if (CurCode == 0xE3)
         {

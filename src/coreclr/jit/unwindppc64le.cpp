@@ -257,6 +257,24 @@ void Compiler::unwindRestoreSPFromBackchain()
     pu->AddCode(0xE2);
 }
 
+// Restore caller R31 from the slot at caller SP - 8.
+//
+// restore_r31_from_sp_minus8: 11100111 -- R31 = *(R1 - 8)
+// R1 must already represent caller SP when this opcode executes.
+void Compiler::unwindRestoreFPFromCallerSPMinusEight()
+{
+    UnwindInfo* pu = &funCurrentFunc()->uwi;
+
+#ifdef DEBUG
+    if (verbose)
+    {
+        printf("unwindRestoreFPFromCallerSPMinusEight: adding restore_r31_from_sp_minus8\n");
+    }
+#endif
+
+    pu->AddCode(0xE7);
+}
+
 // The instructions between the last captured "current state" and the current instruction
 // are in the prolog but have no effect for unwinding. Emit the appropriate NOP unwind codes
 // for them.
