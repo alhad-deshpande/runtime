@@ -3308,6 +3308,65 @@ void CodeGen::genCodeForStoreLclFld(GenTreeLclFld* tree)
 
 
 //------------------------------------------------------------------------
+// genIntRegExtend: Emit the correct sign- or zero-extension instruction so
+//   that a small integer value in `reg` is widened to fill all 64 bits,
+//   satisfying the ELFv2 ABI's requirement that callers and callees agree on
+//   the full register value.
+//
+//   TYP_BYTE   → extsb  (sign-extend from bit  7)
+//   TYP_SHORT  → extsh  (sign-extend from bit 15)
+//   TYP_UBYTE  → andi., mask 0x00FF  (zero-extend to 8 bits)
+//   TYP_USHORT → andi., mask 0xFFFF  (zero-extend to 16 bits)
+//   TYP_INT / TYP_UINT / any other 32-bit type → extsw (sign-extend from bit 31)
+//   Floating-point and 64-bit integer types: no-op.
+//
+// Arguments:
+//    type - the declared JIT type of the value in `reg`
+//    reg  - the integer register holding the value to extend in place
+//
+// Return Value:
+//    None
+//
+void CodeGen::genIntRegExtend(var_types type, regNumber reg)
+{
+    if (varTypeIsFloating(type) || !varTypeIsArithmetic(type))
+    {
+        return;
+    }
+
+    emitter* emit = GetEmitter();
+
+    switch (type)
+    {
+        case TYP_BYTE:
+            // Signed byte: sign-extend from bit 7
+            emit->emitIns_R_R(INS_extsb, EA_8BYTE, reg, reg);
+            break;
+        case TYP_SHORT:
+            // Signed short: sign-extend from bit 15
+            emit->emitIns_R_R(INS_extsh, EA_8BYTE, reg, reg);
+            break;
+        case TYP_UBYTE:
+            // Unsigned byte: zero-extend — keep only the low 8 bits
+            emit->emitIns_R_R_I(INS_andi, EA_8BYTE, reg, reg, 0xFF);
+            break;
+        case TYP_USHORT:
+            // Unsigned short: zero-extend — keep only the low 16 bits
+            emit->emitIns_R_R_I(INS_andi, EA_8BYTE, reg, reg, 0xFFFF);
+            break;
+        default:
+            if (genActualType(type) == TYP_INT)
+            {
+                // TYP_INT, TYP_UINT, and any other type whose actual size is 32 bits:
+                // sign-extend from bit 31.
+                emit->emitIns_R_R(INS_extsw, EA_8BYTE, reg, reg);
+            }
+            // TYP_LONG, TYP_ULONG, pointers — already full width, nothing to do.
+            break;
+    }
+}
+
+//------------------------------------------------------------------------
 // genSimpleReturn: Generate code for a simple return (non-struct, non-void).
 //
 // Arguments:
@@ -3355,14 +3414,10 @@ void CodeGen::genSimpleReturn(GenTree* treeNode)
     inst_Mov(targetType, retReg, op1->GetRegNum(), /* canSkip */ !movRequired);
 
     // On PPC64LE all integer instructions operate on 64-bit registers and do not
-    // automatically truncate to 32 bits.  A TYP_INT return value must be sign-
-    // extended into the full 64-bit return register (r3) so that the caller reads
-    // the correct value.  Without this, dirty upper 32 bits propagate to the caller
-    // and produce a garbage result (e.g. -918421516 instead of 100).
-    if (!varTypeIsFloating(targetType) && (genActualType(targetType) == TYP_INT))
-    {
-        GetEmitter()->emitIns_R_R(INS_extsw, EA_8BYTE, retReg, retReg);
-    }
+    // automatically narrow to the declared return width.  The ELFv2 ABI requires
+    // the callee to sign-extend (signed types) or zero-extend (unsigned types) the
+    // return value to fill the full 64-bit register before returning.
+    genIntRegExtend(targetType, retReg);
 }
 
 //------------------------------------------------------------------------
@@ -3429,6 +3484,17 @@ void CodeGen::genCodeForLclVar(GenTreeLclVar* tree)
         {
             GetEmitter()->emitIns_R_S(ins, attr, targetReg, varNum, 0);
         }
+
+        // PowerPC64 has no sign-extending byte load (lbz always zero-extends;
+        // there is no 'lba').  For TYP_BYTE (signed sbyte) we must sign-extend
+        // from bit 7 so the full 64-bit register is correct.
+        // TYP_SHORT uses lha which already sign-extends; TYP_UBYTE/TYP_USHORT
+        // use lbz/lhz which correctly zero-extend — no extra work needed there.
+        if (targetType == TYP_BYTE)
+        {
+            GetEmitter()->emitIns_R_R(INS_extsb, EA_PTRSIZE, targetReg, targetReg);
+        }
+
         genProduceReg(tree);
     }
 }
@@ -4637,15 +4703,12 @@ void CodeGen::genCall(GenTreeCall* call)
                 inst_Mov(returnType, call->GetRegNum(), returnReg, /* canSkip */ false);
             }
 
-            // On PPC64LE the callee's return register (r3) holds a 64-bit value.
-            // For TYP_INT returns, sign-extend the low 32 bits into the full 64-bit
-            // destination register so the caller always sees a clean value regardless
-            // of whether the callee happened to leave upper bits dirty.
-            if (!varTypeIsFloating(returnType) && (genActualType(returnType) == TYP_INT))
-            {
-                regNumber destReg = (call->GetRegNum() != returnReg) ? call->GetRegNum() : returnReg;
-                GetEmitter()->emitIns_R_R(INS_extsw, EA_8BYTE, destReg, destReg);
-            }
+            // On PPC64LE the caller must also be able to rely on a correctly-extended
+            // return value.  Apply the same sign/zero-extension as genSimpleReturn so
+            // that even if the callee left upper bits dirty the consumer always sees a
+            // clean 64-bit value.
+            regNumber destReg = (call->GetRegNum() != returnReg) ? call->GetRegNum() : returnReg;
+            genIntRegExtend(returnType, destReg);
         }
 
         genProduceReg(call);
