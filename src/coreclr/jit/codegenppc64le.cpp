@@ -5746,8 +5746,7 @@ void CodeGen::genFnEpilog(BasicBlock* block)
         }
     }
 
-    // Restore r31 and r1. For an ordinary frame, restore r31 while r1 still
-    // denotes the fixed callee SP, so its unwind offset is non-negative.
+    // Restore caller SP, then restore R31 from caller_SP - 8.
     if (compiler->compLocallocUsed)
     {
         // ld r1, 0(r1): r1 = caller_SP (ELFv2 backchain written by genLclHeap at 0(new_r1))
@@ -5776,10 +5775,12 @@ void CodeGen::genFnEpilog(BasicBlock* block)
             // Restore SP via the ELFv2 backchain stored at [callee-SP+0] by the prolog.
             emit->emitIns_R_R_I(INS_ld, EA_PTRSIZE, REG_SPBASE, REG_SPBASE, 0);
         }
-        // SP is now caller-SP in both cases; FP was saved at caller_SP-8.
-        emit->emitIns_R_R_I(INS_ld, EA_PTRSIZE, REG_FP, REG_SPBASE, FP_backchain_save_offset);
-        compiler->unwindSaveReg(REG_FP, FP_backchain_save_offset);
-        compiler->unwindAllocStack(totalFrameSize);
+        // Restore caller SP in the virtual unwind context.
+	compiler->unwindAllocStack(totalFrameSize);
+
+	// SP is now caller-SP; R31 was saved at caller_SP - 8.
+	emit->emitIns_R_R_I(INS_ld, EA_PTRSIZE, REG_FP, REG_SPBASE, FP_backchain_save_offset);
+	compiler->unwindRestoreFPFromCallerSPMinusEight();
     }
 
     // r1 is now caller_SP.
