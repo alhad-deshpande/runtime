@@ -108,7 +108,7 @@ target_ssize_t CodeGen::genStackPointerConstantAdjustmentLoopWithProbe(ssize_t s
 //     new_r1 + totalFrameSize - 8 + allocSize - 8  ← localloc block end (= caller_SP-16)
 //     caller_SP - 8    ← saved old r31 (unchanged in place, never moved)
 //
-//   targetReg (constant):    r31 - 8 - amount  (= caller_SP - 8 - amount)
+//   targetReg (constant):    new_r1 + totalFrameSize - 8  (same as non-constant path)
 //   targetReg (non-constant): new_r1 + totalFrameSize - 8  (= caller_SP - 8 - alignedSize)
 //
 // KEY INVARIANTS:
@@ -283,10 +283,8 @@ void CodeGen::genLclHeap(GenTree* tree)
         // The buffer for call N occupies:
         //   [new_r1_N + totalFrameSize - 8 .. new_r1_N + totalFrameSize - 8 + allocN)
         //
-        //   Constant path:    targetReg = r31 - 8 - amount   (r31 = caller_SP)
-        //                     zero count = amount
-        //   Non-constant path: targetReg = new_r1 + totalFrameSize - 8  (new_r1 = r1 after Step 3)
-        //                     zero count = regCnt  (this call's aligned allocSize ONLY)
+        //   Both paths:  targetReg = new_r1 + totalFrameSize - 8  (new_r1 = r1 after Step 3)
+        //                zero count = amount / regCnt  (this call's aligned allocSize ONLY)
         //
         // The zero count must be exactly allocSize for this call — never (r31-8)-targetReg,
         // because r31 holds caller_SP after Step 1 and that difference accumulates all
@@ -300,9 +298,18 @@ void CodeGen::genLclHeap(GenTree* tree)
 
         if (size->IsCnsIntOrI())
         {
-            // targetReg = r31 - 8 - amount  (r31 = caller_SP)
-            genInstrWithConstant(INS_addi, EA_PTRSIZE, targetReg, REG_FP,
-                                 -(ssize_t)(8 + amount), regCtr);
+            // targetReg = new_r1 + (totalFrameSize - 8)
+            //
+            // This is the same formula as the non-constant path.  The old formula
+            //   targetReg = r31 - 8 - amount  (r31 = caller_SP)
+            // is only correct for the very first localloc: for a second localloc r31
+            // is still caller_SP (reloaded from the backchain at the start of Step 2),
+            // so the formula produces the same address as the first call and both
+            // localloc buffers alias each other.  Using new_r1 + totalFrameSize - 8
+            // is correct for every call because new_r1 decreases by exactly `amount`
+            // on each localloc, placing successive buffers in non-overlapping regions.
+            genInstrWithConstant(INS_addi, EA_PTRSIZE, targetReg, REG_SPBASE,
+                                 (ssize_t)(totalFrameSize - 8), regCtr);
 
             if (amount <= compiler->getUnrollThreshold(Compiler::UnrollKind::Memset))
             {
