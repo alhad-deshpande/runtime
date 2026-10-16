@@ -132,34 +132,6 @@ build_tests() {
 }
 
 # =========================================================
-# RUN CORECLR JIT TESTSUITE
-# =========================================================
-run_coreclr_tests() {
-  cd runtime
-  echo "Running full CoreCLR JIT testsuite..."
-  set +e
-  ./src/tests/run.sh Debug 2>&1 | tee tests.log
-  EXIT_CODE=${PIPESTATUS[0]}
-  set -e
-  sleep 60
-  echo "Final passed test count:"
-  find artifacts/ -iname "*.log" | xargs grep -ni "Passed Test:" | wc || true
-  find artifacts/ -iname "*.log" | xargs grep -ni "Passed Test:" > Passed_tests.txt || true
-  find artifacts/ -iname "*.log" | xargs grep -ni "Failed Test:" > failed_tests.txt || true
-  echo "Copying test logs to /tmp/Test_logs..."
-  mkdir -p /tmp/Test_logs
-  find artifacts/tests/coreclr/linux.ppc64le.Debug/ \
-    -mindepth 1 -maxdepth 1 \
-    -type d \
-    ! -name "Tests" \
-    ! -name "bin" \
-    -exec cp -r {} /tmp/Test_logs/ \;
-  cp Passed_tests.txt failed_tests.txt /tmp/Test_logs/ || true
-  echo "Test logs copied to /tmp/Test_logs"
-  exit $EXIT_CODE
-}
-
-# =========================================================
 # RUN 95 TESTS
 # =========================================================
 run_tests() {
@@ -205,6 +177,67 @@ run_tests() {
 }
 
 # =========================================================
+# RUN CORECLR JIT TESTSUITE
+# =========================================================
+run_coreclr_tests() {
+  cd runtime
+  echo "Running full CoreCLR JIT testsuite..."
+  set +e
+  ./src/tests/run.sh Debug 2>&1 | tee tests.log
+  EXIT_CODE=${PIPESTATUS[0]}
+  set -e
+  sleep 60
+  echo "Final passed test count:"
+  find artifacts/ -iname "*.log" | xargs grep -ni "Passed Test:" | wc || true
+  find artifacts/ -iname "*.log" | xargs grep -ni "Passed Test:" > Passed_tests.txt || true
+  find artifacts/ -iname "*.log" | xargs grep -ni "Failed Test:" > failed_tests.txt || true
+  echo "Copying test logs to /tmp/Test_logs..."
+  mkdir -p /tmp/Test_logs
+  find artifacts/tests/coreclr/linux.ppc64le.Debug/ \
+    -mindepth 1 -maxdepth 1 \
+    -type d \
+    ! -name "Tests" \
+    ! -name "bin" \
+    -exec cp -r {} /tmp/Test_logs/ \;
+  cp Passed_tests.txt failed_tests.txt /tmp/Test_logs/ || true
+  echo "Test logs copied to /tmp/Test_logs"
+  exit $EXIT_CODE
+}
+
+# =========================================================
+# EXTRACT INTERPRETING / JITTING FUNCTION LOGS
+# Uses scripts/extract_interpreting_logs.sh from the JIT_Testing repo
+# already cloned by run_tests ($TEST_DIR) - no second clone.
+# Scans the per-testcase JIT logs written by run_test.sh (95 tests):
+#   $TEST_DIR/gdb_logs/<testcase>/<testcase>_jit.log
+# Output dir: $RUNTIME_DIR/Interpreting_Function_Detection
+# Never fails the pipeline: errors are reported as warnings.
+# =========================================================
+extract_jitted_function_log() {
+  local script="${TEST_DIR}/scripts/extract_interpreting_logs.sh"
+  local logs_dir="${TEST_DIR}/gdb_logs"
+  local out_dir="${RUNTIME_DIR}/Interpreting_Function_Detection"
+
+  if [ ! -f "$script" ]; then
+    echo "WARNING: $script not found (run_tests must run first), skipping"
+    return 0
+  fi
+
+  echo "Extracting interpreting/jitting logs from ${logs_dir}..."
+  set +e
+  bash "$script" "$RUNTIME_DIR" "$logs_dir" "$out_dir"
+  local rc=$?
+  set -e
+
+  if [ $rc -eq 0 ]; then
+    echo "Output written to $out_dir"
+  else
+    echo "WARNING: interpreting log extraction failed (exit $rc), continuing"
+  fi
+  return 0
+}
+
+# =========================================================
 # MAIN DISPATCHER
 # =========================================================
 case "$STAGE" in
@@ -220,11 +253,14 @@ case "$STAGE" in
   build_tests)
     build_tests
     ;;
+  run_tests)
+    run_tests
+    ;;
   run_coreclr_tests)
     run_coreclr_tests
     ;;
-  run_tests)
-    run_tests
+  extract_jitted_function_log)
+    extract_jitted_function_log
     ;;
   all)
     setup
@@ -233,6 +269,7 @@ case "$STAGE" in
     build_tests
     run_tests
     run_coreclr_tests
+    extract_jitted_function_log
     ;;
   *)
     echo "Invalid stage: $STAGE"

@@ -114,6 +114,34 @@ jobs:
           '
 
       # ======================================
+      # EXTRACT JITTED FUNCTION LOGS
+      # (runs last, uses scripts/extract_interpreting_logs.sh from the
+      #  JIT_Testing repo already cloned by Run JIT Tests)
+      # ======================================
+      - name: Extract Jitted Function Logs
+        if: always()
+        continue-on-error: true
+        run: |
+          docker exec gha bash -c '
+            /CoreCLR_JIT_Build_and_Test.sh extract_jitted_function_log 2>&1 | tee /tmp/extract_jitted_function_log.log
+          '
+
+      - name: Copy Jitted Function Detection Summary
+        if: always()
+        continue-on-error: true
+        run: |
+          docker cp gha:/runtime/Interpreting_Function_Detection/summary.log ./summary.log 2>/dev/null || echo "No summary.log found"
+
+      - name: Upload Jitted Function Detection Summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jitted-function-detection-summary-${{ github.run_number }}
+          path: summary.log
+          if-no-files-found: warn
+          retention-days: 7
+
+      # ======================================
       # COPY LOGS
       # ======================================
       - name: Copy Logs
