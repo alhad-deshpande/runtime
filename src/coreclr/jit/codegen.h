@@ -1359,6 +1359,10 @@ protected:
     void genSimpleReturn(GenTree* treeNode);
 #endif // TARGET_ARM64 || TARGET_LOONGARCH64 || TARGET_RISCV64 || TARGET_POWERPC64
 
+#if defined(TARGET_POWERPC64)
+    void genIntRegExtend(var_types type, regNumber reg);
+#endif // TARGET_POWERPC64
+
     void genReturn(GenTree* treeNode);
 
 #ifdef SWIFT_SUPPORT

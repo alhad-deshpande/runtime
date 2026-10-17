@@ -1057,6 +1057,16 @@ void CodeGen::genUnspillLocal(
     instruction ins = ins_Load(type, compiler->isSIMDTypeLocalAligned(varNum));
     GetEmitter()->emitIns_R_S(ins, emitTypeSize(type), regNum, varNum, 0);
 
+#if defined(TARGET_POWERPC64)
+    // PPC64 has no sign-extending byte load (lbz always zero-extends).
+    // Sign-extend TYP_BYTE locals after the load so all consumers see the
+    // correct 64-bit value.  Other types are handled correctly by ins_Load.
+    if (type == TYP_BYTE)
+    {
+        GetEmitter()->emitIns_R_R(INS_extsb, EA_PTRSIZE, regNum, regNum);
+    }
+#endif // TARGET_POWERPC64
+
     // TODO-Review: We would like to call:
     //      genUpdateRegLife(varDsc, /*isBorn*/ true, /*isDying*/ false DEBUGARG(tree));
     // instead of the following code, but this ends up hitting this assert:
@@ -1296,6 +1306,13 @@ void CodeGen::genUnspillRegIfNeeded(GenTree* tree)
             // Reload into the register specified by 'tree' which may be a GT_RELOAD.
             regNumber dstReg = tree->GetRegNum();
             GetEmitter()->emitIns_R_S(ins_Load(unspillTree->gtType), emitType, dstReg, t->tdTempNum(), 0);
+#if defined(TARGET_POWERPC64)
+            // PPC64 has no sign-extending byte load; sign-extend after lbz for TYP_BYTE.
+            if (unspillTree->gtType == TYP_BYTE)
+            {
+                GetEmitter()->emitIns_R_R(INS_extsb, EA_PTRSIZE, dstReg, dstReg);
+            }
+#endif // TARGET_POWERPC64
             regSet.tmpRlsTemp(t);
 
             unspillTree->gtFlags &= ~GTF_SPILLED;
