@@ -163,6 +163,46 @@ jobs:
           retention-days: 7
 
       # ======================================
+      # COMPARE TEST RESULTS (Previous vs Current)
+      # ======================================
+      - name: Compare with Previous Baseline Run
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p ./prev_logs
+          
+          echo "Fetching baseline logs from previous successful run on ppc64le_coreclr_jit..."
+          
+          PREV_RUN_ID=$(gh run list \
+            --branch "ppc64le_coreclr_jit" \
+            --workflow "CoreCLR JIT Build and Test" \
+            --status success \
+            --limit 1 \
+            --json databaseId \
+            --jq '.[0].databaseId' || echo "")
+
+          if [ -n "$PREV_RUN_ID" ] && [ "$PREV_RUN_ID" != "null" ]; then
+            echo "Downloading previous run artifacts (Run ID: $PREV_RUN_ID)..."
+            gh run download "$PREV_RUN_ID" -D ./prev_logs/ || true
+          fi
+
+          chmod +x .github/workflows/compare_pr_test_results.sh || true
+
+          .github/workflows/compare_pr_test_results.sh \
+            --old ./prev_logs \
+            --new ./logs/Test_logs \
+            --old-label "Previous Baseline Run" \
+            --new-label "Current PR Commit (${{ github.sha }})" \
+            -o ./comparison_report.md || true
+
+          # Show report directly on the GitHub Actions Run Summary page
+          if [ -f ./comparison_report.md ]; then
+            cat ./comparison_report.md >> $GITHUB_STEP_SUMMARY
+          fi
+
+      # ======================================
       # CLEANUP
       # ======================================
       - name: Cleanup Container
