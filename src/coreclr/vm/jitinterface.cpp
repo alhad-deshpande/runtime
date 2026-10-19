@@ -6,7 +6,9 @@
 
 // ===========================================================================
 
+#if defined(TARGET_POWERPC64)
 #include "ctime"
+#endif
 #include "common.h"
 #include "jitinterface.h"
 #include "codeman.h"
@@ -9630,10 +9632,14 @@ CorInfoHFAElemType CEEInfo::getHFAType(CORINFO_CLASS_HANDLE hClass)
 
     TypeHandle VMClsHnd(hClass);
 
+#if defined(TARGET_POWERPC64)
     if (VMClsHnd.IsHFA())
     {
         result = VMClsHnd.GetHFAType();
     }
+#else
+    result = VMClsHnd.GetHFAType();
+#endif
 
     EE_TO_JIT_TRANSITION();
 
@@ -12444,7 +12450,11 @@ CorJitResult invokeCompileMethodHelper(EEJitManager *jitMgr,
         if (FAILED(ret) &&
             (forceInterpreter || !jitFlags.IsSet(CORJIT_FLAGS::CORJIT_FLAG_MAKEFINALCODE)))
         {
+#if defined(TARGET_POWERPC64)
             if (SUCCEEDED(ret = Interpreter::GenerateInterpreterStub(comp, &methInfo, nativeEntry, nativeSizeOfCode)))
+#else
+            if (SUCCEEDED(ret = Interpreter::GenerateInterpreterStub(comp, info, nativeEntry, nativeSizeOfCode)))
+#endif
             {
                 isInterpreterStub = true;
             }
@@ -12468,13 +12478,18 @@ CorJitResult invokeCompileMethodHelper(EEJitManager *jitMgr,
         if (FAILED(ret) &&
             (forceInterpreter || !jitFlags.IsSet(CORJIT_FLAGS::CORJIT_FLAG_MAKEFINALCODE)))
         {
+#if defined(TARGET_POWERPC64)
             if (SUCCEEDED(ret = Interpreter::GenerateInterpreterStub(comp, &methInfo, nativeEntry, nativeSizeOfCode)))
+#else
+            if (SUCCEEDED(ret = Interpreter::GenerateInterpreterStub(comp, info, nativeEntry, nativeSizeOfCode)))
+#endif
             {
                 isInterpreterStub = true;
             }
         }
     }
 #else
+#if defined(TARGET_POWERPC64)
     MethodDesc* ftnDesc = GetMethod(info->ftn);
     const char* ftnName = ftnDesc->GetName();
 
@@ -12485,9 +12500,10 @@ CorJitResult invokeCompileMethodHelper(EEJitManager *jitMgr,
     FILE* fp = fopen(filename, "a");
 
     if (fp != nullptr)
-        fprintf(fp,"VIAKS -> Jitting -> %s:%s\n",ftnDesc->m_pszDebugClassName,ftnName);
+        fprintf(fp,"Jitting -> %s:%s\n",ftnDesc->m_pszDebugClassName,ftnName);
 
     fclose(fp);
+#endif
 
     if (FAILED(ret))
     {
