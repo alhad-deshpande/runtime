@@ -468,6 +468,38 @@ void CodeGen::genSetRegToConst(regNumber targetReg, var_types targetType, GenTre
 }
 
 //------------------------------------------------------------------------
+// genCodeForJTrue: Produce code for a GT_JTRUE node.
+//
+// A GT_JTRUE node's single operand is a 0/1 integer value produced by a
+// compare (GT_EQ, GT_NE, etc.) that was NOT lowered into a GT_JCC.
+// We compare the operand against zero and branch to the true target if
+// it is non-zero, using the ELFv2 condition register (CR0).
+//
+// Arguments:
+//    jtrue - the GT_JTRUE node
+//
+void CodeGen::genCodeForJTrue(GenTreeOp* jtrue)
+{
+    assert(compiler->compCurBB->KindIs(BBJ_COND));
+
+    GenTree*  op  = jtrue->gtGetOp1();
+    regNumber reg = genConsumeReg(op);
+
+    // cmpdi cr0, reg, 0  — sets CR0[EQ] if reg == 0
+    GetEmitter()->emitIns_R_I(INS_cmpdi, emitActualTypeSize(op), reg, 0);
+
+    // bne cr0, TrueTarget — branch if reg != 0 (i.e. condition was true)
+    inst_JMP(EJ_ne, compiler->compCurBB->GetTrueTarget());
+
+    // If we cannot fall through to the false target, emit an unconditional jump.
+    BasicBlock* falseTarget = compiler->compCurBB->GetFalseTarget();
+    if (!compiler->compCurBB->CanRemoveJumpToTarget(falseTarget, compiler))
+    {
+        inst_JMP(EJ_jmp, falseTarget);
+    }
+}
+
+//------------------------------------------------------------------------
 // genCodeForCompare: Produce code for a GT_EQ/GT_NE/GT_LT/GT_LE/GT_GE/GT_GT/GT_CMP node.
 //
 // Arguments:
@@ -669,9 +701,13 @@ void CodeGen::genCodeForTreeNode(GenTree* treeNode)
 	    genCodeForCompare(treeNode->AsOp());
 	    break;
 
+	case GT_JTRUE:
+	    genCodeForJTrue(treeNode->AsOp());
+	    break;
+
 	case GT_JCC:
 	    genCodeForJcc(treeNode->AsCC());
-            break;
+	           break;
 
 	case GT_CALL:
 	    genCall(treeNode->AsCall());
