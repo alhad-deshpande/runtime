@@ -5125,17 +5125,45 @@ void CodeGen::genCodeForStoreInd(GenTreeStoreInd* tree)
     GenTree* data = tree->Data();
     GenTree* addr = tree->Addr();
 
-    // For now, we don't handle GC write barriers - just do normal stores
-    // TODO: Implement GC write barrier support when genEmitHelperCall is ready
     GCInfo::WriteBarrierForm writeBarrierForm = gcInfo.gcIsWriteBarrierCandidate(tree);
     if (writeBarrierForm != GCInfo::WBF_NoBarrier)
     {
-        // Write barrier needed but not yet implemented
-        // For now, just do a normal store (this may cause GC issues in some scenarios)
-        // TODO: Implement proper write barrier support
+        // data and addr must be in registers.
+        // Consume both registers so that any copies of interfering
+        // registers are taken care of.
+        genConsumeOperands(tree);
+
+        // At this point, we should not have any interference.
+        // That is, 'data' must not be in REG_WRITE_BARRIER_DST,
+        // as that is where 'addr' must go.
+        noway_assert(data->GetRegNum() != REG_WRITE_BARRIER_DST);
+
+        // 'addr' goes into r3 (REG_WRITE_BARRIER_DST)
+        genCopyRegIfNeeded(addr, REG_WRITE_BARRIER_DST);
+
+        // 'data' goes into r4 (REG_WRITE_BARRIER_SRC)
+        genCopyRegIfNeeded(data, REG_WRITE_BARRIER_SRC);
+
+        if (tree->IsVolatile())
+        {
+            // Full barrier before a volatile store
+            instGen(INS_hwsync);
+        }
+
+        // The JIT_WriteBarrier / JIT_CheckedWriteBarrier helpers perform the store themselves
+        // and update the card table if needed.
+        genGCWriteBarrier(tree, writeBarrierForm);
+
+        if (tree->IsVolatile())
+        {
+            // Full barrier after a volatile store
+            instGen(INS_hwsync);
+        }
+
+        return;
     }
 
-    // Normal store path
+    // Normal store path (no write barrier required)
     // We must consume the operands in the proper execution order,
     // so that liveness is updated appropriately.
     genConsumeAddress(addr);
