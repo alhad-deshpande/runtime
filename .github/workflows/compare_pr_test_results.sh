@@ -177,13 +177,41 @@ fi
 [ -z "$LABEL_1" ] && LABEL_1="Previous Baseline Run"
 
 # Helper: Recursive find for test files
+# Prefers the canonical filenames written by run_coreclr_tests()
+# (Passed_tests.txt / failed_tests.txt) and excludes binary artifacts.
 find_test_file() {
   local DIR="$1"
   local PATTERN="$2"
+
   if [[ ! -d "$DIR" ]]; then
     return 0
   fi
-  find "$DIR" -type f -iname "$PATTERN" 2>/dev/null | head -n 1 || true
+
+  # Derive a canonical filename to try first based on the glob pattern
+  local CANONICAL=""
+  local LOWER_PAT
+  LOWER_PAT=$(echo "$PATTERN" | tr '[:upper:]' '[:lower:]')
+  if [[ "$LOWER_PAT" == *pass* ]]; then
+    CANONICAL="Passed_tests.txt"
+  elif [[ "$LOWER_PAT" == *fail* ]]; then
+    CANONICAL="failed_tests.txt"
+  fi
+
+  # Try the canonical name first (exact, case-insensitive)
+  if [[ -n "$CANONICAL" ]]; then
+    local FOUND
+    FOUND=$(find "$DIR" -type f -iname "$CANONICAL" 2>/dev/null | head -n 1 || true)
+    if [[ -n "$FOUND" ]]; then
+      echo "$FOUND"
+      return 0
+    fi
+  fi
+
+  # Fallback: fuzzy glob but exclude binary artifacts
+  find "$DIR" -type f -iname "$PATTERN" \
+    ! -iname "*.so" ! -iname "*.dll" ! -iname "*.exe" \
+    ! -iname "*.a"  ! -iname "*.o"   ! -iname "*.zip" \
+    2>/dev/null | head -n 1 || true
 }
 
 # ------------------------------------------------------------------------------
