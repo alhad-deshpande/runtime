@@ -42,6 +42,7 @@ INST(bcl,         "bcl",          0,      B_FORM,       0x40000001)  // Branch C
 INST(addi,        "addi",         0,      D_FORM,       0x38000000)
 INST(li,    	  "li",    	  0, 	  D_FORM,   	0x38000000)  // addi with RA=0
 INST(lis,   	  "lis",   	  0, 	  D_FORM,   	0x3C000000)  // addis with RA=0
+INST(addis,       "addis",         0,      D_FORM,       0x3C000000)  // Add Immediate Shifted (RA != 0)
 INST(ori,   	  "ori",   	  0, 	  D_FORM,   	0x60000000)
 INST(oris,  	  "oris",  	  0, 	  D_FORM,   	0x64000000)
 INST(sldi,  	  "sldi",  	  0, 	  MD_FORM,  	0x78000000)  // rldicr

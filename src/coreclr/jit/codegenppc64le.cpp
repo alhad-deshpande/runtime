@@ -888,11 +888,11 @@ void CodeGen::genCodeForTreeNode(GenTree* treeNode)
             // Capture the return address of the following native call into targetReg.
             // This is stored into InlinedCallFrame.m_pCallerReturnAddress by the
             // surrounding GT_STORE_LCL_FLD node.
-            // emitIns_R_L emits: bcl 20,31,$+4  (get PC into LR)
-            //                    mflr targetReg  (move LR to targetReg)
-            //                    addi targetReg, targetReg, <label_offset>
+            // The pending call label is placed immediately after the call instruction,
+            // so it is always within a few bytes — no large-range addis needed.
             genPendingCallLabel = genCreateTempLabel();
-            GetEmitter()->emitIns_R_L(INS_addi, EA_PTRSIZE, genPendingCallLabel, targetReg);
+            GetEmitter()->emitIns_R_L(INS_addi, EA_PTRSIZE, genPendingCallLabel, targetReg,
+                                      /* needLargeRange */ false);
             break;
 
         case GT_BOUNDS_CHECK:
@@ -5257,11 +5257,11 @@ void CodeGen::genCodeForStoreInd(GenTreeStoreInd* tree)
 
 void CodeGen::genEHCatchRet(BasicBlock* block)
 {
-    // Load the address of the continuation point (target block) into the integer return register
-    // This is used when returning from a catch handler
-    // PowerPC64 uses a 3-instruction sequence: bcl + mflr + addi
-    // to load the PC-relative address of the target label
-    GetEmitter()->emitIns_R_L(INS_addi, EA_PTRSIZE, block->GetTarget(), REG_INTRET);
+    // Load the address of the continuation point (target block) into the integer return register.
+    // The target block can be anywhere in the method (including far away in large methods),
+    // so use the large-range bcl/mflr/addis/addi 4-instruction sequence.
+    GetEmitter()->emitIns_R_L(INS_addi, EA_PTRSIZE, block->GetTarget(), REG_INTRET,
+                               /* needLargeRange */ true);
 }
 
 
@@ -8491,9 +8491,10 @@ BasicBlock* CodeGen::genCallFinally(BasicBlock* block)
 
     if (block->HasFlag(BBF_RETLESS_CALL))
     {
-        // Load target block address into R12 using PC-relative sequence (bcl + mflr + addi)
-        // Then call via CTR to avoid ±32MB range limitation of direct bl
-        GetEmitter()->emitIns_R_L(INS_addi, EA_PTRSIZE, block->GetTarget(), REG_R12);
+        // Load the finally funclet address into R12. The target can be anywhere in the
+        // function, so use the large-range 4-instruction sequence.
+        GetEmitter()->emitIns_R_L(INS_addi, EA_PTRSIZE, block->GetTarget(), REG_R12,
+                                   /* needLargeRange */ true);
         GetEmitter()->emitIns_R(INS_mtctr, EA_PTRSIZE, REG_R12);
         GetEmitter()->emitIns(INS_bctrl);
 
@@ -8516,9 +8517,9 @@ BasicBlock* CodeGen::genCallFinally(BasicBlock* block)
         // handler.  So turn off GC reporting once we execute the call and reenable after the jmp/nop
         GetEmitter()->emitDisableGC();
         
-        // Load target block address into R12 using PC-relative sequence (bcl + mflr + addi)
-        // Then call via CTR to avoid ±32MB range limitation of direct bl
-        GetEmitter()->emitIns_R_L(INS_addi, EA_PTRSIZE, block->GetTarget(), REG_R12);
+        // Load the finally funclet address into R12 using the large-range 4-instruction sequence.
+        GetEmitter()->emitIns_R_L(INS_addi, EA_PTRSIZE, block->GetTarget(), REG_R12,
+                                   /* needLargeRange */ true);
         GetEmitter()->emitIns_R(INS_mtctr, EA_PTRSIZE, REG_R12);
         GetEmitter()->emitIns(INS_bctrl);
 
