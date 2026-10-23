@@ -54,7 +54,10 @@ LEAF_ENTRY JIT_CheckedWriteBarrier, _TEXT
 	b LOCAL_LABEL(JIT_WriteBarrier_LocalEntry)
 
 LOCAL_LABEL(NotInHeap):
-	// Not in heap, just do the store
+	// Not in heap, just do the store.
+	// Record the return address for the hardware-exception unwind (see JIT_WriteBarrier).
+	mflr %r12
+	std %r12, -8(%r1)
 	std %r4, 0(%r3)
 	addi %r3, %r3, 8
 	blr
@@ -83,6 +86,11 @@ LEAF_ENTRY JIT_WriteBarrier, _TEXT
 	addi  %r2, %r2,  (.TOC.-JIT_WriteBarrier)@l
 LOCAL_LABEL(JIT_WriteBarrier_LocalEntry):
 	// Local entry point for intra-DSO calls where r2 is already correct.
+	// Save the return address in the red zone (r12 is free here: it is in the helper kill set
+	// and only needed above for the TOC setup). The store below can fault on a null dst; the
+	// hardware-exception unwind reads this slot at [SP - 8] to find the managed caller.
+	mflr %r12
+	std %r12, -8(%r1)
 	// Store the value
 	std %r4, 0(%r3)
 
@@ -227,6 +235,10 @@ LEAF_ENTRY JIT_ByRefWriteBarrier, _TEXT
 	// ELFv2 ABI: called from JIT'd code with r12 = function address; establish our TOC.
 	addis %r2, %r12, (.TOC.-JIT_ByRefWriteBarrier)@ha
 	addi  %r2, %r2,  (.TOC.-JIT_ByRefWriteBarrier)@l
+	// Save the return address in the red zone for the hardware-exception unwind
+	// (see JIT_WriteBarrier). r12 is free after the TOC setup.
+	mflr %r12
+	std %r12, -8(%r1)
 	// Load the value from source address
 	ld %r5, 0(%r4)
 	
