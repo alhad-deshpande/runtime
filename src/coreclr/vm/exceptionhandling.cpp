@@ -5575,7 +5575,17 @@ BOOL HandleHardwareException(PAL_SEHException* ex)
                 // managed code that called the helper, otherwise the stack
                 // walker would skip all the managed frames upto the next
                 // explicit frame.
+#ifdef TARGET_POWERPC64
+                // The marked JIT helpers are leaf assembly routines: they don't touch the stack or LR,
+                // so the caller is simply at LR with the same SP. libunwind ends the stack on these
+                // frames (returns a null IP), so unwind them by hand.
+                CONTEXT* pHelperContext = ex->GetContextRecord();
+                SetIP(pHelperContext, (PCODE)pHelperContext->Link);
+                pHelperContext->Link = 0;
+                pHelperContext->ContextFlags &= ~CONTEXT_EXCEPTION_ACTIVE;
+#else
                 PAL_VirtualUnwind(ex->GetContextRecord(), NULL);
+#endif
                 ex->GetExceptionRecord()->ExceptionAddress = (PVOID)GetIP(ex->GetContextRecord());
             }
             else
