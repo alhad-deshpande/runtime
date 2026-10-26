@@ -1051,6 +1051,7 @@ typedef struct _DISPATCHER_CONTEXT {
     PEXCEPTION_ROUTINE LanguageHandler;
     PVOID HandlerData;
     PVOID HistoryTable;
+    BOOLEAN ControlPcIsUnwound;
 } DISPATCHER_CONTEXT, *PDISPATCHER_CONTEXT;
 
 #else

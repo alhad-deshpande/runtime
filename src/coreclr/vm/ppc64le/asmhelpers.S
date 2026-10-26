@@ -79,6 +79,30 @@ NESTED_ENTRY CallEHFunclet, _TEXT, NoHandler
     # 32-byte linkage area + 18 saved GPRs (R14-R31).
     stdu    %r1, -176(%r1)
 
+    # CFI so libunwind can unwind through this frame (CFA = r1 + 176).
+    # LR and TOC are saved in the caller's linkage area at CFA+16 / CFA+24.
+    .cfi_def_cfa_offset 176
+    .cfi_offset 65, 16
+    .cfi_offset 2, 24
+    .cfi_offset 14, -144
+    .cfi_offset 15, -136
+    .cfi_offset 16, -128
+    .cfi_offset 17, -120
+    .cfi_offset 18, -112
+    .cfi_offset 19, -104
+    .cfi_offset 20, -96
+    .cfi_offset 21, -88
+    .cfi_offset 22, -80
+    .cfi_offset 23, -72
+    .cfi_offset 24, -64
+    .cfi_offset 25, -56
+    .cfi_offset 26, -48
+    .cfi_offset 27, -40
+    .cfi_offset 28, -32
+    .cfi_offset 29, -24
+    .cfi_offset 30, -16
+    .cfi_offset 31, -8
+
     # Save this helper's nonvolatile GPRs before replacing them with
     # the managed parent values from CONTEXT.
     std     %r14,  32(%r1)
@@ -187,6 +211,9 @@ NESTED_ENTRY CallEHFilterFunclet, _TEXT, NoHandler
 
     # Minimal PPC64LE linkage frame.
     stdu    %r1, -32(%r1)
+    .cfi_def_cfa_offset 32
+    .cfi_offset 65, 16
+    .cfi_offset 2, 24
 
     # Record this helper's SP for the VM.
     std     %r1, 0(%r6)

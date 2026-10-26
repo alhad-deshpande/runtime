@@ -42,7 +42,12 @@
 #endif // TARGET_ARM || TARGET_ARM64 || TARGET_X86 || TARGET_LOONGARCH64 || TARGET_RISCV64
 
 #if defined(TARGET_POWERPC64)
+#define ADJUST_PC_UNWOUND_TO_CALL
+#define STACK_RANGE_BOUNDS_ARE_CALLER_SP
 #define USE_FUNCLET_CALL_HELPER
+// For PPC64LE, RtlVirtualUnwind sets EstablisherFrame to the caller SP (R1 after the unwind codes
+// have been applied), same as ARM64.
+#define ESTABLISHER_FRAME_ADDRESS_IS_CALLER_SP
 #endif // TARGET_POWERPC64
 
 #ifndef TARGET_UNIX
