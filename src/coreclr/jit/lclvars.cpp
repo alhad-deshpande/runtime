@@ -6077,7 +6077,7 @@ void Compiler::lvaFixVirtualFrameOffsets()
     {
         constexpr int LR_save_offset = 16;
         int           retAddrOffs    = LR_save_offset;
-        if (lvaDoneFrameLayout == FINAL_FRAME_LAYOUT)
+        if ((lvaDoneFrameLayout == FINAL_FRAME_LAYOUT) && !compLocallocUsed)
         {
             assert(codeGen->isFramePointerUsed());
             retAddrOffs += codeGen->genTotalFrameSize();
