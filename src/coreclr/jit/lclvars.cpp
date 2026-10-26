@@ -6066,6 +6066,25 @@ void Compiler::lvaFixVirtualFrameOffsets()
         lvaTable[lvaRetAddrVar].SetStackOffset(REGSIZE_BYTES);
     }
 #endif // !TARGET_ARM64 || !TARGET_LOONGARCH64 || !TARGET_RISCV64
+
+#if defined(TARGET_POWERPC64)
+    // PPC64LE ELFv2: the return address lives in the LR save slot of the caller's linkage
+    // area (the prolog does "std r0, 16(sp)" before "stdu sp, -frame(sp)"), i.e. at
+    // caller-SP + 16. FP == SP after the prolog, so the FP-relative offset is
+    // totalFrameSize + 16. The total frame size is only valid once the layout is final;
+    // earlier layouts just need a placeholder that is not BAD_STK_OFFS.
+    if (lvaRetAddrVar != BAD_VAR_NUM)
+    {
+        constexpr int LR_save_offset = 16;
+        int           retAddrOffs    = LR_save_offset;
+        if (lvaDoneFrameLayout == FINAL_FRAME_LAYOUT)
+        {
+            assert(codeGen->isFramePointerUsed());
+            retAddrOffs += codeGen->genTotalFrameSize();
+        }
+        lvaTable[lvaRetAddrVar].SetStackOffset(retAddrOffs);
+    }
+#endif // TARGET_POWERPC64
 }
 
 #ifdef TARGET_ARM
@@ -6324,6 +6343,15 @@ void Compiler::lvaAssignVirtualFrameOffsetsToLocals()
     if (lvaRetAddrVar != BAD_VAR_NUM)
     {
         lvaTable[lvaRetAddrVar].SetStackOffset(stkOffs);
+    }
+#endif
+
+#ifdef TARGET_POWERPC64
+    // Placeholder so the "already assigned" check in the locals loop below holds.
+    // The real FP-relative offset is set at the end of lvaFixVirtualFrameOffsets.
+    if (lvaRetAddrVar != BAD_VAR_NUM)
+    {
+        lvaTable[lvaRetAddrVar].SetStackOffset(0);
     }
 #endif
 

@@ -1112,8 +1112,16 @@ void InitThreadManager()
 #else // TARGET_X86
         JIT_WriteBarrier_Loc = GetWriteBarrierCodeLocation((void*)JIT_WriteBarrier);
 #endif // TARGET_X86
+#ifdef TARGET_POWERPC64
+        // The ppc64le JIT_WriteBarrier computes its TOC pointer (r2) from r12 using a link-time offset
+        // relative to its original address, so it is not valid when executed from the W^X copy.
+        // The barrier is not patched at runtime on this target, so use the original code.
+        SetJitHelperFunction(CORINFO_HELP_ASSIGN_REF, (void*)JIT_WriteBarrier);
+        ETW::MethodLog::StubInitialized((ULONGLONG)(void*)JIT_WriteBarrier, W("@WriteBarrier"));
+#else // TARGET_POWERPC64
         SetJitHelperFunction(CORINFO_HELP_ASSIGN_REF, GetWriteBarrierCodeLocation((void*)JIT_WriteBarrier));
         ETW::MethodLog::StubInitialized((ULONGLONG)GetWriteBarrierCodeLocation((void*)JIT_WriteBarrier), W("@WriteBarrier"));
+#endif // TARGET_POWERPC64
 
 #if defined(TARGET_ARM64) || defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64)
         // Store the JIT_WriteBarrier_Table copy location to a global variable so that it can be updated.

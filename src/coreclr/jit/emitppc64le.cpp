@@ -108,10 +108,18 @@ const emitJumpKind emitReverseJumpKinds[] = {
     if (id->idIsLargeCns())
         return ADDI_DSC_CNS;
 
-    // Neither small nor lclVarPair nor largeCns: distinguish emitIns_R_L from
-    // emitIns_R_R_C by the instruction format.  emitIns_R_L explicitly sets
-    // IF_RI_1C; emitIns_R_R_C never calls idInsFmt(), leaving it at IF_NONE.
-    return (id->idInsFmt() == IF_RI_1C) ? ADDI_DSC_JMP : ADDI_DSC_PLAIN;
+    // Neither small nor lclVarPair nor largeCns.
+    // emitIns_R_L uses emitNewInstrJmp() which never sets idIsLargeCns().
+    // emitIns_R_I / emitIns_R_R_I use emitNewInstrSmall or emitNewInstrCns,
+    // so they always land in ADDI_DSC_SMALL or ADDI_DSC_CNS above.
+    //
+    // IF_RI_1C = short emitIns_R_L (3-insn: bcl/mflr/addi, ±32KB)
+    // IF_RI_1E = long  emitIns_R_L (4-insn: bcl/mflr/addis/addi, full 32-bit range)
+    if (id->idInsFmt() == IF_RI_1C)
+        return ADDI_DSC_JMP;
+    if (id->idInsFmt() == IF_RI_1E)
+        return ADDI_DSC_JMP_LONG;
+    return ADDI_DSC_PLAIN;
 }
 
 size_t emitter::emitSizeOfInsDsc(instrDesc* id) const
@@ -139,7 +147,8 @@ size_t emitter::emitSizeOfInsDsc(instrDesc* id) const
             case ADDI_DSC_LCLVAR_PAIR:     return sizeof(instrDescLclVarPair);
             case ADDI_DSC_LCLVAR_PAIR_CNS: return sizeof(instrDescLclVarPairCns);
             case ADDI_DSC_CNS:             return sizeof(instrDescCns);
-            case ADDI_DSC_JMP:             return sizeof(instrDescJmp);
+            case ADDI_DSC_JMP:             return sizeof(instrDescJmp); // short  (IF_RI_1C)
+            case ADDI_DSC_JMP_LONG:        return sizeof(instrDescJmp); // long   (IF_RI_1E)
             case ADDI_DSC_PLAIN:           return sizeof(instrDesc);
             default:                       unreached();
         }
@@ -1859,55 +1868,88 @@ void emitter::emitIns_R_AI(instruction  ins,
     }
 }
 
-void emitter::emitIns_R_L(instruction ins, emitAttr attr, BasicBlock* dst, regNumber reg)
+void emitter::emitIns_R_L(instruction ins, emitAttr attr, BasicBlock* dst, regNumber reg, bool needLargeRange)
 {
     assert(dst->HasFlag(BBF_HAS_LABEL));
 
-    // Step 1: Emit bcl 20, 31, $+4 to get current PC into LR
+    // Step 1: Emit bcl 20, 31, $+4 to get current PC into LR.
     emitIns(INS_bcl);
 
-    // Step 2: Emit mflr to move LR to target register
+    // Step 2: Emit mflr to move LR to the target register.
     emitIns_R(INS_mflr, attr, reg);
 
-    // Step 3: Emit addi instruction with label reference
-    // The offset will be calculated during emitJumpDistBind when label addresses are known
-    // Use emitNewInstrJmp() to get a large descriptor that supports idAddr()
-    instrDescJmp* id = emitNewInstrJmp();
+    if (needLargeRange)
+    {
+        // Long-range path (IF_RI_1E): bcl / mflr / addis / addi
+        // -------------------------------------------------------
+        // The target may be more than ±32KB away, so we need a full
+        // 32-bit PC-relative adjustment using the PPC64 @ha/@l split.
+        //
+        // Step 3a: Emit addis placeholder (high part, @ha).
+        // The actual immediate is back-patched at output time (emitOutputInstr),
+        // which overwrites dstRW-4 when the addi descriptor is processed.
+        // We emit it as a plain instrDesc so emitCurIGsize advances by 4
+        // before the instrDescJmp records its own byte offset.
+        {
+            instrDesc* idHi = emitNewInstr(EA_4BYTE);
+            idHi->idIns(INS_addis);
+            idHi->idReg1(reg);
+            idHi->idReg2(reg);
+            idHi->idInsFmt(IF_RI_1B);
+            appendToCurIG(idHi);
+        }
 
-    // emitNewInstrJmp() sets the size (incorrectly) to EA_1BYTE
-    // Override it to EA_PTRSIZE so the descriptor is not treated as small
-    // This allows access to idAddr() which requires a large descriptor
-    id->idOpSize(EA_PTRSIZE);
-
-    id->idIns(INS_addi);
-    id->idReg1(reg);  // Destination register
-    id->idReg2(reg);  // Source register (same as destination)
-    id->idInsFmt(IF_RI_1C);
-    id->idjShort = false;
-
-    // Store the target BasicBlock label
-    id->idAddr()->iiaBBlabel = dst;
-
-    // The target needs to be relocated if in different regions
-    id->idjKeepLong = emitComp->fgInDifferentRegions(emitComp->compCurBB, dst);
+        // Step 3b: Emit addi instrDescJmp with label reference (IF_RI_1E).
+        instrDescJmp* id = emitNewInstrJmp();
+        id->idOpSize(EA_PTRSIZE);
+        id->idIns(INS_addi);
+        id->idReg1(reg);
+        id->idReg2(reg);
+        id->idInsFmt(IF_RI_1E);   // ← long-range marker
+        id->idjShort    = false;
+        id->idAddr()->iiaBBlabel = dst;
+        id->idjKeepLong = emitComp->fgInDifferentRegions(emitComp->compCurBB, dst);
 
 #ifdef DEBUG
-    // Mark this as a catch return if applicable
-    if (emitComp->compCurBB->KindIs(BBJ_EHCATCHRET))
-    {
-        id->idDebugOnlyInfo()->idCatchRet = true;
+        if (emitComp->compCurBB->KindIs(BBJ_EHCATCHRET))
+            id->idDebugOnlyInfo()->idCatchRet = true;
+#endif
+
+        id->idjIG   = emitCurIG;
+        id->idjOffs = emitCurIGsize;
+        id->idjNext      = emitCurIGjmpList;
+        emitCurIGjmpList = id;
+        appendToCurIG(id);
     }
-#endif // DEBUG
+    else
+    {
+        // Short path (IF_RI_1C): bcl / mflr / addi
+        // -----------------------------------------
+        // The target is known to be within ±32KB (e.g. the pending call
+        // label placed immediately after the following call instruction).
+        // A single 16-bit addi immediate is sufficient.
 
-    // Record the jump's IG and offset within it
-    id->idjIG   = emitCurIG;
-    id->idjOffs = emitCurIGsize;
+        instrDescJmp* id = emitNewInstrJmp();
+        id->idOpSize(EA_PTRSIZE);
+        id->idIns(INS_addi);
+        id->idReg1(reg);
+        id->idReg2(reg);
+        id->idInsFmt(IF_RI_1C);   // ← short marker
+        id->idjShort    = false;
+        id->idAddr()->iiaBBlabel = dst;
+        id->idjKeepLong = emitComp->fgInDifferentRegions(emitComp->compCurBB, dst);
 
-    // Append this jump to this IG's jump list so offset gets calculated
-    id->idjNext      = emitCurIGjmpList;
-    emitCurIGjmpList = id;
+#ifdef DEBUG
+        if (emitComp->compCurBB->KindIs(BBJ_EHCATCHRET))
+            id->idDebugOnlyInfo()->idCatchRet = true;
+#endif
 
-    appendToCurIG(id);
+        id->idjIG   = emitCurIG;
+        id->idjOffs = emitCurIGsize;
+        id->idjNext      = emitCurIGjmpList;
+        emitCurIGjmpList = id;
+        appendToCurIG(id);
+    }
 }
 
 // clang-format off
@@ -2458,37 +2500,61 @@ size_t emitter::emitOutputInstr(insGroup* ig, instrDesc* id, BYTE** dp)
                 regNumber targetReg = id->idReg1();
                 ppc_addi(dstRW, targetReg, targetReg, offsetLo);
             }
-            else if (!id->idIsSmallDsc())
+            else if (addiClassifyInsDsc(id) == ADDI_DSC_JMP_LONG)
             {
-                // Check if this is a jump descriptor with a BasicBlock label
-                // This is used for EH catch return continuation (emitIns_R_L)
+                // Long-range emitIns_R_L path (IF_RI_1E): bcl / mflr / addis / addi.
+                // The addis placeholder was emitted 4 bytes before this addi; patch it
+                // and emit addi with the correct @ha/@l split for the full 32-bit delta.
+                //
+                // Layout (addi = current instruction at dst):
+                //   bcl   @ addiOffs - 12  →  LR = addiOffs - 8  (bcl return address)
+                //   mflr  @ addiOffs - 8
+                //   addis @ addiOffs - 4   ← patched here
+                //   addi  @ addiOffs       ← current
                 instrDescJmp* jmp = (instrDescJmp*)id;
-                
-                // Only process if this has a valid BasicBlock label and is in the jump list
-                // (idjIG will be set if it was added to the jump list)
-                if (jmp->idjIG != nullptr && id->idAddr()->iiaBBlabel != nullptr)
-                {
-                    // BasicBlock label case - for EH catch return continuation
-                    // The offset was already calculated by emitJumpDistBind and stored in idjOffs
-                    
-                    // idjOffs contains the byte offset from bcl PC to target
-                    // bcl was 2 instructions before (8 bytes): at (currentCodeOffset - 8)
-                    // bcl captured PC+4, which is at (currentCodeOffset - 8) + 4 = currentCodeOffset - 4
-                    // So the offset in idjOffs is already relative to that PC
-                    int64_t offset = jmp->idjOffs;
-                    
-                    // Extract low 16 bits for addi immediate
-                    int16_t offsetImm = (int16_t)(offset & 0xFFFF);
-                    
-                    // addi rD, rD, offset@l (add offset to register containing PC)
-                    regNumber targetReg = id->idReg1();
-                    ppc_addi(dstRW, targetReg, targetReg, offsetImm);
-                }
-                else
-                {
-                    // Regular large descriptor addi (shouldn't normally happen, but handle it)
-                    ppc_addi(dstRW, id->idReg1(), id->idReg2(), emitGetInsSC(id));
-                }
+
+                BasicBlock* tgtBlock = jmp->idAddr()->iiaBBlabel;
+                insGroup*   tgtIG    = (insGroup*)emitCodeGetCookie(tgtBlock);
+                assert(tgtIG != nullptr);
+
+                size_t  addiOffs = (size_t)(dst - emitCodeBlock);
+                int64_t delta    = (int64_t)tgtIG->igOffs - (int64_t)(addiOffs - 8);
+
+                // PPC64 @ha/@l split: addis loads bits[31:16] (sign-adjusted),
+                // addi adds sign-extended bits[15:0].
+                int16_t offsetHa = (int16_t)((delta + 0x8000) >> 16);
+                int16_t offsetLo = (int16_t)(delta & 0xFFFF);
+
+                regNumber targetReg = jmp->idReg1();
+
+                BYTE* addisRW = dstRW - 4;
+                ppc_addis(addisRW, targetReg, targetReg, offsetHa);
+                ppc_addi (dstRW,   targetReg, targetReg, offsetLo);
+            }
+            else if (addiClassifyInsDsc(id) == ADDI_DSC_JMP)
+            {
+                // Short emitIns_R_L path (IF_RI_1C): bcl / mflr / addi.
+                // The target is within ±32KB; a single 16-bit addi immediate suffices.
+                //
+                // Layout (addi = current instruction at dst):
+                //   bcl  @ addiOffs - 8  →  LR = addiOffs - 4  (bcl return address)
+                //   mflr @ addiOffs - 4
+                //   addi @ addiOffs      ← current
+                instrDescJmp* jmp = (instrDescJmp*)id;
+
+                BasicBlock* tgtBlock = jmp->idAddr()->iiaBBlabel;
+                insGroup*   tgtIG    = (insGroup*)emitCodeGetCookie(tgtBlock);
+                assert(tgtIG != nullptr);
+
+                size_t  addiOffs = (size_t)(dst - emitCodeBlock);
+                // bcl return address = addiOffs - 4 (bcl is 2 insns back, captures PC+4)
+                int64_t delta = (int64_t)tgtIG->igOffs - (int64_t)(addiOffs - 4);
+
+                // Must fit in 16-bit signed immediate.
+                assert((delta >= -0x8000) && (delta < 0x8000));
+
+                regNumber targetReg = jmp->idReg1();
+                ppc_addi(dstRW, targetReg, targetReg, (int16_t)delta);
             }
             else
             {
@@ -3051,6 +3117,13 @@ size_t emitter::emitOutputInstr(insGroup* ig, instrDesc* id, BYTE** dp)
             ppc_stfdx(dstRW, id->idReg1() - REG_F0, id->idReg2(), id->idReg3());
             break;
 
+       case INS_addis:
+            // addis rD, rA, SIMM  (used as placeholder by emitIns_R_L; patched by INS_addi handler)
+            // When emitted as a plain instrDesc (emitIns_R_L step 3), the immediate is 0 here;
+            // the INS_addi case in emitOutputInstr overwrites these bytes with the real @ha value.
+            ppc_addis(dstRW, id->idReg1(), id->idReg2(), emitGetInsSC(id));
+            break;
+
        default:
             _ASSERTE(!"NYI");
 
@@ -3072,6 +3145,7 @@ const char* emitter::emitDisInsName(code_t code, const BYTE* addr, instrDesc* id
     {
         case INS_li:      return "li      ";
         case INS_lis:     return "lis     ";
+        case INS_addis:   return "addis   ";
         case INS_ori:     return "ori     ";
         case INS_addi:    return "addi    ";
         case INS_mov:     return "mr      ";
@@ -3420,7 +3494,8 @@ void emitter::emitDispIns(
         case INS_lis:
             printf("r%d, %d", id->idReg1(), (int)emitGetInsSC(id));
             break;
-            
+
+        case INS_addis:
         case INS_ori:
         case INS_addi:
         case INS_oris:
@@ -3566,15 +3641,28 @@ void emitter::emitJumpDistBind()
         
         instruction ins = jmp->idIns();
         
-        if (ins == INS_addi && jmp->idAddr()->iiaBBlabel != nullptr)
+        if (ins == INS_addi && addiClassifyInsDsc(jmp) == ADDI_DSC_JMP_LONG)
         {
-            // Special case for addi used in emitIns_R_L (EH catch return)
-            // The offset needs to be from the bcl PC (8 bytes before addi)
-            // bcl captured PC+4, which is at (srcOffs - 8) + 4 = srcOffs - 4
+            // Long-range emitIns_R_L path (IF_RI_1E): bcl / mflr / addis / addi.
+            // srcOffs = byte offset of the addi instruction.
+            // addis @ srcOffs-4, mflr @ srcOffs-8, bcl @ srcOffs-12.
+            // bcl return address = srcOffs - 8.
+            // Validate range only; distance is recomputed in emitOutputInstr
+            // from the final dst pointer to avoid 30-bit idjOffs truncation.
+            jmpDist = (NATIVE_OFFSET)(dstOffs - (srcOffs - 8));
+            assert((jmpDist >= INT32_MIN) && (jmpDist <= INT32_MAX));
+            // Do NOT write jmp->idjOffs; emitOutputInstr recomputes from dst.
+        }
+        else if (ins == INS_addi && addiClassifyInsDsc(jmp) == ADDI_DSC_JMP)
+        {
+            // Short emitIns_R_L path (IF_RI_1C): bcl / mflr / addi.
+            // srcOffs = byte offset of the addi instruction.
+            // mflr @ srcOffs-4, bcl @ srcOffs-8.
+            // bcl return address = srcOffs - 4.
+            // Distance is recomputed in emitOutputInstr; validate 16-bit range.
             jmpDist = (NATIVE_OFFSET)(dstOffs - (srcOffs - 4));
-            
-            // For addi, we only have 16-bit signed immediate
             assert((jmpDist >= -0x8000) && (jmpDist < 0x8000));
+            // Do NOT write jmp->idjOffs; emitOutputInstr recomputes from dst.
         }
         else
         {
@@ -3602,12 +3690,12 @@ void emitter::emitJumpDistBind()
                 assert((jmpDist >= -0x8000) && (jmpDist < 0x8000));
                 assert((jmpDist & 3) == 0); // Must be word-aligned
             }
+
+            // Store the distance in the jump descriptor.
+            // idjOffs is a 30-bit unsigned bitfield; store the raw signed bits so
+            // emitOutputInstr can sign-extend them back to a full NATIVE_OFFSET.
+            jmp->idjOffs = (unsigned)jmpDist;
         }
-        
-        // Store the distance in the jump descriptor.
-        // idjOffs is a 30-bit unsigned bitfield; store the raw signed bits so
-        // emitOutputInstr can sign-extend them back to a full NATIVE_OFFSET.
-        jmp->idjOffs = (unsigned)jmpDist;
         
 #ifdef DEBUG
         if (emitComp->verbose)

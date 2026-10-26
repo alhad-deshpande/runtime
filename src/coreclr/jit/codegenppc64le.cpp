@@ -888,11 +888,11 @@ void CodeGen::genCodeForTreeNode(GenTree* treeNode)
             // Capture the return address of the following native call into targetReg.
             // This is stored into InlinedCallFrame.m_pCallerReturnAddress by the
             // surrounding GT_STORE_LCL_FLD node.
-            // emitIns_R_L emits: bcl 20,31,$+4  (get PC into LR)
-            //                    mflr targetReg  (move LR to targetReg)
-            //                    addi targetReg, targetReg, <label_offset>
+            // The pending call label is placed immediately after the call instruction,
+            // so it is always within a few bytes — no large-range addis needed.
             genPendingCallLabel = genCreateTempLabel();
-            GetEmitter()->emitIns_R_L(INS_addi, EA_PTRSIZE, genPendingCallLabel, targetReg);
+            GetEmitter()->emitIns_R_L(INS_addi, EA_PTRSIZE, genPendingCallLabel, targetReg,
+                                      /* needLargeRange */ false);
             break;
 
         case GT_BOUNDS_CHECK:
@@ -5173,17 +5173,45 @@ void CodeGen::genCodeForStoreInd(GenTreeStoreInd* tree)
     GenTree* data = tree->Data();
     GenTree* addr = tree->Addr();
 
-    // For now, we don't handle GC write barriers - just do normal stores
-    // TODO: Implement GC write barrier support when genEmitHelperCall is ready
     GCInfo::WriteBarrierForm writeBarrierForm = gcInfo.gcIsWriteBarrierCandidate(tree);
     if (writeBarrierForm != GCInfo::WBF_NoBarrier)
     {
-        // Write barrier needed but not yet implemented
-        // For now, just do a normal store (this may cause GC issues in some scenarios)
-        // TODO: Implement proper write barrier support
+        // data and addr must be in registers.
+        // Consume both registers so that any copies of interfering
+        // registers are taken care of.
+        genConsumeOperands(tree);
+
+        // At this point, we should not have any interference.
+        // That is, 'data' must not be in REG_WRITE_BARRIER_DST,
+        // as that is where 'addr' must go.
+        noway_assert(data->GetRegNum() != REG_WRITE_BARRIER_DST);
+
+        // 'addr' goes into r3 (REG_WRITE_BARRIER_DST)
+        genCopyRegIfNeeded(addr, REG_WRITE_BARRIER_DST);
+
+        // 'data' goes into r4 (REG_WRITE_BARRIER_SRC)
+        genCopyRegIfNeeded(data, REG_WRITE_BARRIER_SRC);
+
+        if (tree->IsVolatile())
+        {
+            // Full barrier before a volatile store
+            instGen(INS_hwsync);
+        }
+
+        // The JIT_WriteBarrier / JIT_CheckedWriteBarrier helpers perform the store themselves
+        // and update the card table if needed.
+        genGCWriteBarrier(tree, writeBarrierForm);
+
+        if (tree->IsVolatile())
+        {
+            // Full barrier after a volatile store
+            instGen(INS_hwsync);
+        }
+
+        return;
     }
 
-    // Normal store path
+    // Normal store path (no write barrier required)
     // We must consume the operands in the proper execution order,
     // so that liveness is updated appropriately.
     genConsumeAddress(addr);
@@ -5229,11 +5257,11 @@ void CodeGen::genCodeForStoreInd(GenTreeStoreInd* tree)
 
 void CodeGen::genEHCatchRet(BasicBlock* block)
 {
-    // Load the address of the continuation point (target block) into the integer return register
-    // This is used when returning from a catch handler
-    // PowerPC64 uses a 3-instruction sequence: bcl + mflr + addi
-    // to load the PC-relative address of the target label
-    GetEmitter()->emitIns_R_L(INS_addi, EA_PTRSIZE, block->GetTarget(), REG_INTRET);
+    // Load the address of the continuation point (target block) into the integer return register.
+    // The target block can be anywhere in the method (including far away in large methods),
+    // so use the large-range bcl/mflr/addis/addi 4-instruction sequence.
+    GetEmitter()->emitIns_R_L(INS_addi, EA_PTRSIZE, block->GetTarget(), REG_INTRET,
+                               /* needLargeRange */ true);
 }
 
 
@@ -8463,9 +8491,10 @@ BasicBlock* CodeGen::genCallFinally(BasicBlock* block)
 
     if (block->HasFlag(BBF_RETLESS_CALL))
     {
-        // Load target block address into R12 using PC-relative sequence (bcl + mflr + addi)
-        // Then call via CTR to avoid ±32MB range limitation of direct bl
-        GetEmitter()->emitIns_R_L(INS_addi, EA_PTRSIZE, block->GetTarget(), REG_R12);
+        // Load the finally funclet address into R12. The target can be anywhere in the
+        // function, so use the large-range 4-instruction sequence.
+        GetEmitter()->emitIns_R_L(INS_addi, EA_PTRSIZE, block->GetTarget(), REG_R12,
+                                   /* needLargeRange */ true);
         GetEmitter()->emitIns_R(INS_mtctr, EA_PTRSIZE, REG_R12);
         GetEmitter()->emitIns(INS_bctrl);
 
@@ -8488,9 +8517,9 @@ BasicBlock* CodeGen::genCallFinally(BasicBlock* block)
         // handler.  So turn off GC reporting once we execute the call and reenable after the jmp/nop
         GetEmitter()->emitDisableGC();
         
-        // Load target block address into R12 using PC-relative sequence (bcl + mflr + addi)
-        // Then call via CTR to avoid ±32MB range limitation of direct bl
-        GetEmitter()->emitIns_R_L(INS_addi, EA_PTRSIZE, block->GetTarget(), REG_R12);
+        // Load the finally funclet address into R12 using the large-range 4-instruction sequence.
+        GetEmitter()->emitIns_R_L(INS_addi, EA_PTRSIZE, block->GetTarget(), REG_R12,
+                                   /* needLargeRange */ true);
         GetEmitter()->emitIns_R(INS_mtctr, EA_PTRSIZE, REG_R12);
         GetEmitter()->emitIns(INS_bctrl);
 
