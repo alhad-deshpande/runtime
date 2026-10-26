@@ -47,8 +47,9 @@ IF_DEF(BI_1, IS_NONE, JMP)     // Branch unconditional (b)
 // Register-Immediate formats
 IF_DEF(RI_1A, IS_NONE, SCNS)   // li  rD, imm16
 IF_DEF(RI_1B, IS_NONE, SCNS)   // lis rD, imm16
-IF_DEF(RI_1C, IS_NONE, SCNS)   // addi rD, rA, imm16
+IF_DEF(RI_1C, IS_NONE, SCNS)   // addi rD, rA, imm16  (emitIns_R_L short: bcl/mflr/addi)
 IF_DEF(RI_1D, IS_NONE, SCNS)   // ori rD, rA, imm16
+IF_DEF(RI_1E, IS_NONE, JMP)    // addis+addi rD, rA, imm32  (emitIns_R_L long: bcl/mflr/addis/addi)
 
 // Register-Register formats
 IF_DEF(RR_1A, IS_NONE, NONE)   // mr rD, rA (or rD, rA, rA)
