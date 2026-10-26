@@ -57,6 +57,8 @@ jobs:
         run: |
           docker cp .github/workflows/CoreCLR_JIT_Build_and_Test.sh gha:/CoreCLR_JIT_Build_and_Test.sh
           docker exec gha chmod +x /CoreCLR_JIT_Build_and_Test.sh
+          docker cp .github/workflows/extract_Jitted_func_logs.sh gha:/extract_Jitted_func_logs.sh
+          docker exec gha chmod +x /extract_Jitted_func_logs.sh
 
       # ======================================
       # INSTALL + SETUP (runs once)
@@ -115,8 +117,7 @@ jobs:
 
       # ======================================
       # EXTRACT JITTED FUNCTION LOGS
-      # (runs last, uses scripts/extract_interpreting_logs.sh from the
-      #  JIT_Testing repo already cloned by Run JIT Tests)
+      # Uses .github/workflows/extract_Jitted_func_logs.sh
       # ======================================
       - name: Extract Jitted Function Logs
         if: always()
@@ -126,21 +127,6 @@ jobs:
             /CoreCLR_JIT_Build_and_Test.sh extract_jitted_function_log 2>&1 | tee /tmp/extract_jitted_function_log.log
           '
 
-      - name: Copy Jitted Function Detection Summary
-        if: always()
-        continue-on-error: true
-        run: |
-          docker cp gha:/runtime/Interpreting_Function_Detection/summary.log ./summary.log 2>/dev/null || echo "No summary.log found"
-
-      - name: Upload Jitted Function Detection Summary
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: jitted-function-detection-summary-${{ github.run_number }}
-          path: summary.log
-          if-no-files-found: warn
-          retention-days: 7
-
       # ======================================
       # COPY LOGS
       # ======================================
@@ -149,6 +135,7 @@ jobs:
         run: |
           docker cp gha:/tmp ./logs 2>/dev/null || echo "No logs found"
           docker cp gha:/tmp/Test_logs ./logs/Test_logs 2>/dev/null || echo "No Test_logs found"
+          docker cp gha:/runtime/Jitted_Function_Detection/summary.log ./logs/summary.log 2>/dev/null || docker cp gha:/tmp/summary.log ./logs/summary.log 2>/dev/null || echo "No summary.log found"
         continue-on-error: true
 
       # ======================================
@@ -159,7 +146,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: jit-logs-${{ github.run_number }}
-          path: logs/
+          path: logs/summary.log
           retention-days: 7
 
       # ======================================

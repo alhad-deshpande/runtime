@@ -6,8 +6,9 @@ STAGE="${1:-all}"
 export DEBIAN_FRONTEND=noninteractive
 [ -f /env.sh ] && source /env.sh
 
-RUNTIME_DIR="$(pwd)/runtime"
-TEST_DIR="$(pwd)/JIT_Testing"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RUNTIME_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+TEST_DIR="${RUNTIME_DIR}/JIT_Testing"
 
 echo "=================================="
 echo "STAGE: $STAGE"
@@ -205,36 +206,47 @@ run_coreclr_tests() {
 }
 
 # =========================================================
-# EXTRACT INTERPRETING / JITTING FUNCTION LOGS
-# Uses scripts/extract_interpreting_logs.sh from the JIT_Testing repo
-# already cloned by run_tests ($TEST_DIR) - no second clone.
-# Scans the per-testcase JIT logs written by run_test.sh (95 tests):
-#   $TEST_DIR/gdb_logs/<testcase>/<testcase>_jit.log
-# Output dir: $RUNTIME_DIR/Interpreting_Function_Detection
+# EXTRACT JITTED FUNCTION LOGS
+# Uses .github/workflows/extract_Jitted_func_logs.sh
+# Output dir: $RUNTIME_DIR/Jitted_Function_Detection
 # Never fails the pipeline: errors are reported as warnings.
 # =========================================================
 extract_jitted_function_log() {
-  local script="${TEST_DIR}/scripts/extract_interpreting_logs.sh"
-  local logs_dir="${TEST_DIR}/gdb_logs"
-  local out_dir="${RUNTIME_DIR}/Interpreting_Function_Detection"
+  local script="${SCRIPT_DIR}/extract_Jitted_func_logs.sh"
+
+  local out_dir="${RUNTIME_DIR}/Jitted_Function_Detection"
 
   if [ ! -f "$script" ]; then
-    echo "WARNING: $script not found (run_tests must run first), skipping"
+    echo "WARNING: extract_Jitted_func_logs.sh not found at ${script}, skipping"
     return 0
   fi
 
-  echo "Extracting interpreting/jitting logs from ${logs_dir}..."
+  local logs_dir=""
+  if [ -d "${RUNTIME_DIR}/artifacts" ]; then
+    logs_dir="${RUNTIME_DIR}/artifacts"
+  elif [ -d "/tmp/Test_logs" ]; then
+    logs_dir="/tmp/Test_logs"
+  else
+    logs_dir="${RUNTIME_DIR}"
+  fi
+
+  echo "Extracting jitted function logs from ${logs_dir}..."
   set +e
-  bash "$script" "$RUNTIME_DIR" "$logs_dir" "$out_dir"
+  bash "$script" "${RUNTIME_DIR}" "${logs_dir}" "$out_dir"
   local rc=$?
   set -e
 
   if [ $rc -eq 0 ]; then
     echo "Output written to $out_dir"
+    [ -f "$out_dir/summary.log" ] && cp "$out_dir/summary.log" /tmp/summary.log 2>/dev/null || true
   else
-    echo "WARNING: interpreting log extraction failed (exit $rc), continuing"
+    echo "WARNING: jitted function log extraction failed (exit $rc), continuing"
   fi
   return 0
+}
+
+extract_interpreting_logs() {
+  extract_jitted_function_log
 }
 
 # =========================================================
@@ -259,7 +271,7 @@ case "$STAGE" in
   run_coreclr_tests)
     run_coreclr_tests
     ;;
-  extract_jitted_function_log)
+  extract_jitted_function_log|extract_interpreting_logs)
     extract_jitted_function_log
     ;;
   all)
