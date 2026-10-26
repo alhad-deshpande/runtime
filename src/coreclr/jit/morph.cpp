@@ -1701,12 +1701,12 @@ void CallArgs::EvalArgsToTemps(Compiler* comp, GenTreeCall* call)
                 if (setupArg->OperIsCopyBlkOp())
                 {
                     setupArg = comp->fgMorphCopyBlock(setupArg);
-#if defined(TARGET_ARMARCH) || defined(UNIX_AMD64_ABI) || defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64)
+#if defined(TARGET_ARMARCH) || defined(UNIX_AMD64_ABI) || defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64) || defined(TARGET_POWERPC64)
                     if ((lclVarType == TYP_STRUCT) && (arg.AbiInfo.ArgType != TYP_STRUCT))
                     {
                         scalarType = arg.AbiInfo.ArgType;
                     }
-#endif // TARGET_ARMARCH || defined (UNIX_AMD64_ABI) || defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64)
+#endif // TARGET_ARMARCH || defined (UNIX_AMD64_ABI) || defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64) || defined(TARGET_POWERPC64)
                 }
 
                 // scalarType can be set to a wider type for ARM or unix amd64 architectures: (3 => 4)  or (5,6,7 =>
@@ -2722,12 +2722,12 @@ GenTreeCall* Compiler::fgMorphArgs(GenTreeCall* call)
                         }
                     }
 #endif // UNIX_AMD64_ABI
-#elif defined(TARGET_ARMARCH) || defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64)
+#elif defined(TARGET_ARMARCH) || defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64) || defined(TARGET_POWERPC64)
                     if ((passingSize != structSize) && !argIsLocal)
                     {
                         makeOutArgCopy = true;
                     }
-#endif // defined(TARGET_ARMARCH) || defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64)
+#endif // defined(TARGET_ARMARCH) || defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64) || defined(TARGET_POWERPC64)
                 }
                 else if (argObj->TypeGet() != structBaseType)
                 {
