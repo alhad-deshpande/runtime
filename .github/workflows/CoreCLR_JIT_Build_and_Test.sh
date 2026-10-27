@@ -148,8 +148,18 @@ run_tests() {
 
   chmod +x run_test.sh
 
+  # Ensure RUNTIME_DIR points to the actual runtime directory (/runtime in container)
+  local runtime_dir="$RUNTIME_DIR"
+  if [ -z "$runtime_dir" ] || [ "$runtime_dir" = "/" ] || [ "$runtime_dir" = "//" ] || [ ! -d "${runtime_dir}/artifacts" ]; then
+    if [ -d "/runtime" ]; then
+      runtime_dir="/runtime"
+    elif [ -d "$(pwd)/../runtime" ]; then
+      runtime_dir="$(cd "$(pwd)/../runtime" && pwd)"
+    fi
+  fi
+
   set +e
-  ./run_test.sh "$DOTNET_ROOT" "$RUNTIME_DIR" 2>&1 | tee /tmp/jit_run_output.log
+  ./run_test.sh "$DOTNET_ROOT" "$runtime_dir" 2>&1 | tee /tmp/jit_run_output.log
   EXIT_CODE=${PIPESTATUS[0]}
   set -e
 
