@@ -1,7 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <CLRTestTargetUnsupported Condition="'$(TargetArchitecture)' == 'ppc64le'">true</CLRTestTargetUnsupported>
   </PropertyGroup>
   <PropertyGroup>
     <DebugType>PdbOnly</DebugType>
