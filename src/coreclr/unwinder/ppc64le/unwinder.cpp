@@ -97,6 +97,11 @@ RtlpComputeScopeSize(
 		// save_reg: D0 x z, 3 metadata bytes, 1 machine instruction
 		UnwindCodePtr += 3;
 	}
+	else if (op == 0xD1)
+	{
+		// save_reg_l: D1 x z_hi z_lo, 4 metadata bytes, 1 machine instruction
+		UnwindCodePtr += 4;
+	}
 	else if (op == 0xE0)
 	{
 		// alloc_l: 4 metadata bytes, 1 machine instruction
@@ -312,7 +317,7 @@ ExecuteCodes:
             UnwindCodePtr += 1;
         else if (op >= 0xC0 && op <= 0xC7)
             UnwindCodePtr += 2;
-        else if (op == 0xD0)
+        else if (op == 0xD0 || op == 0xD1)
         {
             BYTE x = MEMORY_READ_BYTE(UnwindParams, UnwindCodePtr + 1);
 
@@ -335,9 +340,9 @@ ExecuteCodes:
                 ContextRecord->Link = ContextRecord->R0;
             }
 
-            UnwindCodePtr += 3;
-	}
-	else if (op == 0xE0)
+            UnwindCodePtr += (op == 0xD0) ? 3 : 4;
+        }
+        else if (op == 0xE0)
             UnwindCodePtr += 4;
         else
             UnwindCodePtr += 1;
@@ -371,15 +376,26 @@ ExecuteCodes:
         }
 	// save_reg (D0|x|z): restore one saved PPC64LE GPR from
 	// the current SP plus an 8-byte-scaled offset.
-	else if (CurCode == 0xD0)
+	// save_reg_l (D1|x|z_hi|z_lo): restore one saved PPC64LE GPR with a 16-bit scaled offset.
+	else if (CurCode == 0xD0 || CurCode == 0xD1)
 	{
 		BYTE x = MEMORY_READ_BYTE(UnwindParams, UnwindCodePtr);
-		BYTE z = MEMORY_READ_BYTE(UnwindParams, UnwindCodePtr + 1);
-		UnwindCodePtr += 2;
+		ULONG64 z;
+		if (CurCode == 0xD0)
+		{
+			z = MEMORY_READ_BYTE(UnwindParams, UnwindCodePtr + 1);
+			UnwindCodePtr += 2;
+		}
+		else
+		{
+			z = ((ULONG64)MEMORY_READ_BYTE(UnwindParams, UnwindCodePtr + 1) << 8) |
+			     (ULONG64)MEMORY_READ_BYTE(UnwindParams, UnwindCodePtr + 2);
+			UnwindCodePtr += 3;
+		}
 
-		ULONG_PTR Address = ContextRecord->R1 + 8 * (ULONG64)z;
+		ULONG_PTR Address = ContextRecord->R1 + 8 * z;
 		ULONG64 Value = MEMORY_READ_QWORD(UnwindParams, Address);
-                if (x == 0)
+		if (x == 0)
 		{
 		    //
 		    // x == 0 describes the stack slot containing the saved Link.
