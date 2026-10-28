@@ -552,7 +552,10 @@ void MethodDescCallSite::CallTargetWorker(const ARG_SLOT *pArguments, ARG_SLOT *
 			break;
 		    case 4:
 			if (TransitionBlock::IsFloatArgumentRegisterOffset(ofs))
-			    *((UINT32*)pDest) = (UINT32)pArguments[arg];
+			{
+			    UINT32 rawBits = (UINT32)pArguments[arg];
+			    *(double*)pDest = (double)*(float*)&rawBits;
+			}
 			else if (m_argIt.GetArgType() == ELEMENT_TYPE_U4)
 			    *((INT64*)pDest) = (UINT32)pArguments[arg];
 			else
