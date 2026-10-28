@@ -243,7 +243,7 @@ case ELEMENT_TYPE_I2:
 case ELEMENT_TYPE_R4:
     _ASSERTE(argRef != NULL);
     if (argDest->IsIsFloatArgumentRegister())
-        *((UINT32 *)pArgDst) = *(UINT32 *)argRef;  // Store as 32-bit float in FPR
+        *(double *)pArgDst = (double)*(float *)argRef;  // Convert single-precision float to double for lfd
     else
         *((UINT64 *)pArgDst) = *(UINT32 *)argRef;  // Zero-extend when passed in GPR
     break;
