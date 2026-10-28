@@ -7916,19 +7916,15 @@ void CodeGen::genCaptureFuncletPrologEpilogInfo()
         const int callerSP_to_PSP = compiler->lvaGetCallerSPRelativeOffset(compiler->lvaPSPSym);
         assert(callerSP_to_PSP <= 0);
 
-        // The funclet frame must be tall enough that the PSP slot sits above the linkage area
-        // and doesn't overlap funclet SP (backchain at SP+0).
-        // Since callerSP_to_PSP = pspSlotOffsetInMainFrame - mainTotalFrameSize,
-        // to have fiSP_to_PSP_slot_delta == pspSlotOffsetInMainFrame, we need:
-        // funcletFrameSize = -callerSP_to_PSP + pspSlotOffsetInMainFrame.
-        const int pspSlotOffset = compiler->lvaTable[compiler->lvaPSPSym].GetStackOffset();
-        int requiredFuncletFrameSize = -callerSP_to_PSP + pspSlotOffset - osrPad;
-        funcletFrameSize = max(funcletFrameSize, requiredFuncletFrameSize);
+        // The PSP slot lives at funclet-SP + (funcletFrameSize + callerSP_to_PSP).  That offset must
+        // be above the linkage area and callee-saved registers (and therefore not on top of the
+        // back-chain word at funclet-SP+0), so the frame must hold the PSP distance PLUS the
+        // linkage area and the saved registers.
+        funcletFrameSize += (-callerSP_to_PSP - osrPad);
         funcletFrameSize = (int)roundUp((unsigned)funcletFrameSize, STACK_ALIGN);
 
-        // PSP slot must not overlap the linkage area / callee-saved regs, nor the saved r31 at frameSize-8.
+        // PSP slot must not overlap the linkage area / callee-saved regs.
         assert(funcletFrameSize + callerSP_to_PSP >= FUNCLET_LINKAGE_AREA + saveBytes);
-        assert(funcletFrameSize + callerSP_to_PSP + REGSIZE_BYTES <= funcletFrameSize - REGSIZE_BYTES);
 
         genFuncletInfo.fiSpDelta                    = -funcletFrameSize;
         genFuncletInfo.fiSaveRegs                   = rsMaskSaveRegs;
