@@ -7581,7 +7581,27 @@ void CodeGen::genFuncletProlog(BasicBlock* block)
     // If there is no PSPSym (NativeAOT ABI) we are done.
     if (compiler->lvaPSPSym != BAD_VAR_NUM)
     {
-        if (isFilter)
+        if (isFilter && compiler->compLocallocUsed)
+        {
+            // localloc relocates the main frame down, so the PSP (which holds the ORIGINAL
+            // CallerSP captured in the main prolog) no longer locates the live frame.
+            //
+            // The VM's "CallerSP" in r4 comes from virtually unwinding the main frame from its
+            // CURRENT (post-localloc) r1 (see RtlpUnwindFunctionFull: caller SP = r1 + frame size),
+            // so r4 + CallerSP_to_FP_delta (= -frameSize) is exactly the live r1 == r31 of the
+            // main frame.  Derive FP from r4 directly, BEFORE r4 is overwritten with the PSP.
+            genInstrWithConstant(INS_addi, EA_PTRSIZE, REG_FPBASE, REG_R4,
+                                 genFuncletInfo.fiFunction_CallerSP_to_FP_delta, REG_R5, false);
+
+            // Still record the (real) parent CallerSP as this funclet's PSP, read from the live frame.
+            genInstrWithConstant(INS_ld, EA_PTRSIZE, REG_R4, REG_R4, genFuncletInfo.fiCallerSP_to_PSP_slot_delta,
+                                 REG_R5, false);
+            regSet.verifyRegUsed(REG_R4);
+
+            genInstrWithConstant(INS_std, EA_PTRSIZE, REG_R4, REG_SPBASE, genFuncletInfo.fiSP_to_PSP_slot_delta,
+                                 REG_R5, false);
+        }
+        else if (isFilter)
         {
             // On filter entry r4 = CallerSP of the dynamically-containing function/funclet.
             // Load the "real" CallerSP of the main function from the PSP stored in that frame,
@@ -7896,11 +7916,15 @@ void CodeGen::genCaptureFuncletPrologEpilogInfo()
         const int callerSP_to_PSP = compiler->lvaGetCallerSPRelativeOffset(compiler->lvaPSPSym);
         assert(callerSP_to_PSP <= 0);
 
-        // The funclet frame must be tall enough that pspSlotOffset is positive.
-        // Minimum required size = -callerSP_to_PSP + 8 (for the slot itself) + osrPad,
-        // but we always round up to STACK_ALIGN anyway.
-        funcletFrameSize = max(funcletFrameSize, -callerSP_to_PSP - osrPad);
+        // The PSP slot lives at funclet-SP + (funcletFrameSize + callerSP_to_PSP).  That offset must
+        // be above the linkage area and callee-saved registers (and therefore not on top of the
+        // back-chain word at funclet-SP+0), so the frame must hold the PSP distance PLUS the
+        // linkage area and the saved registers.
+        funcletFrameSize += (-callerSP_to_PSP - osrPad);
         funcletFrameSize = (int)roundUp((unsigned)funcletFrameSize, STACK_ALIGN);
+
+        // PSP slot must not overlap the linkage area / callee-saved regs.
+        assert(funcletFrameSize + callerSP_to_PSP >= FUNCLET_LINKAGE_AREA + saveBytes);
 
         genFuncletInfo.fiSpDelta                    = -funcletFrameSize;
         genFuncletInfo.fiSaveRegs                   = rsMaskSaveRegs;
@@ -7980,6 +8004,7 @@ void CodeGen::genSetPSPSym(regNumber initReg, bool* pInitRegZeroed)
 
     // Store it to PSPSym local variable: std regTmp, [FP + PSPSym_offset]
     GetEmitter()->emitIns_S_R(INS_std, EA_PTRSIZE, regTmp, compiler->lvaPSPSym, 0);
+
 }
 
 //------------------------------------------------------------------------
