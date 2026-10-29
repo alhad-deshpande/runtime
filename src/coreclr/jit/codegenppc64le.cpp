@@ -6176,14 +6176,32 @@ void CodeGen::genPushCalleeSavedRegisters()
         // SP = new SP
         GetEmitter()->emitIns_Mov(INS_mov, EA_PTRSIZE, REG_SPBASE, scratchReg, /* canSkip */ false);
     }
-    compiler->unwindAllocStack(totalFrameSize);
+    if (compiler->compLocallocUsed)
+    {
+        // The active SP may have moved after localloc. Restore caller SP
+        // through the ELFv2 backchain instead of using a fixed frame size.
+        compiler->unwindRestoreSPFromBackchain();
+    }
+    else
+    {
+        compiler->unwindAllocStack(totalFrameSize);
+    }
 
     // Save the incoming r31 at caller_SP - 8, expressed relative to the
     // established callee SP so the unwind offset is non-negative.
     const int FP_save_offset = totalFrameSize + FP_backchain_save_offset;
     assert(FP_save_offset >= 0);
     GetEmitter()->emitIns_R_R_I(INS_std, EA_PTRSIZE, REG_FP, REG_SPBASE, FP_save_offset);
-    compiler->unwindSaveReg(REG_FP, FP_save_offset);
+
+    if (compiler->compLocallocUsed)
+    {
+        // Restore caller R31 through the backchain before restoring SP.
+        compiler->unwindRestoreFPFromBackchain();
+    }
+    else
+    {
+        compiler->unwindSaveReg(REG_FP, FP_save_offset);
+    }
 
     GetEmitter()->emitIns_Mov(INS_mov, EA_PTRSIZE, REG_FP, REG_SPBASE, /* canSkip */ false);
 
