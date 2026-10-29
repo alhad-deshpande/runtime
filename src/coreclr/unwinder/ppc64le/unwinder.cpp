@@ -440,7 +440,17 @@ ExecuteCodes:
         {
             ContextRecord->R1 = MEMORY_READ_QWORD(UnwindParams, ContextRecord->R1);
         }
-	// restore_r31_from_sp_minus8 (11100111):
+        // restore_fp_from_backchain (11100110):
+        // R31 = *(*(R1) - 8), leaving R1 unchanged.
+        else if (CurCode == 0xE6)
+        {
+            ULONG_PTR BackchainTarget = MEMORY_READ_QWORD(UnwindParams, ContextRecord->R1);
+            ULONG_PTR Address = BackchainTarget - 8;
+            ContextRecord->R31 = MEMORY_READ_QWORD(UnwindParams, Address);
+            UPDATE_CONTEXT_POINTERS(UnwindParams, 31, Address);
+        }
+
+        // restore_r31_from_sp_minus8 (11100111):
         // Restore caller R31 from the slot at caller SP - 8.
         // R1 must already represent the restored caller SP.
         else if (CurCode == 0xE7)
