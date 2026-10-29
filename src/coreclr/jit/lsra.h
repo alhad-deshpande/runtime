@@ -1133,63 +1133,56 @@ private:
             type                  = varDsc->GetRegisterType(lclVar);
         }
 #ifdef TARGET_POWERPC64
-        // On PPC64LE, check if this is an HFA struct that needs float register type
-        else if (type == TYP_LONG)
+        // On PPC64LE, a GT_PUTARG_REG whose child accesses a field of an HFA struct
+        // parameter must produce a float-register interval when the PUTARG_REG itself
+        // targets a float register.
+        //
+        // We deliberately restrict this to GT_PUTARG_REG only.  A bare GT_LCL_FLD
+        // node does not know its eventual target register at getDefType time, so we
+        // cannot safely override its type.  For the legitimate HFA-to-float-register
+        // case, BuildPutArgReg already patches the defList interval type before
+        // calling BuildUse.  For type-mismatched cases (e.g. the integer-register
+        // argument *(StructWithFourLongs*)&hfaLocal), the type must stay TYP_LONG.
+        else if (type == TYP_LONG && tree->OperIsPutArgReg())
         {
-            unsigned lclNum = BAD_VAR_NUM;
-            const char* nodeType = nullptr;
-            
-            // Get local variable number from different node types
-            if (tree->OperIsPutArgReg())
+            GenTreeUnOp* putArgNode = tree->AsUnOp();
+            GenTree*     op1        = putArgNode->gtGetOp1();
+            regNumber    argReg     = putArgNode->GetRegNum();
+            unsigned     lclNum     = BAD_VAR_NUM;
+
+            // Only override when the PUTARG_REG targets a float register.
+            if (argReg != REG_NA && genIsValidFloatReg(argReg))
             {
-                GenTreeUnOp* putArgNode = tree->AsUnOp();
-                GenTree* op1 = putArgNode->gtGetOp1();
-                
                 if (op1->OperIs(GT_LCL_VAR))
-                {
                     lclNum = op1->AsLclVar()->GetLclNum();
-                    nodeType = "PUTARG_REG";
-                }
                 else if (op1->OperIs(GT_LCL_FLD))
-                {
                     lclNum = op1->AsLclFld()->GetLclNum();
-                    nodeType = "PUTARG_REG";
-                }
             }
-            else if (tree->OperIs(GT_LCL_FLD))
-            {
-                // Only override the type for an HFA struct parameter that is passed in float
-                // registers. Do NOT override for locals used in a return context (which use the
-                // integer return register r3), or any non-parameter locals.
-                unsigned candidateLclNum = tree->AsLclFld()->GetLclNum();
-                LclVarDsc* candidateVarDsc = compiler->lvaGetDesc(candidateLclNum);
-                if (candidateVarDsc->lvIsRegArg && genIsValidFloatReg(candidateVarDsc->GetArgReg()))
-                {
-                    lclNum   = candidateLclNum;
-                    nodeType = "GT_LCL_FLD";
-                }
-            }
-            
-            // Check if the local variable is an HFA struct
+            // NOTE: bare GT_LCL_FLD nodes are intentionally NOT handled here.
+            // A GT_LCL_FLD cannot know its eventual target register at getDefType
+            // time.  For the type-mismatched case (e.g. *(StructWithFourLongs*)&hfa
+            // going to an integer register), overriding to float here would produce
+            // a float interval that later asserts when BuildUse constrains it to an
+            // integer register.  The legitimate HFA-to-float-reg case is handled by
+            // BuildPutArgReg's defList fixup (lsrabuild.cpp) before BuildUse runs.
+
             if (lclNum != BAD_VAR_NUM)
             {
                 LclVarDsc* varDsc = compiler->lvaGetDesc(lclNum);
-                
                 if (varDsc->TypeGet() == TYP_STRUCT)
                 {
                     ClassLayout* layout = varDsc->GetLayout();
                     if (layout != nullptr)
                     {
-                        CORINFO_CLASS_HANDLE typeHnd = layout->GetClassHandle();
-                        var_types hfaType = TYP_UNDEF;
-                        unsigned hfaSlots = 0;
-                        
-                        // Check if it's an HFA struct (up to 8 float/double fields = 64 bytes max)
-                        if (typeHnd != NO_CLASS_HANDLE && IsPpc64leHfaLikeStruct(compiler, typeHnd, &hfaType, &hfaSlots))
+                        CORINFO_CLASS_HANDLE typeHnd  = layout->GetClassHandle();
+                        var_types            hfaType  = TYP_UNDEF;
+                        unsigned             hfaSlots = 0;
+                        if (typeHnd != NO_CLASS_HANDLE &&
+                            IsPpc64leHfaLikeStruct(compiler, typeHnd, &hfaType, &hfaSlots))
                         {
-                            // Override type to HFA element type (TYP_FLOAT or TYP_DOUBLE)
-                            JITDUMP("[PPC64LE HFA DEBUG] getDefType: %s for V%02u, overriding type from %s to %s (hfaSlots=%u)\n",
-                                    nodeType, lclNum, varTypeName(type), varTypeName(hfaType), hfaSlots);
+                            JITDUMP("[PPC64LE HFA DEBUG] getDefType: overriding type from %s to %s "
+                                    "for V%02u (hfaSlots=%u)\n",
+                                    varTypeName(type), varTypeName(hfaType), lclNum, hfaSlots);
                             type = hfaType;
                         }
                     }

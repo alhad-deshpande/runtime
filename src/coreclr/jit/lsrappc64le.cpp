@@ -136,7 +136,17 @@ bool LinearScan::BuildDefForHfaLclFld(GenTreeLclFld* lclFld)
     {
         return false;
     }
-    
+
+    // Only handle this node as an HFA field access when its declared type matches the
+    // HFA element type.  A GT_LCL_FLD<TYP_LONG> on an HFA local is a type-mismatched
+    // reinterpret (e.g. *(StructWithFourLongs*)&hfaLocal).  Its interval must be
+    // allocated to an integer register, not a float register.  Returning false here
+    // lets the caller fall through to the normal BuildDef(tree) path.
+    if (lclFld->TypeGet() != hfaType)
+    {
+        return false;
+    }
+
     JITDUMP("[PPC64LE HFA DEBUG] BuildDefForHfaLclFld - V%02u is HFA struct (type=%s, fields=%u)\n",
            varNum, varTypeName(hfaType), numFields);
     

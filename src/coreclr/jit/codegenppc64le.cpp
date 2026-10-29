@@ -4363,9 +4363,11 @@ void CodeGen::genCodeForLclFld(GenTreeLclFld* tree)
     unsigned hfaSlots = 0;
     bool isHfaParam = false;
     
+    // Detect whether this GT_LCL_FLD accesses a field of an HFA struct parameter.
+    // This drives both the loadType override (for TYP_LONG nodes) and the split-HFA
+    // stack-offset logic below (for all HFA nodes, regardless of element type).
     if (genIsValidFloatReg(targetReg) && varTypeIsStruct(varDsc))
     {
-        // Try to get class handle - first from lvClassHnd, then from GetLayout()
         CORINFO_CLASS_HANDLE classHnd = varDsc->lvClassHnd;
         if (classHnd == NO_CLASS_HANDLE)
         {
@@ -4378,11 +4380,19 @@ void CodeGen::genCodeForLclFld(GenTreeLclFld* tree)
         
         if (classHnd != NO_CLASS_HANDLE && IsPpc64leHfaLikeStruct(compiler, classHnd, &hfaType, &hfaSlots))
         {
-            // This is an HFA struct, use the HFA element type
-            loadType = hfaType;
             isHfaParam = varDsc->lvIsParam;
-            JITDUMP("[PPC64LE HFA DEBUG] genCodeForLclFld - HFA detected, overriding load type from %s to %s for V%02u+%u -> %s (hfaSlots=%u, lvIsParam=%d)\n",
-                   varTypeName(targetType), varTypeName(loadType), varNum, offs, getRegName(targetReg), hfaSlots, varDsc->lvIsParam);
+
+            // Only override loadType when the node type is a non-floating integer (e.g. TYP_LONG).
+            // If the node already carries an explicit floating-point type (TYP_FLOAT or TYP_DOUBLE)
+            // — as happens in a type-mismatched reinterpret cast such as *(HfaDblStruct*)&fltHfa —
+            // honour that type as-is.  Overriding it would substitute lfs for lfd (or vice-versa)
+            // and silently corrupt the value.
+            if (!varTypeIsFloating(targetType))
+            {
+                loadType = hfaType;
+                JITDUMP("[PPC64LE HFA DEBUG] genCodeForLclFld - HFA detected, overriding load type from %s to %s for V%02u+%u -> %s (hfaSlots=%u, lvIsParam=%d)\n",
+                       varTypeName(targetType), varTypeName(loadType), varNum, offs, getRegName(targetReg), hfaSlots, varDsc->lvIsParam);
+            }
         }
     }
 
