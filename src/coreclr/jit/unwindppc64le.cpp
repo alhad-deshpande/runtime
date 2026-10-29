@@ -183,18 +183,21 @@ void Compiler::unwindSaveReg(regNumber reg, int offset)
     //
 
     //
-	// Large-offset register saves are outside the first PPC64LE
-	// fixed-frame unwind milestone. The temporary D0 encoding
-	// can represent offsets only through 2040 bytes.
-	//
-	if (offset > 2040)
-	{
-	    return;
-	}
+    // PPC64LE save_reg:
+    //
+    //   D0 | x | z
+    //
+    // restores GPR x from [SP + z * 8].
+    //
+    //   D1 | x | z_hi | z_lo
+    //
+    // restores GPR x from [SP + z * 8] for large offsets (z <= 0xFFFF, up to 512KB).
+    //
 
-	noway_assert((offset % 8) == 0);
+    noway_assert((offset % 8) == 0);
+    noway_assert(offset >= 0);
 
-	unsigned x;
+    unsigned x;
     if (reg == REG_R0)
     {
         x = 0;
@@ -212,10 +215,17 @@ void Compiler::unwindSaveReg(regNumber reg, int offset)
     unsigned z = static_cast<unsigned>(offset) / 8;
 
     noway_assert(x <= 31);
-    noway_assert(z <= 0xFF);
 
     UnwindInfo* pu = &funCurrentFunc()->uwi;
-    pu->AddCode(0xD0, static_cast<BYTE>(x), static_cast<BYTE>(z));
+    if (z <= 0xFF)
+    {
+        pu->AddCode(0xD0, static_cast<BYTE>(x), static_cast<BYTE>(z));
+    }
+    else
+    {
+        noway_assert(z <= 0xFFFF);
+        pu->AddCode(0xD1, static_cast<BYTE>(x), static_cast<BYTE>(z >> 8), static_cast<BYTE>(z & 0xFF));
+    }
 }
 
 void Compiler::unwindNop()

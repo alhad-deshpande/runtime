@@ -5913,7 +5913,7 @@ void CodeGen::genFnEpilog(BasicBlock* block)
         // Localloc unwind semantics are handled separately. Preserve the
         // existing machine-code restore from caller_SP - 8 for now.
         emit->emitIns_R_R_I(INS_ld, EA_PTRSIZE, REG_FP, REG_SPBASE, FP_backchain_save_offset);
-        compiler->unwindSaveReg(REG_FP, FP_backchain_save_offset);
+        compiler->unwindRestoreFPFromCallerSPMinusEight();
     }
     else
     {
@@ -7735,10 +7735,12 @@ void CodeGen::genFuncletEpilog()
         // Restore SP via the ELFv2 backchain stored at [callee-SP+0] by the prolog.
         emit->emitIns_R_R_I(INS_ld, EA_PTRSIZE, REG_SPBASE, REG_SPBASE, 0);
     }
+    // Restore caller SP in the virtual unwind context.
+    compiler->unwindAllocStack(funcletFrameSize);
+
     // SP is now caller-SP in both cases; FP was saved at caller_SP-8.
     emit->emitIns_R_R_I(INS_ld, EA_PTRSIZE, REG_FP, REG_SPBASE, FP_backchain_save_offset);
-    compiler->unwindSaveReg(REG_FP, FP_backchain_save_offset);
-    compiler->unwindAllocStack(funcletFrameSize);
+    compiler->unwindRestoreFPFromCallerSPMinusEight();
 
     // --- Restore LR and R2 from the caller's linkage area ---
     emit->emitIns_R_R_I(INS_ld, EA_PTRSIZE, REG_R0, REG_SPBASE, LR_save_offset);
@@ -8010,7 +8012,7 @@ void CodeGen::genSetPSPSym(regNumber initReg, bool* pInitRegZeroed)
     *pInitRegZeroed = false;
 
     // Calculate caller's SP: addi regTmp, SP, SPtoCallerSPdelta
-    GetEmitter()->emitIns_R_R_I(INS_addi, EA_PTRSIZE, regTmp, REG_SPBASE, SPtoCallerSPdelta);
+    genInstrWithConstant(INS_addi, EA_PTRSIZE, regTmp, REG_SPBASE, SPtoCallerSPdelta, regTmp, false);
 
     // Store it to PSPSym local variable: std regTmp, [FP + PSPSym_offset]
     GetEmitter()->emitIns_S_R(INS_std, EA_PTRSIZE, regTmp, compiler->lvaPSPSym, 0);

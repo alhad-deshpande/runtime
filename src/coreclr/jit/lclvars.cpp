@@ -6648,11 +6648,21 @@ void Compiler::lvaAssignVirtualFrameOffsetsToLocals()
             // For CORINFO_CALLCONV_PARAMTYPE (if needed)
             lvaIncrementFrameSize(TARGET_POINTER_SIZE);
 #ifdef TARGET_POWERPC64
+            {
+                const int LINKAGE_AREA_SIZE    = 32;
+                const int PARAM_SAVE_AREA_SIZE = 64;
+                int paramSaveArea = PARAM_SAVE_AREA_SIZE;
+                if (info.compArgsCount > 0 && compArgSize > PARAM_SAVE_AREA_SIZE)
+                {
+                    paramSaveArea = compArgSize;
+                }
+                lvaCachedGenericContextArgOffs = stkOffs + LINKAGE_AREA_SIZE + paramSaveArea;
+            }
             stkOffs += TARGET_POINTER_SIZE;
 #else
             stkOffs -= TARGET_POINTER_SIZE;
-#endif
             lvaCachedGenericContextArgOffs = stkOffs;
+#endif
         }
     }
 #ifndef JIT32_GCENCODER
@@ -6675,11 +6685,21 @@ void Compiler::lvaAssignVirtualFrameOffsetsToLocals()
             // When "this" is also used as generic context arg.
             lvaIncrementFrameSize(TARGET_POINTER_SIZE);
 #ifdef TARGET_POWERPC64
+            {
+                const int LINKAGE_AREA_SIZE    = 32;
+                const int PARAM_SAVE_AREA_SIZE = 64;
+                int paramSaveArea = PARAM_SAVE_AREA_SIZE;
+                if (info.compArgsCount > 0 && compArgSize > PARAM_SAVE_AREA_SIZE)
+                {
+                    paramSaveArea = compArgSize;
+                }
+                lvaCachedGenericContextArgOffs = stkOffs + LINKAGE_AREA_SIZE + paramSaveArea;
+            }
             stkOffs += TARGET_POINTER_SIZE;
 #else
             stkOffs -= TARGET_POINTER_SIZE;
-#endif
             lvaCachedGenericContextArgOffs = stkOffs;
+#endif
         }
     }
 #endif
