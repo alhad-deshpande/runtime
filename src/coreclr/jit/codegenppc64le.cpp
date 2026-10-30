@@ -3806,24 +3806,35 @@ void CodeGen::genCodeForShift(GenTree* tree)
     {
         // Register-based shift amount
         regNumber shiftReg = shiftBy->GetRegNum();
-        
+
+        // .NET IL semantics require that the shift amount is masked to the operand width
+        // before shifting: 5 bits (& 31) for 32-bit operands, 6 bits (& 63) for 64-bit.
+        // PPC64 hardware shift instructions (sld/srd/srad/slw/srw/sraw) use bits [6:0]
+        // and [5:0] of the shift register respectively, but treat values >= 64 (or >= 32)
+        // as "shift by operand-size" and produce 0 or sign-fill instead of "shift by 0".
+        // Explicitly mask the shift register so register and constant-folded paths agree.
+        {
+            ssize_t shiftMask = is64Bit ? 63 : 31;
+            GetEmitter()->emitIns_R_R_I(INS_andi, EA_8BYTE, shiftReg, shiftReg, shiftMask);
+        }
+
         // Select appropriate register instruction
         switch (oper)
         {
             case GT_LSH:
                 ins = is64Bit ? INS_sld : INS_slw;
                 break;
-                
+
             case GT_RSH:
                 // Arithmetic right shift (sign-extending)
                 ins = is64Bit ? INS_srad : INS_sraw;
                 break;
-                
+
             case GT_RSZ:
                 // Logical right shift (zero-extending)
                 ins = is64Bit ? INS_srd : INS_srw;
                 break;
-                
+
             case GT_ROR:
                 // Rotate right (register): PPC64LE uses rldcl/rlwnm.
                 // LowerRotate has already converted GT_ROL → GT_ROR by negating
@@ -3832,11 +3843,11 @@ void CodeGen::genCodeForShift(GenTree* tree)
                 // which is equivalent to ROR when rB = 64 - n (already computed).
                 ins = is64Bit ? INS_rldcl : INS_rlwnm;
                 break;
-                
+
             default:
                 unreached();
         }
-        
+
         // Emit: targetReg = operandReg SHIFT shiftReg
         GetEmitter()->emitIns_R_R_R(ins, size, targetReg, operandReg, shiftReg);
     }
@@ -4510,6 +4521,22 @@ void CodeGen::genCodeForLclFld(GenTreeLclFld* tree)
     else
     {
         emit->emitIns_R_S(ins, attr, targetReg, varNum, offs);
+    }
+
+    // PowerPC64 has no sign-extending byte load (lbz always zero-extends; no lba instruction).
+    // For TYP_BYTE (signed sbyte), follow the lbz with extsb to sign-extend the byte into
+    // the full register width so that subsequent operations (e.g. XOR, comparisons) see the
+    // correct signed value.  For TYP_SHORT, lha already sign-extends, but when the offset
+    // was not 2-byte aligned the emitter may have fallen back to lhz, so always emit extsh.
+    // TYP_UBYTE and TYP_USHORT are unsigned and are correctly left zero-extended — no extra
+    // work needed.
+    if (loadType == TYP_BYTE)
+    {
+        GetEmitter()->emitIns_R_R(INS_extsb, EA_PTRSIZE, targetReg, targetReg);
+    }
+    else if (loadType == TYP_SHORT)
+    {
+        GetEmitter()->emitIns_R_R(INS_extsh, EA_PTRSIZE, targetReg, targetReg);
     }
 
     genProduceReg(tree);
