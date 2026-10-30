@@ -8837,6 +8837,7 @@ public:
     void unwindReturn(regNumber reg);
     void unwindRestoreSPFromBackchain();
     void unwindRestoreFPFromCallerSPMinusEight();
+    void unwindRestoreFPFromBackchain();
 #endif // defined(TARGET_POWERPC64)
 
     //
