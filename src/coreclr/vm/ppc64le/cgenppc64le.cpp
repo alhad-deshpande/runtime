@@ -359,26 +359,42 @@ void UMEntryThunkCode::Encode(UMEntryThunkCode *pEntryThunkCodeRX, BYTE* pTarget
     }
     CONTRACTL_END;
 
-    //ld %r11, 0(%r6)  // move pvSecretParam(in r6) to METHODDESC_REGISTER(r11) // e9660000
-    //mr %r12, %r5								// 7cac2b78
-    //mtctr %r12								// 7d8903a6
-    //bctr									// 4e800420
-
-    m_code[0] = 0xe9660000; // ld %r11, 0(%r6)
-    m_code[1] = 0x7cac2b78; // mr %r12, %r5
-    m_code[2] = 0x7d8903a6; // mtctr %r12
-    m_code[3] = 0x4e800420; // bctr
+    // The thunk locates its own data without relying on r12 (the caller's GEP value) or
+    // on any argument register, and preserves LR:
+    //
+    //   mflr  r0               ; save caller's LR              7c0802a6
+    //   bcl   20,31,$+4        ; LR = address of next insn     429f0005
+    //   mflr  r12              ; r12 = &m_code[2]              7d8802a6
+    //   mtlr  r0               ; restore caller's LR           7c0803a6
+    //   ld    r11, 32(r12)     ; r11 = m_pvSecretParam (base+40)  e96c0020
+    //   ld    r12, 24(r12)     ; r12 = m_pTargetCode   (base+32)  e98c0018
+    //   mtctr r12                                              7d8903a6
+    //   bctr                                                   4e800420
+    m_code[0] = 0x7c0802a6;
+    m_code[1] = 0x429f0005;
+    m_code[2] = 0x7d8802a6;
+    m_code[3] = 0x7c0803a6;
+    m_code[4] = 0xe96c0020;
+    m_code[5] = 0xe98c0018;
+    m_code[6] = 0x7d8903a6;
+    m_code[7] = 0x4e800420;
 
     m_pTargetCode = (TADDR)pTargetCode;
     m_pvSecretParam = (TADDR)pvSecretParam;
-    FlushInstructionCache(GetCurrentProcess(),&pEntryThunkCodeRX->m_code,sizeof(m_code));
+    ClrFlushInstructionCache(&pEntryThunkCodeRX->m_code, sizeof(m_code));
 }
 
 void UMEntryThunkCode::Poison()
 {
-    abort();
-    //TODO TARGET_POWERPC64
-    _ASSERTE("TARGET_POWERPC64: NYI");
+    ExecutableWriterHolder<UMEntryThunkCode> thunkWriterHolder(this, sizeof(UMEntryThunkCode));
+    UMEntryThunkCode *pThisRW = thunkWriterHolder.GetRW();
+
+    pThisRW->m_pTargetCode = (TADDR)UMEntryThunk::ReportViolation;
+
+    // ld r3, 32(r12) : pass the UMEntryThunk* as first argument to ReportViolation
+    pThisRW->m_code[4] = 0xe86c0020;
+
+    ClrFlushInstructionCache(&m_code, sizeof(m_code));
 }
 
 UMEntryThunk* UMEntryThunk::Decode(LPVOID pCallback)
@@ -388,7 +404,19 @@ UMEntryThunk* UMEntryThunk::Decode(LPVOID pCallback)
     _ASSERTE(offsetof(UMEntryThunkCode, m_code) == 0);
     UMEntryThunkCode * pCode = (UMEntryThunkCode*)pCallback;
 
-    return (UMEntryThunk*)pCode->m_pvSecretParam;
+    // We may be called with an unmanaged external code pointer; only accept our own stubs.
+    if ((pCode->m_code[0] == 0x7c0802a6) &&
+        (pCode->m_code[1] == 0x429f0005) &&
+        (pCode->m_code[2] == 0x7d8802a6) &&
+        (pCode->m_code[3] == 0x7c0803a6) &&
+        (pCode->m_code[5] == 0xe98c0018) &&
+        (pCode->m_code[6] == 0x7d8903a6) &&
+        (pCode->m_code[7] == 0x4e800420))
+    {
+        return (UMEntryThunk*)pCode->m_pvSecretParam;
+    }
+
+    return NULL;
 }
 #ifdef FEATURE_READYTORUN
 

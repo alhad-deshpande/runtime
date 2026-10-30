@@ -367,6 +367,40 @@ BAILOUT:
     // Restore r31 = new frame base (= new r1) so that FP-relative locals are correct.
     // The prolog-saved r31 slot at caller_SP - 8 is untouched; the epilog uses it.
     GetEmitter()->emitIns_Mov(INS_mov, EA_PTRSIZE, REG_FP, REG_SPBASE, /* canSkip */ false);
+
+    // If the method uses an InlinedCallFrame (e.g. IL stubs for P/Invoke) and the frame
+    // was relocated by localloc, we must update the InlinedCallFrame fields and Thread->m_pFrame
+    // to point to the relocated frame on the new stack.
+    if (compiler->lvaInlinedPInvokeFrameVar != BAD_VAR_NUM)
+    {
+        const CORINFO_EE_INFO*                       eeInfo        = compiler->eeGetEEInfo();
+        const CORINFO_EE_INFO::InlinedCallFrameInfo& callFrameInfo = eeInfo->inlinedCallFrameInfo;
+
+        // Update InlinedCallFrame.m_pCallSiteSP and m_pCalleeSavedFP to the new stack/frame base.
+        emit->emitIns_S_R(INS_std, EA_PTRSIZE, REG_SPBASE, compiler->lvaInlinedPInvokeFrameVar,
+                          callFrameInfo.offsetOfCallSiteSP);
+        emit->emitIns_S_R(INS_std, EA_PTRSIZE, REG_FPBASE, compiler->lvaInlinedPInvokeFrameVar,
+                          callFrameInfo.offsetOfCalleeSavedFP);
+
+        // If the frame was pushed onto the thread's frame list (e.g., IL stubs link it in prolog),
+        // update Thread->m_pFrame to point to the relocated InlinedCallFrame.
+        if (compiler->info.compLvFrameListRoot != BAD_VAR_NUM)
+        {
+            regNumber regTCB       = REG_R12;
+            regNumber regFrameAddr = REG_R0;
+
+            // regTCB = Thread* (loaded from compLvFrameListRoot local)
+            emit->emitIns_R_S(INS_ld, EA_PTRSIZE, regTCB, compiler->info.compLvFrameListRoot, 0);
+
+            // regFrameAddr = &InlinedCallFrame (r31 + inlinedFrameOffset + offsetOfFrameVptr)
+            emit->emitIns_R_S(INS_addi, EA_PTRSIZE, regFrameAddr, compiler->lvaInlinedPInvokeFrameVar,
+                              callFrameInfo.offsetOfFrameVptr);
+
+            // Thread->m_pFrame = regFrameAddr
+            emit->emitIns_R_R_I(INS_std, EA_PTRSIZE, regFrameAddr, regTCB, eeInfo->offsetOfThreadFrame);
+        }
+    }
+
     if (endLabel != nullptr)
         genDefineTempLabel(endLabel);
 
