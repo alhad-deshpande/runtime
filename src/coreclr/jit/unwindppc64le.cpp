@@ -460,6 +460,19 @@ unsigned GetUnwindSizeFromUnwindHeader(BYTE b1)
 {
     static const BYTE s_UnwindSize[256] = {
         // array of unwind sizes, in bytes (based on ARM64/RISC-V64 encoding)
+        // Byte ranges map to the encoding of each unwind opcode:
+        //   0x00-0x3F: alloc_s (1 byte)
+        //   0x40-0x4F: save_r19r20_x / 2-byte codes
+        //   0x80-0x8F: 2-byte codes
+        //   0xC0-0xCF: 2-3 byte alloc_m / save_fp* codes
+        //   0xD0:      save_reg  short form  (3 bytes: D0 | reg | z)
+        //   0xD1:      save_reg  long form   (4 bytes: D1 | reg | z_hi | z_lo)
+        //   0xE0:      alloc_l                (4 bytes: E0 | x2 | x1 | x0)
+        //   0xE1:      set_fp                 (1 byte)
+        //   0xE2:      restore_sp_backchain   (1 byte)
+        //   0xE3:      nop                    (1 byte)
+        //   0xE4:      end                    (1 byte)
+        //   0xE7:      restore_r31_sp_minus8  (1 byte)
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 00-0F
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 10-1F
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 20-2F
@@ -473,7 +486,7 @@ unsigned GetUnwindSizeFromUnwindHeader(BYTE b1)
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // A0-AF
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // B0-BF
         2, 2, 2, 2, 2, 2, 2, 2, 3, 2, 2, 2, 3, 2, 2, 2, // C0-CF
-        3, 2, 2, 2, 2, 2, 3, 2, 3, 2, 3, 2, 3, 3, 2, 1, // D0-DF
+        3, 4, 2, 2, 2, 2, 3, 2, 3, 2, 3, 2, 3, 3, 2, 1, // D0-DF  (D1=4: save_reg long form)
         4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // E0-EF
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1  // F0-FF
     };

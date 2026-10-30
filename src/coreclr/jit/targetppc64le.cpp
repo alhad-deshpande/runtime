@@ -320,15 +320,18 @@ ABIPassingInformation Ppc64leClassifier::Classify(Compiler*    comp,
         }
         else if (m_intRegs.Count() > 0)
         {
-            // Split between registers and stack
-            // Pass what fits in remaining registers, rest on stack
+            // Split between registers and stack.
+            // Emit one segment per register slot used, plus ONE stack segment for the
+            // entire stack-spilled remainder.  This keeps NumSegments ≤ regsUsed+1 ≤ 9,
+            // well within MAX_MULTIREG_COUNT=13, even for very large structs.
             unsigned regsAvailable = m_intRegs.Count();
-            unsigned regsUsed = min(regsAvailable, slots);
-            unsigned stackSlots = slots - regsUsed;
-            
-            ABIPassingInformation info = ABIPassingInformation(comp, slots);
+            unsigned regsUsed      = min(regsAvailable, slots);
+            unsigned stackSlots    = slots - regsUsed;
+
+            // regsUsed segments for registers + 1 segment for the stack portion
+            ABIPassingInformation info = ABIPassingInformation(comp, regsUsed + 1);
             unsigned offset = 0;
-            
+
             // Fill available registers
             for (unsigned i = 0; i < regsUsed; i++)
             {
@@ -336,43 +339,30 @@ ABIPassingInformation Ppc64leClassifier::Classify(Compiler*    comp,
                 info.Segment(i) = ABIPassingSegment::InRegister(m_intRegs.Dequeue(), offset, slotSize);
                 offset += slotSize;
             }
-            
-            // Put remainder on stack
-            // For split arguments, we need to recalculate the stack offset after incrementing m_numTotalSlots
-            // by the number of register slots used, so the stack portion gets the correct offset
-            m_numTotalSlots += regsUsed; // Increment by register slots used
-            unsigned stackOffset = 32 + (m_numTotalSlots * 8); // Recalculate stack offset
-            
-            for (unsigned i = regsUsed; i < slots; i++)
-            {
-                unsigned slotSize = min(size - offset, (unsigned)TARGET_POINTER_SIZE);
-                info.Segment(i) = ABIPassingSegment::OnStack(stackOffset, offset, slotSize);
-                offset += slotSize;
-                stackOffset += TARGET_POINTER_SIZE;
-            }
-            
-            m_argNum++; // Increment argument count
-            m_numTotalSlots += stackSlots; // Add remaining stack slots
-            m_stackArgSize = stackOffset; // Update to the final stack offset
+
+            // Recalculate stack offset after consuming register slots
+            m_numTotalSlots += regsUsed;
+            unsigned stackOffset = 32 + (m_numTotalSlots * 8);
+
+            // Single stack segment covering the entire stack-spilled remainder
+            unsigned stackSize = size - offset;
+            info.Segment(regsUsed) = ABIPassingSegment::OnStack(stackOffset, offset, stackSize);
+
+            m_argNum++;
+            m_numTotalSlots += stackSlots;
+            m_stackArgSize = stackOffset + (stackSlots * TARGET_POINTER_SIZE);
             return info;
         }
         else
         {
-            // Pass entirely on stack
-            ABIPassingInformation info = ABIPassingInformation(comp, slots);
-            unsigned offset = 0;
-            unsigned stackOffset = currentArgOffset;
-            
-            for (unsigned i = 0; i < slots; i++)
-            {
-                unsigned slotSize = min(size - offset, (unsigned)TARGET_POINTER_SIZE);
-                info.Segment(i) = ABIPassingSegment::OnStack(stackOffset, offset, slotSize);
-                offset += slotSize;
-                stackOffset += TARGET_POINTER_SIZE;
-            }
-            
-            m_argNum++; // Increment argument count
-            m_numTotalSlots += slots; // Struct consumes 'slots' number of slots
+            // Pass entirely on stack — emit a single segment spanning the whole struct.
+            // Using one segment (matching arm64/loongarch64/amd64 conventions) avoids
+            // overflowing MAX_MULTIREG_COUNT when structs are larger than 13 * 8 = 104 bytes.
+            ABIPassingInformation info = ABIPassingInformation::FromSegment(
+                comp, ABIPassingSegment::OnStack(currentArgOffset, 0, size));
+
+            m_argNum++;
+            m_numTotalSlots += slots;
             m_stackArgSize = currentArgOffset + (slots * TARGET_POINTER_SIZE);
             m_intRegs.Clear();
             return info;

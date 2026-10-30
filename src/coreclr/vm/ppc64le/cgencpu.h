@@ -314,9 +314,8 @@ inline PCODE decodeBackToBackJump(PCODE pBuffer)
 
 struct DECLSPEC_ALIGN(8) UMEntryThunkCode
 {
-    // TODO POWERPC64 removed this structure commit https://github.com/dotnet/runtime/commit/1f6b690378ba4adf9567746acb3d213ef0bc40bf
-    // Implemented for building coreclr --> vikas
-    UINT16      m_code[8];
+    // 8 PowerPC instructions (4 bytes each); data follows at offset 32 and 40.
+    UINT32      m_code[8];
     TADDR       m_pTargetCode;
     TADDR       m_pvSecretParam;
 
