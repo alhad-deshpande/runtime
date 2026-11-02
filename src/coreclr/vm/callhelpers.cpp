@@ -582,6 +582,21 @@ void MethodDescCallSite::CallTargetWorker(const ARG_SLOT *pArguments, ARG_SLOT *
                         }
                         else
     #endif // ENREGISTERED_PARAMTYPE_MAXSIZE
+#if defined(TARGET_POWERPC64)
+                        if (TransitionBlock::IsArgumentRegisterOffset(ofs))
+                        {
+                            int regIdx = TransitionBlock::GetArgumentIndexFromOffset(ofs);
+                            UINT32 bytesInRegs = (8 - regIdx) * sizeof(TADDR);
+                            if (stackSize > bytesInRegs)
+                            {
+                                PVOID pSrcPtr = (stackSize > sizeof(ARG_SLOT)) ? ArgSlotToPtr(pArguments[arg]) : (LPVOID)(&pArguments[arg]);
+                                CopyMemory(pDest, pSrcPtr, bytesInRegs);
+                                PVOID pStackDest = (PVOID)(pTransitionBlock + TransitionBlock::GetOffsetOfArgs());
+                                CopyMemory(pStackDest, (PVOID)((TADDR)pSrcPtr + bytesInRegs), stackSize - bytesInRegs);
+                                break;
+                            }
+                        }
+#endif
                         if (stackSize > sizeof(ARG_SLOT))
                         {
                             CopyMemory(pDest, ArgSlotToPtr(pArguments[arg]), stackSize);

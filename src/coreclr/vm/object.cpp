@@ -431,6 +431,23 @@ void STDCALL CopyValueClassArgUnchecked(ArgDestination *argDest, void* src, Meth
         return;
     }
 
+#elif defined(TARGET_POWERPC64)
+
+    if (TransitionBlock::IsArgumentRegisterOffset(argDest->GetOffset()))
+    {
+        int regIdx = TransitionBlock::GetArgumentIndexFromOffset(argDest->GetOffset());
+        int bytesInRegs = (8 - regIdx) * sizeof(TADDR);
+        int structSize = (int)pMT->GetNumInstanceFieldBytes();
+        if (structSize > bytesInRegs)
+        {
+            _ASSERTE(destOffset == 0);
+            CopyMemory(argDest->GetDestinationAddress(), src, bytesInRegs);
+            void* pStackDest = (void*)((TADDR)argDest->GetBase() + TransitionBlock::GetOffsetOfArgs());
+            CopyMemory(pStackDest, (void*)((TADDR)src + bytesInRegs), structSize - bytesInRegs);
+            return;
+        }
+    }
+
 #endif // UNIX_AMD64_ABI
     // destOffset is only valid for Nullable<T> passed in registers
     _ASSERTE(destOffset == 0);
