@@ -3259,12 +3259,11 @@ void CodeGen::genSpillOrAddRegisterParam(unsigned lclNum, RegGraph* graph)
         const ABIPassingSegment& seg = abiInfo.Segment(i);
         
 #ifdef TARGET_POWERPC64
-        // PPC64LE: For HFA structs, paramRegs may only track the first register,
-        // but we need to process all segments. Skip the paramRegs check for
-        // multi-segment HFA structs that are passed in float registers.
-        bool skipParamRegsCheck = (varDsc->TypeGet() == TYP_STRUCT) && (abiInfo.NumSegments > 1) &&
-                                  seg.IsPassedInRegister() && genIsValidFloatReg(seg.GetRegister());
-        
+        // PPC64LE: For multi-segment structs (HFAs in float regs or general structs in int regs),
+        // paramRegs may only track the first two registers, but we need to process all segments.
+        // Skip the paramRegs check for multi-segment structs passed in registers.
+        bool skipParamRegsCheck = (paramVarDsc->TypeGet() == TYP_STRUCT) && (abiInfo.NumSegments > 1) &&
+                                  seg.IsPassedInRegister(); 
         if (!seg.IsPassedInRegister() ||
             (!skipParamRegsCheck && ((paramRegs & genRegMask(seg.GetRegister())) == 0)))
         {
@@ -3300,11 +3299,11 @@ void CodeGen::genSpillOrAddRegisterParam(unsigned lclNum, RegGraph* graph)
                                       seg.Offset - baseOffset);
         }
 #ifdef TARGET_POWERPC64
-        // PPC64LE: For HFA structs with multiple segments, we must store ALL segments
+	// PPC64LE: For multi-segment structs with multiple segments, we must store ALL segments
         // to the stack frame, even if lvIsInReg() is true. The LclVarDsc only tracks
         // the first register, but ABIPassingInformation has all segments.
-        else if (varDsc->lvOnFrame && (varDsc->TypeGet() == TYP_STRUCT) &&
-                 (abiInfo.NumSegments > 1) && seg.IsPassedInRegister() && genIsValidFloatReg(seg.GetRegister()))
+	else if (varDsc->lvOnFrame && (paramVarDsc->TypeGet() == TYP_STRUCT) &&
+                 (abiInfo.NumSegments > 1) && seg.IsPassedInRegister())
         {
             var_types storeType = genParamStackType(paramVarDsc, seg);
             if ((varDsc->TypeGet() != TYP_STRUCT) && (genTypeSize(genActualType(varDsc)) < genTypeSize(storeType)))
@@ -3415,11 +3414,11 @@ void CodeGen::genHomeRegisterParams(regNumber initReg, bool* initRegStillZeroed)
                 const ABIPassingSegment& seg = abiInfo.Segment(i);
                 
 #ifdef TARGET_POWERPC64
-                // PPC64LE: For HFA structs, paramRegs may only track the first register,
-                // but we need to store all segments. Skip the paramRegs check for
-                // multi-segment HFA structs that are passed in float registers.
+		// PPC64LE: For multi-segment structs (HFAs in float regs or general structs in int regs),
+                // paramRegs may only track the first two registers, but we need to store all segments.
+		// Skip the paramRegs check for multi-segment structs passed in registers.
                 bool skipParamRegsCheck = (lclDsc->TypeGet() == TYP_STRUCT) && (abiInfo.NumSegments > 1) &&
-                                          seg.IsPassedInRegister() && genIsValidFloatReg(seg.GetRegister());
+                                          seg.IsPassedInRegister();
                 
                 if (seg.IsPassedInRegister() &&
                     (skipParamRegsCheck || ((paramRegs & genRegMask(seg.GetRegister())) != 0)))
