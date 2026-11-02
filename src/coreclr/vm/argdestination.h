@@ -50,6 +50,20 @@ public:
         return TransitionBlock::IsFloatArgumentRegisterOffset(m_offset);
     }
 
+#if defined(TARGET_POWERPC64)
+    PTR_VOID GetBase() const
+    {
+        LIMITED_METHOD_CONTRACT;
+        return m_base;
+    }
+
+    int GetOffset() const
+    {
+        LIMITED_METHOD_CONTRACT;
+        return m_offset;
+    }
+#endif
+
 #if defined(TARGET_ARM64)
 #ifndef DACCESS_COMPILE
 

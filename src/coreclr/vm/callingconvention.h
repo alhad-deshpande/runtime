@@ -603,7 +603,7 @@ public:
         // the argument is passed by reference.
         return (size > ENREGISTERED_PARAMTYPE_MAXSIZE) || ((size & (size-1)) != 0);
 #elif defined(TARGET_POWERPC64)
-        return (size > ENREGISTERED_PARAMTYPE_MAXSIZE);
+        return FALSE;
 #else
         PORTABILITY_ASSERT("ArgIteratorTemplate::IsArgPassedByRef");
         return FALSE;
@@ -673,11 +673,6 @@ public:
         }
         return FALSE;
 #elif defined(TARGET_POWERPC64)
-        if (m_argType == ELEMENT_TYPE_VALUETYPE)
-        {
-            _ASSERTE(!m_argTypeHandle.IsNull());
-            return (m_argSize > ENREGISTERED_PARAMTYPE_MAXSIZE);
-        }
         return FALSE;
 #else
         PORTABILITY_ASSERT("ArgIteratorTemplate::IsArgPassedByRef");
@@ -2040,7 +2035,7 @@ int ArgIteratorTemplate<ARGITERATOR_BASE>::GetNextOffset()
 	case ELEMENT_TYPE_VALUETYPE:
 	    if (argSize > 0)
 	    {
-		if (isFloatHfa || thValueType.IsHFA())
+		if (isFloatHfa || (thValueType.IsHFA() && (thValueType.GetHFAType() == CORINFO_HFA_ELEM_FLOAT || thValueType.GetHFAType() == CORINFO_HFA_ELEM_DOUBLE)))
 		{
 		    // All-float/double structs (HFA) are passed in f1-f13 per slot, then on stack.
 		    // Each FP slot also shadows one GPR (advancing m_idxGenReg).
@@ -2423,11 +2418,15 @@ void ArgIteratorTemplate<ARGITERATOR_BASE>::ForceSigWalk()
     // Clear the iterator started flag
     m_dwFlags &= ~ITERATION_STARTED;
 
+#if defined(TARGET_POWERPC64)
+    int nSizeOfArgStack = m_ofsStack;
+#else
     int nSizeOfArgStack = maxOffset - TransitionBlock::GetOffsetOfArgs();
 
 #if defined(TARGET_AMD64) && !defined(UNIX_AMD64_ABI)
     nSizeOfArgStack = (nSizeOfArgStack > (int)sizeof(ArgumentRegisters)) ?
         (nSizeOfArgStack - sizeof(ArgumentRegisters)) : 0;
+#endif
 #endif
 
 #endif // TARGET_X86
