@@ -262,25 +262,6 @@ BOOL GcInfoDumper::ReportPointerRecord (
         vREG(t6, T6),
 #undef vREG
 #undef REG
-#elif defined(TARGET_S390X)
-#undef REG
-#define REG(reg, field) { offsetof(T_CONTEXT, field) }
-        REG(r0, R0),
-        REG(r1, R1),
-        REG(r2, R2),
-        REG(r3, R3),
-        REG(r4, R4),
-        REG(r5, R5),
-        REG(r6, R6),
-        REG(r7, R7),
-        REG(r8, R8),
-        REG(r9, R9),
-        REG(r10, R10),
-        REG(r11, R11),
-        REG(r12, R12),
-        REG(r13, R13),
-        REG(r14, R14),
-        REG(r15, R15),
 #elif defined(TARGET_POWERPC64)
 #undef REG
 #define REG(reg, field) { offsetof(T_CONTEXT, field) }
@@ -341,8 +322,6 @@ PORTABILITY_ASSERT("GcInfoDumper::ReportPointerRecord is not implemented on this
     iSPRegister = (offsetof(T_CONTEXT, Sp) - offsetof(T_CONTEXT, R0)) / sizeof(ULONGLONG);
 #elif defined(TARGET_RISCV64)
     iSPRegister = (offsetof(T_CONTEXT, Sp) - offsetof(T_CONTEXT, R0)) / sizeof(ULONGLONG);
-#elif defined(TARGET_S390X)
-    iSPRegister = (offsetof(CONTEXT, R15) - offsetof(CONTEXT, R0)) / sizeof(ULONGLONG);
 #elif defined(TARGET_POWERPC64)
     iSPRegister = (offsetof(CONTEXT, R1) - offsetof(CONTEXT, R0)) / sizeof(ULONGLONG);
 #endif
@@ -563,9 +542,6 @@ PORTABILITY_ASSERT("GcInfoDumper::ReportPointerRecord is not implemented on this
 
 #if defined(TARGET_ARM) || defined(TARGET_ARM64) || defined(TARGET_RISCV64) || defined(TARGET_LOONGARCH64)
         pContext = (BYTE*)pRD->pCurrentContextPointers;
-#elif defined(TARGET_S390X)
-#pragma message("Unimplemented for S390X yet.")
-    assert(!"unimplemented on S390X yet");
 #elif defined(TARGET_POWERPC64)
 #pragma message("Unimplemented for POWERPC64 yet.")
 	assert(!"unimplemented on POWERPC64 yet");
