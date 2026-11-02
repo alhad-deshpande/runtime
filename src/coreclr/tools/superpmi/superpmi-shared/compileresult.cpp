@@ -916,12 +916,7 @@ void CompileResult::applyRelocs(RelocContext* rc, unsigned char* block1, ULONG b
             Assert(!"FIXME: Not Implements on loongarch64");
         }
 
-	if (targetArch == SPMI_TARGET_ARCHITECTURE_S390X)
-        {
-            Assert(!"FIXME: Not Implements on s390x");
-        }
-
-	if (targetArch == SPMI_TARGET_ARCHITECTURE_POWERPC64)
+ if (targetArch == SPMI_TARGET_ARCHITECTURE_POWERPC64)
 	{
 	    Assert(!"FIXME: Not Implements on ppc64le");
 	}
