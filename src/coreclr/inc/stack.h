@@ -23,7 +23,11 @@ class Stack
     {
         if (m_elemsCount == m_elemsSize)
         {
-            m_elemsSize = max(8u /*InitSize*/, 2*m_elemsSize);
+#if defined(TARGET_POWERPC64)
+            m_elemsSize = max(8u, 2*m_elemsSize);
+#else
+            m_elemsSize = max(InitSize, 2*m_elemsSize);
+#endif
             T* newElems = new T[m_elemsSize];
             if (m_elemsCount != 0)
             {

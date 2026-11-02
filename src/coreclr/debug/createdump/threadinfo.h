@@ -59,11 +59,6 @@ struct user_vfpregs_struct
 #define user_fpregs_struct lasx_context
 #endif
 
-#if defined(__s390x__)
-#define user_regs_struct s390_regs
-#define user_fpregs_struct s390_fp_regs
-#endif
-
 #if defined(__powerpc64__) //Todo (remove ref ): https://patchwork.ozlabs.org/project/linuxppc-dev/patch/20181013105646.5147-1-mpe@ellerman.id.au/#2009820
 #define user_regs_struct pt_regs
 //#define user_fpregs_struct user_fp_state
@@ -102,8 +97,13 @@ private:
     arm_neon_state64_t m_fpRegisters;           // MacOS floating point arm64 registers
 #endif
 #else // __APPLE__
+#if defined(__powerpc64__)
     user_regs_struct m_gpRegisters;             // general purpose registers
     user_fpregs_struct m_fpRegisters;           // floating point registers
+#else
+    struct user_regs_struct m_gpRegisters;      // general purpose registers
+    struct user_fpregs_struct m_fpRegisters;    // floating point registers
+#endif
 #if defined(__i386__)
     struct user_fpxregs_struct m_fpxRegisters;  // x86 floating point registers
 #elif defined(__arm__) && defined(__VFP_FP__) && !defined(__SOFTFP__)
@@ -183,10 +183,6 @@ public:
     inline const uint64_t GetInstructionPointer() const { return MCREG_Pc(m_gpRegisters); }
     inline const uint64_t GetStackPointer() const { return MCREG_Sp(m_gpRegisters); }
     inline const uint64_t GetFramePointer() const { return MCREG_Fp(m_gpRegisters); }
-#elif defined(__s390x__)
-    inline const uint64_t GetInstructionPointer() const { return m_gpRegisters.psw.addr; }
-    inline const uint64_t GetStackPointer() const { return m_gpRegisters.gprs[15]; }
-    inline const uint64_t GetFramePointer() const { return m_gpRegisters.gprs[11]; }
 #elif defined(__powerpc64__)
     inline const uint64_t GetInstructionPointer() const { return m_gpRegisters.nip; }
     inline const uint64_t GetStackPointer() const { return m_gpRegisters.gpr[1]; }

@@ -1513,7 +1513,6 @@ static NATIVE_LIBRARY_HANDLE LOADLoadLibraryDirect(LPCSTR libraryNameOrPath)
 
     if (dl_handle == nullptr)
     {
-	fprintf(stderr, "dlopen failed: %s\n", dlerror());
         SetLastError(ERROR_MOD_NOT_FOUND);
     }
     else
