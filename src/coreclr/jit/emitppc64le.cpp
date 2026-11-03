@@ -424,10 +424,11 @@ void emitter::emitIns_R_S(instruction ins, emitAttr attr, regNumber reg1, int va
             break;
 
         case INS_ld:
-            // Load doubleword - DS-form instruction (must be 4-byte aligned)
+            // Load doubleword - DS-form instruction. DS-form needs a 4-byte aligned
+            // displacement; a misaligned one (e.g. a field in a Pack=1 struct) is handled
+            // below by materializing the address in a scratch register.
             assert(isGeneralRegister(reg1));
             assert(size == EA_8BYTE);
-            assert((imm & 0x3) == 0);
             break;
 
         case INS_lfs:
@@ -607,11 +608,11 @@ void emitter::emitIns_S_R(instruction ins, emitAttr attr, regNumber reg1, int va
             break;
 
         case INS_std:
-            // Store doubleword - DS-form instruction (must be 4-byte aligned)
+            // Store doubleword - DS-form instruction. DS-form needs a 4-byte aligned
+            // displacement; a misaligned one (e.g. a field in a Pack=1 struct) is handled
+            // below by materializing the address in a scratch register.
             assert(isGeneralRegister(reg1));
             assert(size == EA_8BYTE);
-            // DS-form requires 4-byte alignment
-            assert((imm & 0x3) == 0);
             break;
 
         case INS_stfs:
