@@ -7461,7 +7461,7 @@ void CodeGen::genStructReturn(GenTree* treeNode)
         LclVarDsc*     varDsc  = compiler->lvaGetDesc(lclNode);
         assert(varDsc->lvIsMultiRegRet);
 
-#if defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64) || defined(TARGET_POWERPC64)
+#if defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64)
         var_types type   = retTypeDesc.GetReturnRegType(0);
         unsigned  offset = retTypeDesc.GetReturnFieldOffset(0);
         regNumber toReg  = retTypeDesc.GetABIReturnReg(0, compiler->info.compCallConv);
@@ -7477,7 +7477,15 @@ void CodeGen::genStructReturn(GenTree* treeNode)
 
             GetEmitter()->emitIns_R_S(ins_Load(type), emitTypeSize(type), toReg, lclNode->GetLclNum(), offset);
         }
-#else // !TARGET_LOONGARCH64 && !TARGET_RISCV64 && !TARGET_POWERPC64
+#elif defined(TARGET_POWERPC64)
+	for (unsigned i = 0; i < regCount; ++i)
+	{
+		var_types type   = retTypeDesc.GetReturnRegType(i);
+		unsigned  offset = retTypeDesc.GetReturnFieldOffset(i);
+		regNumber toReg  = retTypeDesc.GetABIReturnReg(i, compiler->info.compCallConv);
+	        GetEmitter()->emitIns_R_S(ins_Load(type), emitTypeSize(type), toReg, lclNode->GetLclNum(), offset);
+	}
+#else // !TARGET_LOONGARCH64 && !TARGET_RISCV64
 
 #ifdef SWIFT_SUPPORT
         const uint32_t* offsets = nullptr;
@@ -7874,7 +7882,7 @@ void CodeGen::genMultiRegStoreToLocal(GenTreeLclVar* lclNode)
         assert(regCount == varDsc->lvFieldCnt);
     }
 
-#if defined(TARGET_RISCV64) || defined(TARGET_LOONGARCH64)
+#if defined(TARGET_RISCV64) || defined(TARGET_LOONGARCH64) || defined(TARGET_POWERPC64)
     // genMultiRegStoreToLocal is only used for calls on RISC-V and LoongArch
     const ReturnTypeDesc* returnTypeDesc = actualOp1->AsCall()->GetReturnTypeDesc();
 #endif
@@ -7928,7 +7936,7 @@ void CodeGen::genMultiRegStoreToLocal(GenTreeLclVar* lclNode)
         }
         else
         {
-#if defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64)
+#if defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64) || defined(TARGET_POWERPC64)
             // Should consider the padding, empty struct fields, etc within a struct.
             offset = returnTypeDesc->GetReturnFieldOffset(i);
 #endif

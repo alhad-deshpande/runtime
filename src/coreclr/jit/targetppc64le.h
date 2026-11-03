@@ -29,9 +29,9 @@
 
   #define MAX_PASS_SINGLEREG_BYTES     8  // Maximum size of a struct passed in a single register (16-byte vector).
   #define MAX_PASS_MULTIREG_BYTES      64  // Maximum size of a struct that could be passed in more than one register (max is 4 16-byte vectors using an HVA)
-  #define MAX_RET_MULTIREG_BYTES       16  // Maximum size of a struct that could be returned in more than one register (16 bytes in r3-r4 for non-HFA structs)
+  #define MAX_RET_MULTIREG_BYTES       64  // Maximum size of a struct that could be returned in more than one register (up to 4 float/double regs for HFA, 16 bytes for non-HFA)
   #define MAX_ARG_REG_COUNT             8  // Maximum registers used to pass a single argument in multiple registers (r3-r10 for structs).
-  #define MAX_RET_REG_COUNT             2  // Maximum registers used to return a value (r3-r4 for non-HFA structs up to 16 bytes).
+  #define MAX_RET_REG_COUNT             4  // Maximum registers used to return a value (up to 4 float regs for HFA, 2 int regs for non-HFA).
  
   #define MAX_MULTIREG_COUNT           13  // Maximum number of registers defined by a single instruction.
                                            // On PPC64LE two cases drive this value:
@@ -268,6 +268,8 @@
   #define REG_FLOATRET             REG_F1
   #define RBM_FLOATRET             RBM_F1
   #define RBM_DOUBLERET            RBM_F1
+  #define REG_FLOATRET_1           REG_F2
+  #define RBM_FLOATRET_1           RBM_F2
 
   // The registers trashed by the CORINFO_HELP_STOP_FOR_GC helper
   #define RBM_STOP_FOR_GC_TRASH    RBM_CALLEE_TRASH
