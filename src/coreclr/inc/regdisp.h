@@ -367,8 +367,6 @@ inline LPVOID GetRegdisplayReturnValue(REGDISPLAY *display)
     return (LPVOID)display->pCurrentContext->A0;
 #elif defined(TARGET_RISCV64)
     return (LPVOID)display->pCurrentContext->A0;
-#elif defined(TARGET_S390X)
-    return (LPVOID)display->pCurrentContext->R2;
 #elif defined(TARGET_POWERPC64)
     return (LPVOID)display->pCurrentContext->R3; // PowerPC64 uses R3 for return values
 #else
@@ -428,18 +426,7 @@ inline void FillContextPointers(PT_KNONVOLATILE_CONTEXT_POINTERS pCtxPtrs, PT_CO
     *(&pCtxPtrs->Tp) = &pCtx->Tp;
     *(&pCtxPtrs->Fp) = &pCtx->Fp;
     *(&pCtxPtrs->Ra) = &pCtx->Ra;
-#elif defined(TARGET_S390X)  // TARGET_LOONGARCH64
-    *(&pCtxPtrs->R6) = &pCtx->R6;
-    *(&pCtxPtrs->R7) = &pCtx->R7;
-    *(&pCtxPtrs->R8) = &pCtx->R8;
-    *(&pCtxPtrs->R9) = &pCtx->R9;
-    *(&pCtxPtrs->R10) = &pCtx->R10;
-    *(&pCtxPtrs->R11) = &pCtx->R11;
-    *(&pCtxPtrs->R12) = &pCtx->R12;
-    *(&pCtxPtrs->R13) = &pCtx->R13;
-    *(&pCtxPtrs->R14) = &pCtx->R14;
-    *(&pCtxPtrs->R15) = &pCtx->R15;
-#elif defined(TARGET_ARM) // TARGET_S390X
+#elif defined(TARGET_ARM) // TARGET_LOONGARCH64
     // Copy over the nonvolatile integer registers (R4-R11)
     for (int i = 0; i < 8; i++)
     {
@@ -675,9 +662,6 @@ inline size_t * getRegAddr (unsigned regNum, PTR_CONTEXT regs)
     return (size_t *)&regs->R0 + regNum;
 #elif defined(TARGET_RISCV64)
     _ASSERTE(regNum < 32);
-    return (size_t *)&regs->R0 + regNum;
-#elif defined(TARGET_S390X)
-    _ASSERTE(regNum < 16);
     return (size_t *)&regs->R0 + regNum;
 #elif defined(TARGET_POWERPC64)
     _ASSERTE(regNum < 32);
