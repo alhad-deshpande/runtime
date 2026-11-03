@@ -74,8 +74,6 @@ DumpDataTarget::GetMachineType(
     *machine = IMAGE_FILE_MACHINE_LOONGARCH64;
 #elif HOST_RISCV64
     *machine = IMAGE_FILE_MACHINE_RISCV64;
-#elif HOST_S390X
-    *machine = IMAGE_FILE_MACHINE_UNKNOWN;
 #elif HOST_POWERPC64
     *machine = IMAGE_FILE_MACHINE_POWERPC;
 #else
@@ -88,7 +86,7 @@ HRESULT STDMETHODCALLTYPE
 DumpDataTarget::GetPointerSize(
     /* [out] */ ULONG32 *size)
 {
-#if defined(HOST_AMD64) || defined(HOST_ARM64) || defined(HOST_LOONGARCH64) || defined(HOST_RISCV64) || defined(HOST_S390X) || defined(HOST_POWERPC64)
+#if defined(HOST_AMD64) || defined(HOST_ARM64) || defined(HOST_LOONGARCH64) || defined(HOST_RISCV64) || defined(HOST_POWERPC64)
     *size = 8;
 #elif defined(HOST_ARM) || defined(HOST_X86)
     *size = 4;

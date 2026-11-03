@@ -5442,8 +5442,6 @@ ClrDataAccess::Initialize(void)
         CorDebugPlatform hostPlatform = CORDB_PLATFORM_POSIX_LOONGARCH64;
     #elif defined(TARGET_RISCV64)
         CorDebugPlatform hostPlatform = CORDB_PLATFORM_POSIX_RISCV64;
-    #elif defined(TARGET_S390X)
-        CorDebugPlatform hostPlatform = CORDB_PLATFORM_POSIX_S390X;
     #elif defined(TARGET_POWERPC64)
         CorDebugPlatform hostPlatform = CORDB_PLATFORM_POSIX_POWERPC64;
     #else
