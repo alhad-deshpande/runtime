@@ -18923,7 +18923,9 @@ enter_msl_status gc_heap::trigger_gc_for_alloc (int gen_number, gc_reason gr,
     }
 #endif //MULTIPLE_HEAPS
 
-// FIXME TARGET_POWERPC64    vm_heap->GarbageCollectGeneration (gen_number, gr);
+#if !defined(TARGET_POWERPC64)
+    vm_heap->GarbageCollectGeneration (gen_number, gr);
+#endif
 
 #ifdef MULTIPLE_HEAPS
     if (!loh_p)
