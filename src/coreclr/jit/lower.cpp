@@ -10056,6 +10056,16 @@ void Lowering::LowerLclHeap(GenTree* node)
         }
     }
 #endif
+
+#ifdef TARGET_POWERPC64
+    // genLclHeap relocates the frame and then re-links the InlinedCallFrame by loading the Thread*
+    // from the P/Invoke frame-list-root local with emitIns_R_S, which requires a stack home.
+    if (comp->info.compLvFrameListRoot != BAD_VAR_NUM)
+    {
+        comp->lvaSetVarDoNotEnregister(comp->info.compLvFrameListRoot DEBUGARG(DoNotEnregisterReason::VMNeedsStackAddr));
+    }
+#endif // TARGET_POWERPC64
+
     ContainCheckLclHeap(node->AsOp());
 }
 
