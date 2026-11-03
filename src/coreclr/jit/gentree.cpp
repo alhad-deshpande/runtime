@@ -29764,16 +29764,35 @@ void ReturnTypeDesc::InitializeStructReturnType(Compiler*                comp,
 
 #elif defined(TARGET_POWERPC64)
 
-            // PPC64LE ELFv2 ABI: Non-HFA struct returned in integer registers (up to 16 bytes in r3-r4)
-            assert(structSize <= (2 * TARGET_POINTER_SIZE));
-            BYTE gcPtrs[2] = {TYPE_GC_NONE, TYPE_GC_NONE};
-            comp->info.compCompHnd->getClassGClayout(retClsHnd, &gcPtrs[0]);
-            for (unsigned i = 0; i < 2; ++i)
+            // PPC64LE ELFv2 ABI: HFA struct returned in float registers (f1-f8),
+            // non-HFA struct returned in integer registers (up to 16 bytes in r3-r4).
+            var_types ppc64leHfaType  = TYP_UNDEF;
+            unsigned  ppc64leHfaSlots = 0;
+            if ((callConv != CorInfoCallConvExtension::Managed) &&
+                IsPpc64leHfaLikeStruct(comp, retClsHnd, &ppc64leHfaType, &ppc64leHfaSlots) &&
+                (ppc64leHfaSlots <= MAX_RET_REG_COUNT))
             {
-                m_regType[i] = comp->getJitGCType(gcPtrs[i]);
+                comp->compFloatingPointUsed = true;
+                for (unsigned i = 0; i < ppc64leHfaSlots; ++i)
+                {
+                    m_regType[i]     = ppc64leHfaType;
+                    m_fieldOffset[i] = i * genTypeSize(ppc64leHfaType);
+                }
             }
-            m_fieldOffset[0] = 0;
-            m_fieldOffset[1] = TARGET_POINTER_SIZE;
+            else
+            {
+                assert(structSize <= (2 * TARGET_POINTER_SIZE));
+                // getClassGClayout writes one byte per pointer-sized slot, so only call it here where the
+                // struct is at most 2 slots (an HFA such as Point4<double> would overflow gcPtrs[2]).
+                BYTE gcPtrs[2] = {TYPE_GC_NONE, TYPE_GC_NONE};
+                comp->info.compCompHnd->getClassGClayout(retClsHnd, &gcPtrs[0]);
+                for (unsigned i = 0; i < 2; ++i)
+                {
+                    m_regType[i] = comp->getJitGCType(gcPtrs[i]);
+                }
+                m_fieldOffset[0] = 0;
+                m_fieldOffset[1] = TARGET_POINTER_SIZE;
+            }
 
 #elif defined(TARGET_X86)
 
@@ -30087,7 +30106,8 @@ regNumber ReturnTypeDesc::GetABIReturnReg(unsigned idx, CorInfoCallConvExtension
 
 #elif defined(TARGET_POWERPC64)
     var_types regType = GetReturnRegType(idx);
-    // For PPC64LE, non-HFA structs up to 16 bytes are returned in GPRs (r3-r4)
+    // For PPC64LE, non-HFA structs up to 16 bytes are returned in GPRs (r3-r4),
+    // HFA structs are returned in FPRs (f1-f8).
     if (!varTypeUsesFloatReg(regType))
     {
         noway_assert(idx < 2);                              // Up to 2 return registers for 16-byte structs
@@ -30095,9 +30115,8 @@ regNumber ReturnTypeDesc::GetABIReturnReg(unsigned idx, CorInfoCallConvExtension
     }
     else
     {
-        // Float/double returns - not supported in this implementation yet
-        noway_assert(!"Float struct returns not yet implemented for PPC64LE");
-        resultReg = REG_NA;
+        noway_assert(idx < MAX_RET_REG_COUNT);
+        resultReg = (regNumber)((unsigned)REG_FLOATRET + idx); // F1..F8
     }
 
 #endif // TARGET_XXX

@@ -3732,11 +3732,11 @@ struct GenTreeLclVar : public GenTreeLclVarCommon
 private:
     // GenTreeLclVar is a SMALL node used only for local variable loads/stores and
     // multi-reg return values.  On PPC64LE, MAX_MULTIREG_COUNT is 13 (to cover HFA
-    // args), but a local-var node never holds more than MAX_RET_REG_COUNT (2) result
+    // args), but a local-var node never holds more than MAX_RET_REG_COUNT (4) result
     // registers.  Use MAX_RET_REG_COUNT here so the struct stays within TREE_NODE_SZ_SMALL.
 #ifdef TARGET_POWERPC64
     regNumberSmall     gtOtherReg[MAX_RET_REG_COUNT - 1];
-    unsigned char      gtSpillFlags; // MAX_RET_REG_COUNT(2) * 2 bits = 4 bits fits in 1 byte
+    unsigned char      gtSpillFlags; // MAX_RET_REG_COUNT(4) * 2 bits = 8 bits fits in 1 byte
 #else
     regNumberSmall     gtOtherReg[MAX_MULTIREG_COUNT - 1];
     MultiRegSpillFlags gtSpillFlags;

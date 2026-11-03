@@ -2061,18 +2061,30 @@ int ArgIteratorTemplate<ARGITERATOR_BASE>::GetNextOffset()
  {
      int argOfs = TransitionBlock::GetOffsetOfFloatArgumentRegisters() + m_idxFPReg * 8;
      int fpRegsUsed = cFPRegs;
+     // Number of 8-byte slots of this arg that live on the stack: either because the
+     // FP registers ran out (the data is on the stack), or because the parameter save
+     // area slot lies past the 8th GPR (slot is reserved on the stack even though the
+     // value travels in an FPR). The former is a subset of the latter, so take the max.
+     int stackSlots = 0;
      if (m_idxFPReg + fpRegsUsed > 13)
      {
   // FP arg splits across FP registers and stack: advance stack for the overflow portion.
-  int fpOverflow = (m_idxFPReg + fpRegsUsed) - 13;
-  m_ofsStack += fpOverflow * sizeof(TADDR);
+  stackSlots = (m_idxFPReg + fpRegsUsed) - 13;
   fpRegsUsed = 13 - m_idxFPReg;
      }
      m_idxFPReg += fpRegsUsed;
      // Each FP argument also shadows a GPR slot per the PPC64LE ABI.
+     // Keep the stack offset aligned with the JIT's Ppc64leClassifier, which counts
+     // every slot (including FPR-passed ones) in m_numTotalSlots.
      int shadow = cFPRegs;
      if (m_idxGenReg + shadow > 8)
+     {
+  int gprOverflow = m_idxGenReg + shadow - 8;
+  if (gprOverflow > stackSlots)
+      stackSlots = gprOverflow;
   shadow = 8 - m_idxGenReg;
+     }
+     m_ofsStack += stackSlots * sizeof(TADDR);
      if (shadow > 0)
   m_idxGenReg += shadow;
      return argOfs;

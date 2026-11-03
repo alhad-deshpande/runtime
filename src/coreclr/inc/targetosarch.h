@@ -101,15 +101,6 @@ public:
     static const bool IsLoongArch64 = false;
     static const bool IsRiscV64 = true;
     static const bool IsPowerPC64 = false;
-#elif defined(TARGET_S390X)
-    static const bool IsX86 = false;
-    static const bool IsX64 = false;
-    static const bool IsArm64 = false;
-    static const bool IsArm32 = false;
-    static const bool IsArmArch = false;
-    static const bool IsLoongArch64 = false;
-    static const bool IsRiscV64 = false;
-    static const bool IsPowerPC64 = false;
 #elif defined(TARGET_POWERPC64)
     static const bool IsX86 = false;
     static const bool IsX64 = false;
