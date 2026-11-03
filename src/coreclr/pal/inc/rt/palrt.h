@@ -1028,15 +1028,9 @@ typedef struct _DISPATCHER_CONTEXT {
 #elif defined(HOST_S390X)
 
 typedef struct _DISPATCHER_CONTEXT {
-    ULONG64 ControlPc;
-    ULONG64 ImageBase;
-    PRUNTIME_FUNCTION FunctionEntry;
-    ULONG64 EstablisherFrame;
-    ULONG64 TargetIp;
-    PCONTEXT ContextRecord;
-    PEXCEPTION_ROUTINE LanguageHandler;
-    PVOID HandlerData;
-    PVOID HistoryTable;
+    // S390X does not build the VM or JIT at this point,
+    // so we only provide a dummy definition.
+    DWORD Reserved;
 } DISPATCHER_CONTEXT, *PDISPATCHER_CONTEXT;
 
 #elif defined(HOST_POWERPC64)
