@@ -34,7 +34,7 @@ LEAF_ENTRY HelperMethodFrameRestoreState, _TEXT
 //
 
 #define RestoreReg(reg, regnum) \
-	ld %r5,(OFFSETOF__MachState__m_Capture + 8 * regnum)(%r3); \
+	addi %r5, %r3, OFFSETOF__MachState__m_Capture + 8 * regnum; \
 	ld %r6, (OFFSETOF__MachState__m_Ptrs + 8 * regnum)(%r3); \
 	cmpd %r5, %r6; \
 	bne 0f;	\
