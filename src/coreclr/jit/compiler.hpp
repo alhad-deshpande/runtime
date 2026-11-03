@@ -2691,7 +2691,10 @@ inline
         // value instead of a stale genTotalFrameSize()-adjusted one.
         if (FPbased && varDsc->lvIsParam && (lvaDoneFrameLayout == Compiler::FINAL_FRAME_LAYOUT))
         {
-            if (varDsc->lvIsSplit)
+            // A parameter whose argument register is REG_STK lives entirely on the stack, even if
+            // lvIsSplit was set from the legacy int/float register counting in lvaInitUserArgs
+            // (the ELFv2 classifier lets float args shadow GPR slots, so it can disagree).
+            if (varDsc->lvIsSplit && (varDsc->GetArgReg() != REG_STK))
             {
                 // Split parameter: first part in register, second part on stack
                 regNumber regNum = varDsc->GetArgReg();
