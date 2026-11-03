@@ -114,6 +114,14 @@ void LazyMachState::unwindLazyState(LazyMachState* baseState,
 
 #else  // !DACCESS_COMPILE
 
+    // The PPC64LE unwinder may reconstruct R31 without updating its
+    // context pointer, leaving it pointing to the original capture slot.
+    // Invalidate that pointer so the unwound R31 value is used instead.
+    if (nonVolRegPtrs.R31 == (PDWORD64)&unwoundState->m_Capture.R31 &&
+        ctx.R31 != unwoundState->m_Capture.R31)
+    {
+        nonVolRegPtrs.R31 = nullptr;
+    }
 #define CALLEE_SAVED_REGISTER(regname) unwoundState->m_Ptrs.p##regname = PTR_TADDR(nonVolRegPtrs.regname);
     ENUM_CALLEE_SAVED_REGISTERS();
 #undef CALLEE_SAVED_REGISTER
