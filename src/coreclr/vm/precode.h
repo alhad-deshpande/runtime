@@ -49,11 +49,6 @@ EXTERN_C VOID STDCALL PrecodeRemotingThunk();
 #define SIZEOF_PRECODE_BASE         CODE_SIZE_ALIGN
 #define OFFSETOF_PRECODE_TYPE       0
 
-#elif defined(TARGET_S390X)
-
-#define SIZEOF_PRECODE_BASE         CODE_SIZE_ALIGN
-#define OFFSETOF_PRECODE_TYPE       1
-
 #elif defined(TARGET_POWERPC64)
 
 #define SIZEOF_PRECODE_BASE         CODE_SIZE_ALIGN
@@ -80,8 +75,6 @@ struct InvalidPrecode
     static const int Type = 0xff;
 #elif defined(TARGET_RISCV64)
     static const int Type = 0xff;
-#elif defined(TARGET_S390X)
-    static const int Type = 0;
 #elif defined(TARGET_POWERPC64)
     static const int Type = 0;
 #endif
@@ -121,9 +114,6 @@ struct StubPrecode
     static const SIZE_T CodeSize = 24;
 #elif defined(TARGET_RISCV64)
     static const int Type = 0x17;
-    static const SIZE_T CodeSize = 24;
-#elif defined(TARGET_S390X)
-    static const int Type = 0x08;
     static const SIZE_T CodeSize = 24;
 #elif defined(TARGET_POWERPC64)
     static const int Type = 0x6C;    //coinciding with P in ascii
@@ -268,10 +258,6 @@ struct FixupPrecode
     static const int Type = 0x97;
     static const SIZE_T CodeSize = 32;
     static const int FixupCodeOffset = 10;
-#elif defined(TARGET_S390X)
-    static const int Type = 0x18;
-    static const SIZE_T CodeSize = 24;
-    static const int FixupCodeOffset = 8;
 #elif defined(TARGET_POWERPC64)
     static const int Type = 0x8C;	//TODO Vikas
     static const SIZE_T CodeSize = 48;

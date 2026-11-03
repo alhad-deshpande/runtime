@@ -852,9 +852,6 @@ public:
 #elif defined(TARGET_RISCV64)
             Object** firstIntReg = (Object**)&this->GetContext()->Gp;
             Object** lastIntReg  = (Object**)&this->GetContext()->T6;
-#elif defined(TARGET_S390X)
-            Object** firstIntReg = (Object**)&this->GetContext()->R0;
-            Object** lastIntReg  = (Object**)&this->GetContext()->R15;
 #elif defined(TARGET_POWERPC64)
             Object** firstIntReg = (Object**)&this->GetContext()->R0;
             Object** lastIntReg  = (Object**)&this->GetContext()->R31;

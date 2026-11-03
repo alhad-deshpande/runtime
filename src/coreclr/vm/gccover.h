@@ -118,13 +118,6 @@ typedef DPTR(GCCoverageInfo) PTR_GCCoverageInfo; // see code:GCCoverageInfo::sav
 #define INTERRUPT_INSTR_CALL            0x20010000  // unimp, jal
 #define INTERRUPT_INSTR_PROTECT_RET     0x20020000  // unimp, fld
 
-#elif defined(TARGET_S390X)
-
-// The following encodings are undefined.
-#define INTERRUPT_INSTR                 0x0002
-#define INTERRUPT_INSTR_CALL            0x0003
-#define INTERRUPT_INSTR_PROTECT_RET     0x0004
-
 #elif defined(TARGET_POWERPC64)
 // The following encodings are undefined.
 #define INTERRUPT_INSTR                 0x7C000000  // Generic invalid instruction
@@ -151,18 +144,6 @@ inline bool IsGcCoverageInterruptInstructionVal(UINT32 instrVal)
     }
 
 #elif defined(TARGET_LOONGARCH64)
-
-    switch (instrVal)
-    {
-    case INTERRUPT_INSTR:
-    case INTERRUPT_INSTR_CALL:
-    case INTERRUPT_INSTR_PROTECT_RET:
-        return true;
-    default:
-        return false;
-    }
-
-#elif defined(TARGET_S390X)
 
     switch (instrVal)
     {

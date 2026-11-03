@@ -44,13 +44,13 @@ public:
         return dac_cast<PTR_VOID>(dac_cast<TADDR>(m_base) + m_offset);
     }
 
+#if defined(TARGET_POWERPC64)
     bool IsIsFloatArgumentRegister()
     {
         LIMITED_METHOD_CONTRACT;
         return TransitionBlock::IsFloatArgumentRegisterOffset(m_offset);
     }
 
-#if defined(TARGET_POWERPC64)
     PTR_VOID GetBase() const
     {
         LIMITED_METHOD_CONTRACT;
