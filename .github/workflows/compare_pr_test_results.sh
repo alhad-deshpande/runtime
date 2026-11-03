@@ -371,13 +371,13 @@ WORK_DIR=$(mktemp -d -t test_compare_XXXXXX)
 trap 'rm -rf "$WORK_DIR"' EXIT
 
 # Helper: Extract full unique test identity
+# Works for any log line format, e.g.:
+#   artifacts/tests/coreclr/linux.ppc64le.Debug/foo/foo.log:21:23:05:28.949 Passed test: foo/bar.cmd
+#   ./artifacts/tests/coreclr/linux.ppc64le.Debug/foo/foo.log:21:06:56:09.700 Passed test: foo/bar.cmd
+#   foo/bar.cmd   (plain list, no keyword)
 clean_test_names() {
   sed -E \
-    -e 's/^[.]?\/artifacts\/tests\/coreclr\/[^/]+\///I' \
-    -e 's/^[.]?\/artifacts\/tests\/[^/]+\///I' \
-    -e 's/^[.]?\/artifacts\///I' \
-    -e 's/\/[^/]+\.log:[0-9]+(:[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3})?[[:space:]]+(Passed|Failed)[[:space:]]+test:[[:space:]]*/ -> /I' \
-    -e 's/.*(Passed|Failed)[[:space:]]+test:[[:space:]]*//I' \
+    -e 's/.*(Passed|Failed)[[:space:]]+test:[[:space:]]*//' \
     -e 's/\r$//' \
     | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//' \
     | grep -v '^$' \

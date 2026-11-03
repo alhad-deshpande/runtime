@@ -946,6 +946,30 @@ var_types Compiler::getReturnTypeForStruct(CORINFO_CLASS_HANDLE     clsHnd,
         howToReturnStruct   = SPK_ByReference;
         useType             = TYP_UNKNOWN;
     }
+#elif defined(TARGET_POWERPC64)
+    // PPC64LE ELFv2 ABI: for native calling conventions an HFA struct (up to 8 elements within 64 bytes)
+    // is returned in float registers (f1..f8). FEATURE_HFA is not defined for this target so
+    // getPrimitiveTypeForStruct won't see it. Managed-to-managed calls keep the existing integer-register
+    // convention, which is what the VM's ArgIterator::ComputeReturnFlags assumes.
+    if (callConv != CorInfoCallConvExtension::Managed)
+    {
+        var_types ppc64leHfaType  = TYP_UNDEF;
+        unsigned  ppc64leHfaCount = 0;
+        if (IsPpc64leHfaLikeStruct(this, clsHnd, &ppc64leHfaType, &ppc64leHfaCount) &&
+            (ppc64leHfaCount <= MAX_RET_REG_COUNT))
+        {
+            if (ppc64leHfaCount == 1)
+            {
+                useType           = ppc64leHfaType;
+                howToReturnStruct = SPK_PrimitiveType;
+            }
+            else
+            {
+                howToReturnStruct = SPK_ByValue;
+                useType           = TYP_STRUCT;
+            }
+        }
+    }
 #elif defined(TARGET_RISCV64) || defined(TARGET_LOONGARCH64)
     if (structSize <= (TARGET_POINTER_SIZE * 2))
     {
@@ -1121,8 +1145,16 @@ var_types Compiler::getReturnTypeForStruct(CORINFO_CLASS_HANDLE     clsHnd,
                 // Per PPC64LE ELFv2 ABI: non-HFA structs up to 16 bytes can be returned in GPRs
                 // - Structs <= 8 bytes: returned in r3
                 // - Structs 9-16 bytes: returned in r3 and r4
-                howToReturnStruct = SPK_ByValue;
-                useType           = TYP_STRUCT;
+                if (structSize <= (2 * TARGET_POINTER_SIZE))
+                {
+                    howToReturnStruct = SPK_ByValue;
+                    useType           = TYP_STRUCT;
+                }
+                else
+                {
+                    howToReturnStruct = SPK_ByReference;
+                    useType           = TYP_UNKNOWN;
+                }
 
 #else //  TARGET_XXX
 
