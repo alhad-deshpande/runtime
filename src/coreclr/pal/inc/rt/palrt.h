@@ -1046,6 +1046,10 @@ typedef struct _DISPATCHER_CONTEXT {
     PVOID HandlerData;
     PVOID HistoryTable;
     BOOLEAN ControlPcIsUnwound;
+    // Live frame pointer (r31) of the frame the personality routine is invoked for, captured
+    // before that frame was virtually unwound (ContextRecord holds the caller's r31 in the first pass).
+    // IL filter funclets need it: after a localloc the frame pointer cannot be derived from the caller SP.
+    ULONG64 CurrentFramePointer;
 } DISPATCHER_CONTEXT, *PDISPATCHER_CONTEXT;
 
 #else

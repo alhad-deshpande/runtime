@@ -3939,7 +3939,14 @@ void GCInfo::gcInfoBlockHdrSave(GcInfoEncoder* gcInfoEncoder, unsigned methodSiz
         gcInfoEncoderWithLog->SetGenericsInstContextStackSlot(offset, GENERIC_CONTEXTPARAM_THIS);
     }
 
+#if defined(TARGET_POWERPC64)
+    // On PPC64, genLclHeap relocates the whole frame (including the GS cookie) down by the localloc size,
+    // so the caller-SP-relative slot reported to the VM would point into the localloc buffer.
+    // The JIT-generated epilog cookie check still runs; just don't publish the slot to the stack walker.
+    if (compiler->getNeedsGSSecurityCookie() && !compiler->compLocallocUsed)
+#else
     if (compiler->getNeedsGSSecurityCookie())
+#endif
     {
         assert(compiler->lvaGSSecurityCookie != BAD_VAR_NUM);
 
