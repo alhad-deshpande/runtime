@@ -39,9 +39,6 @@
 #elif TARGET_RISCV64
 #include "riscv64/cordbregisterset.cpp"
 #include "riscv64/primitives.cpp"
-#elif TARGET_S390X
-#include "s390x/cordbregisterset.cpp"
-#include "s390x/primitives.cpp"
 #elif TARGET_POWERPC64
 #include "ppc64le/cordbregisterset.cpp"
 #include "ppc64le/primitives.cpp"

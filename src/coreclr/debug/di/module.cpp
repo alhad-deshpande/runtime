@@ -4509,8 +4509,6 @@ int CordbNativeCode::GetCallInstructionLength(BYTE *ip, ULONG32 count)
     return MAX_INSTRUCTION_LENGTH;
 #elif defined(TARGET_LOONGARCH64)
     return MAX_INSTRUCTION_LENGTH;
-#elif defined(TARGET_S390X)
-    return MAX_INSTRUCTION_LENGTH;
 #elif defined(TARGET_POWERPC64)
     return MAX_INSTRUCTION_LENGTH;
 #elif defined(TARGET_X86)
