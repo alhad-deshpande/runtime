@@ -211,11 +211,19 @@ const char* GenTree::OpStructName(genTreeOps op)
 
 /* GT_COUNT'th oper is overloaded as 'undefined oper', so allocate storage for GT_COUNT'th oper also */
 /* static */
+#ifdef TARGET_POWERPC64
+unsigned short GenTree::s_gtNodeSizes[GT_COUNT + 1];
+#else
 unsigned char GenTree::s_gtNodeSizes[GT_COUNT + 1];
+#endif
 
 #if NODEBASH_STATS || MEASURE_NODE_SIZE || COUNT_AST_OPERS
 
+#ifdef TARGET_POWERPC64
+unsigned short GenTree::s_gtTrueSizes[GT_COUNT + 1]{
+#else
 unsigned char GenTree::s_gtTrueSizes[GT_COUNT + 1]{
+#endif
 #define GTNODE(en, st, cm, ivn, ok) sizeof(st),
 #include "gtlist.h"
 };

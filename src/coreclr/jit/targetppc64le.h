@@ -31,7 +31,7 @@
   #define MAX_PASS_MULTIREG_BYTES      64  // Maximum size of a struct that could be passed in more than one register (max is 4 16-byte vectors using an HVA)
   #define MAX_RET_MULTIREG_BYTES       64  // Maximum size of a struct that could be returned in more than one register (up to 4 float/double regs for HFA, 16 bytes for non-HFA)
   #define MAX_ARG_REG_COUNT             8  // Maximum registers used to pass a single argument in multiple registers (r3-r10 for structs).
-  #define MAX_RET_REG_COUNT             4  // Maximum registers used to return a value (up to 4 float regs for HFA, 2 int regs for non-HFA).
+  #define MAX_RET_REG_COUNT             8  // Maximum registers used to return a value (up to 8 float regs f1-f8 for HFA, 2 int regs for non-HFA).
  
   #define MAX_MULTIREG_COUNT           13  // Maximum number of registers defined by a single instruction.
                                            // On PPC64LE two cases drive this value:
