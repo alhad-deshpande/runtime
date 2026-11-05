@@ -1537,6 +1537,12 @@ void ExceptionTracker::InitializeCurrentContextForCrawlFrame(CrawlFrame* pcfThis
         INDEBUG(memset(pRD->pCurrentContext, 0xCC, sizeof(*(pRD->pCurrentContext))));
         // Ensure that clients can tell the current context isn't valid.
         SetIP(pRD->pCurrentContext, 0);
+#if defined(TARGET_POWERPC64)
+        // Everything else in the current context is invalid, but IL filter funclets need the frame pointer
+        // of this frame (it is lost once the frame is virtually unwound and, after a localloc, cannot be
+        // recomputed from the caller SP).  UnwindManagedExceptionPass1 captured it before the unwind.
+        SetFP(pRD->pCurrentContext, (TADDR)pDispatcherContext->CurrentFramePointer);
+#endif // TARGET_POWERPC64
 #else // !USE_CURRENT_CONTEXT_IN_FILTER
         RestoreNonvolatileRegisters(pRD->pCurrentContext, pDispatcherContext->CurrentNonVolatileContextRecord);
         RestoreNonvolatileRegisterPointers(pRD->pCurrentContextPointers, pDispatcherContext->CurrentNonVolatileContextRecord);
@@ -3168,7 +3174,14 @@ CLRUnwindStatus ExceptionTracker::ProcessManagedCallFrame(
                                 {
                                     // CallHandler expects to be in COOP mode.
                                     GCX_COOP();
+#if defined(TARGET_POWERPC64)
+                                    // The filter's parent frame pointer was stashed in the (otherwise invalid)
+                                    // current context by InitializeCurrentContextForCrawlFrame.
+                                    dwResult = CallHandler(dwFilterStartPC, sf, &EHClause, pMD, Filter, pContext,
+                                                           GetFP(pCurRegDisplay->pCurrentContext));
+#else
                                     dwResult = CallHandler(dwFilterStartPC, sf, &EHClause, pMD, Filter, pContext);
+#endif
                                 }
                             }
                             EX_CATCH
@@ -3468,7 +3481,13 @@ typedef DWORD_PTR (HandlerFn)(UINT_PTR uStackFrame, Object* pExceptionObj);
 EXTERN_C DWORD_PTR STDCALL CallEHFunclet(Object *pThrowable, UINT_PTR pFuncletToInvoke, UINT_PTR *pFirstNonVolReg, UINT_PTR *pFuncletCallerSP);
 
 // This is an assembly helper that enables us to call into EH filter funclets.
+#if defined(TARGET_POWERPC64)
+// On PPC64 the filter funclet also receives (in r5) the live frame pointer (r31) of the frame being
+// filtered, because after a localloc it cannot be derived from CallerSP.
+EXTERN_C DWORD_PTR STDCALL CallEHFilterFunclet(Object *pThrowable, TADDR CallerSP, UINT_PTR pFuncletToInvoke, UINT_PTR *pFuncletCallerSP, TADDR FramePointer);
+#else
 EXTERN_C DWORD_PTR STDCALL CallEHFilterFunclet(Object *pThrowable, TADDR CallerSP, UINT_PTR pFuncletToInvoke, UINT_PTR *pFuncletCallerSP);
+#endif
 
 static inline UINT_PTR CastHandlerFn(HandlerFn *pfnHandler)
 {
@@ -3519,7 +3538,12 @@ DWORD_PTR ExceptionTracker::CallHandler(
     EE_ILEXCEPTION_CLAUSE* pEHClause,
     MethodDesc*            pMD,
     EHFuncletType          funcletType,
+#if defined(TARGET_POWERPC64)
+    PCONTEXT               pContextRecord,
+    TADDR                  uFilterFramePointer)
+#else
     PCONTEXT               pContextRecord)
+#endif
 {
     STATIC_CONTRACT_THROWS;
     STATIC_CONTRACT_GC_TRIGGERS;
@@ -3580,10 +3604,18 @@ DWORD_PTR ExceptionTracker::CallHandler(
         // For invoking IL filter funclet, we pass the CallerSP to the funclet using which
         // it will retrieve the framepointer for accessing the locals in the parent
         // method.
+#if defined(TARGET_POWERPC64)
+        dwResumePC = CallEHFilterFunclet(OBJECTREFToObject(throwable),
+                                         GetFrameRestoreBase(pContextRecord),
+                                         CastHandlerFn(pfnHandler),
+                                         pFuncletCallerSP,
+                                         uFilterFramePointer);
+#else
         dwResumePC = CallEHFilterFunclet(OBJECTREFToObject(throwable),
                                          GetFrameRestoreBase(pContextRecord),
                                          CastHandlerFn(pfnHandler),
                                          pFuncletCallerSP);
+#endif
     }
 #else // USE_FUNCLET_CALL_HELPER
     //
@@ -4859,6 +4891,11 @@ VOID DECLSPEC_NORETURN UnwindManagedExceptionPass1(PAL_SEHException& ex, CONTEXT
         // and then check whether an exception handler exists for the frame.
         if (dispatcherContext.FunctionEntry != NULL)
         {
+#if defined(TARGET_POWERPC64)
+            // Capture this frame's live frame pointer before RtlVirtualUnwind replaces it with the caller's.
+            dispatcherContext.CurrentFramePointer = frameContext->R31;
+#endif // TARGET_POWERPC64
+
 #ifdef USE_CURRENT_CONTEXT_IN_FILTER
             KNONVOLATILE_CONTEXT currentNonVolatileContext;
             CaptureNonvolatileRegisters(&currentNonVolatileContext, frameContext);
@@ -8100,10 +8137,18 @@ extern "C" BOOL QCALLTYPE CallFilterFunclet(QCall::ObjectHandleOnStack exception
         // For invoking IL filter funclet, we pass the CallerSP to the funclet using which
         // it will retrieve the framepointer for accessing the locals in the parent
         // method.
+#if defined(TARGET_POWERPC64)
+        dwResult = CallEHFilterFunclet(OBJECTREFToObject(throwable),
+                                       GetFrameRestoreBase(pvRegDisplay->pCallerContext),
+                                       CastHandlerFn(pfnHandler),
+                                       pFuncletCallerSP,
+                                       GetFP(pvRegDisplay->pCurrentContext));
+#else
         dwResult = CallEHFilterFunclet(OBJECTREFToObject(throwable),
                                        GetFrameRestoreBase(pvRegDisplay->pCallerContext),
                                        CastHandlerFn(pfnHandler),
                                        pFuncletCallerSP);
+#endif
 #else
         dwResult = pfnHandler(establisherFrame, OBJECTREFToObject(throwable));
 #endif
