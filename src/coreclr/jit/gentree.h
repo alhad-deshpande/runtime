@@ -1879,10 +1879,18 @@ public:
     unsigned GetScaledIndex();
 
 public:
+#ifdef TARGET_POWERPC64
+    // Node sizes can exceed 255 bytes (e.g. GenTreeCall with a large ReturnTypeDesc), so don't use a byte.
+    static unsigned short s_gtNodeSizes[];
+#if NODEBASH_STATS || MEASURE_NODE_SIZE || COUNT_AST_OPERS
+    static unsigned short s_gtTrueSizes[];
+#endif
+#else
     static unsigned char s_gtNodeSizes[];
 #if NODEBASH_STATS || MEASURE_NODE_SIZE || COUNT_AST_OPERS
     static unsigned char s_gtTrueSizes[];
 #endif
+#endif // TARGET_POWERPC64
 #if COUNT_AST_OPERS
     static unsigned s_gtNodeCounts[];
 #endif
@@ -3732,11 +3740,11 @@ struct GenTreeLclVar : public GenTreeLclVarCommon
 private:
     // GenTreeLclVar is a SMALL node used only for local variable loads/stores and
     // multi-reg return values.  On PPC64LE, MAX_MULTIREG_COUNT is 13 (to cover HFA
-    // args), but a local-var node never holds more than MAX_RET_REG_COUNT (4) result
+    // args), but a local-var node never holds more than MAX_RET_REG_COUNT (8) result
     // registers.  Use MAX_RET_REG_COUNT here so the struct stays within TREE_NODE_SZ_SMALL.
 #ifdef TARGET_POWERPC64
     regNumberSmall     gtOtherReg[MAX_RET_REG_COUNT - 1];
-    unsigned char      gtSpillFlags; // MAX_RET_REG_COUNT(4) * 2 bits = 8 bits fits in 1 byte
+    uint16_t           gtSpillFlags; // MAX_RET_REG_COUNT(8) * 2 bits = 16 bits
 #else
     regNumberSmall     gtOtherReg[MAX_MULTIREG_COUNT - 1];
     MultiRegSpillFlags gtSpillFlags;

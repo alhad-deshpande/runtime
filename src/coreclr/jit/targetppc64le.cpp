@@ -211,10 +211,14 @@ ABIPassingInformation Ppc64leClassifier::Classify(Compiler*    comp,
                     offset += fieldSize;
                 }
                 
+                // Per ELFv2, the parameter save area allotment of an aggregate is its size rounded up
+                // to doublewords (e.g. 3 floats = 12 bytes = 2 doublewords, not 3).
+                unsigned hfaSlots = (numFields * fieldSize + TARGET_POINTER_SIZE - 1) / TARGET_POINTER_SIZE;
+
                 // HFA also consumes corresponding int register slots if within first 8 slots
                 if (m_numTotalSlots < 8)
                 {
-                    unsigned slotsToConsume = min(numFields, 8 - m_numTotalSlots);
+                    unsigned slotsToConsume = min(hfaSlots, 8 - m_numTotalSlots);
                     for (unsigned i = 0; i < slotsToConsume && m_intRegs.Count() > 0; i++)
                     {
                         m_intRegs.Dequeue();
@@ -222,7 +226,7 @@ ABIPassingInformation Ppc64leClassifier::Classify(Compiler*    comp,
                 }
                 
                 m_argNum++;
-                m_numTotalSlots += numFields;
+                m_numTotalSlots += hfaSlots;
                 return info;
             }
             else if (m_floatRegs.Count() > 0)

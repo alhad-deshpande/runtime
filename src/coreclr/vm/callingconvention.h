@@ -972,7 +972,16 @@ public:
         {
             // Dividing by 8 as size of each register in FloatArgumentRegisters is 8 bytes.
             pLoc->m_idxFloatReg = (argOffset - TransitionBlock::GetOffsetOfFloatArgumentRegisters()) / 8;
-            pLoc->m_cFloatReg = cSlots;
+            // One FP register per float/double field for HFAs, one for a scalar float/double.
+            if (m_argType == ELEMENT_TYPE_VALUETYPE && !m_argTypeHandle.IsNull() && m_argTypeHandle.IsHFA())
+            {
+                unsigned fieldSize = (m_argTypeHandle.GetHFAType() == CORINFO_HFA_ELEM_FLOAT) ? 4 : 8;
+                pLoc->m_cFloatReg = byteArgSize / fieldSize;
+            }
+            else
+            {
+                pLoc->m_cFloatReg = 1;
+            }
         }
         else if (!TransitionBlock::IsStackArgumentOffset(argOffset))
         {
@@ -1887,31 +1896,39 @@ int ArgIteratorTemplate<ARGITERATOR_BASE>::GetNextOffset()
     return argOfs;
 #elif defined(TARGET_POWERPC64)
 
+    // PPC64LE ELFv2: every argument owns doublewords in the parameter save area whether or not it is
+    // passed in registers. m_idxGenReg counts the doublewords consumed within the first 8 (the register
+    // part of the save area); m_ofsStack counts the doublewords consumed beyond that.
     int gRegs = 0;
-    int cFPRegs = 0;
-    const bool isFloatHfa = thValueType.IsFloatHfa();
+    int cFPRegs = 0;      // number of FP registers needed (one per float/double field)
+    int fpSlots = 0;      // number of parameter save area doublewords consumed
+    int hfaFieldSize = 8;
 
     switch (argType)
     {
 	case ELEMENT_TYPE_R4:
 	    // 32-bit floating point argument.
 	    cFPRegs = 1;
+	    fpSlots = 1;
 	    break;
 
 	case ELEMENT_TYPE_R8:
 	    // 64-bit floating point argument.
 	    cFPRegs = 1;
+	    fpSlots = 1;
 	    break;
 
 	case ELEMENT_TYPE_VALUETYPE:
 	    if (argSize > 0)
 	    {
-		if (isFloatHfa || (thValueType.IsHFA() && (thValueType.GetHFAType() == CORINFO_HFA_ELEM_FLOAT || thValueType.GetHFAType() == CORINFO_HFA_ELEM_DOUBLE)))
+		if (!thValueType.IsNull() && thValueType.IsHFA() &&
+		    (thValueType.GetHFAType() == CORINFO_HFA_ELEM_FLOAT || thValueType.GetHFAType() == CORINFO_HFA_ELEM_DOUBLE))
 		{
-		    // All-float/double structs (HFA) are passed in f1-f13 per slot, then on stack.
-		    // Each FP slot also shadows one GPR (advancing m_idxGenReg).
-		    cFPRegs = argSize / sizeof(TADDR);
-		    if (argSize % sizeof(TADDR) != 0) cFPRegs++;
+		    // Homogeneous float aggregate: one FP register per float/double field (f1-f13),
+		    // the save area allotment is the aggregate size rounded up to doublewords.
+		    hfaFieldSize = (thValueType.GetHFAType() == CORINFO_HFA_ELEM_FLOAT) ? 4 : 8;
+		    cFPRegs = argSize / hfaFieldSize;
+		    fpSlots = ALIGN_UP(argSize, sizeof(TADDR)) / sizeof(TADDR);
 		}
 		else
 		{
@@ -1928,41 +1945,38 @@ int ArgIteratorTemplate<ARGITERATOR_BASE>::GetNextOffset()
 
     if (cFPRegs)
     {
- if (m_idxFPReg < 13)
- {
-     int argOfs = TransitionBlock::GetOffsetOfFloatArgumentRegisters() + m_idxFPReg * 8;
-     int fpRegsUsed = cFPRegs;
-     // Number of 8-byte slots of this arg that live on the stack: either because the
-     // FP registers ran out (the data is on the stack), or because the parameter save
-     // area slot lies past the 8th GPR (slot is reserved on the stack even though the
-     // value travels in an FPR). The former is a subset of the latter, so take the max.
-     int stackSlots = 0;
-     if (m_idxFPReg + fpRegsUsed > 13)
-     {
-  // FP arg splits across FP registers and stack: advance stack for the overflow portion.
-  stackSlots = (m_idxFPReg + fpRegsUsed) - 13;
-  fpRegsUsed = 13 - m_idxFPReg;
-     }
-     m_idxFPReg += fpRegsUsed;
-     // Each FP argument also shadows a GPR slot per the PPC64LE ABI.
-     // Keep the stack offset aligned with the JIT's Ppc64leClassifier, which counts
-     // every slot (including FPR-passed ones) in m_numTotalSlots.
-     int shadow = cFPRegs;
-     if (m_idxGenReg + shadow > 8)
-     {
-  int gprOverflow = m_idxGenReg + shadow - 8;
-  if (gprOverflow > stackSlots)
-      stackSlots = gprOverflow;
-  shadow = 8 - m_idxGenReg;
-     }
-     m_ofsStack += stackSlots * sizeof(TADDR);
-     if (shadow > 0)
-  m_idxGenReg += shadow;
-     return argOfs;
- }
- // All FP regs exhausted: fall through to stack, but still shadow GPR if available.
- if (m_idxGenReg < 8)
-     m_idxGenReg++;
+	if (m_idxFPReg < 13)
+	{
+	    int argOfs = TransitionBlock::GetOffsetOfFloatArgumentRegisters() + m_idxFPReg * 8;
+	    int slotsToAdvance = fpSlots;
+	    int extraStackBytes = 0;
+	    if (m_idxFPReg + cFPRegs > 13)
+	    {
+		// HFA splits across FP registers and stack.
+		int fpRegsUsed = 13 - m_idxFPReg;
+		int fpOverflow = cFPRegs - fpRegsUsed;
+		slotsToAdvance = fpRegsUsed;
+		extraStackBytes = ALIGN_UP(fpOverflow * hfaFieldSize, sizeof(TADDR));
+		m_idxFPReg = 13;
+	    }
+	    else
+	    {
+		m_idxFPReg += cFPRegs;
+	    }
+
+	    // Advance the parameter save area position: first the register part (r3-r10 shadow),
+	    // then whatever lands beyond it on the stack.
+	    int inRegPart = 8 - m_idxGenReg;
+	    if (inRegPart > slotsToAdvance)
+		inRegPart = slotsToAdvance;
+	    m_idxGenReg += inRegPart;
+	    m_ofsStack += (slotsToAdvance - inRegPart) * sizeof(TADDR);
+	    m_ofsStack += extraStackBytes;
+	    return argOfs;
+	}
+	// All FP regs exhausted: fall through to stack, but still shadow GPR if available.
+	if (m_idxGenReg < 8)
+	    m_idxGenReg++;
     }
     else if (gRegs > 0)
     {

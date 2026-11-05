@@ -607,7 +607,9 @@ VOID StubLinkerCPU::EmitShuffleThunk(ShuffleEntry *pShuffleEntryArray)
             _ASSERTE(!(pEntry->srcofs & ShuffleEntry::REGMASK));
             
 	    int dstRegIndex = pEntry->dstofs & ShuffleEntry::OFSREGMASK;
-	    int srcOffset = 32 + pEntry->srcofs * sizeof(void*); //need to check - vikas
+	    // Stack slot indices count from the first parameter save area doubleword that does not
+	    // shadow an argument register (r3-r10), i.e. 32 (linkage area) + 8*8 bytes into the caller's frame.
+	    int srcOffset = 32 + NUM_ARGUMENT_REGISTERS * sizeof(void*) + pEntry->srcofs * sizeof(void*);
 
 	    if (pEntry->dstofs & ShuffleEntry::FPREGMASK)
 	    {
@@ -620,7 +622,15 @@ VOID StubLinkerCPU::EmitShuffleThunk(ShuffleEntry *pShuffleEntryArray)
 	}
 	else
 	{
-            _ASSERTE(!"POWERPC:NYI");
+	           // Source on stack, destination on stack: move one doubleword through r0.
+	           // (r0 is not an argument register and is not used by this thunk otherwise.)
+	           _ASSERTE(!(pEntry->srcofs & ShuffleEntry::REGMASK) && !(pEntry->dstofs & ShuffleEntry::REGMASK));
+
+	           int srcOffset = 32 + NUM_ARGUMENT_REGISTERS * sizeof(void*) + pEntry->srcofs * sizeof(void*);
+	           int dstOffset = 32 + NUM_ARGUMENT_REGISTERS * sizeof(void*) + pEntry->dstofs * sizeof(void*);
+
+	           EmitLoadDoubleWord(IntReg(0), srcOffset, IntReg(1));
+	           EmitStoreDoubleWord(IntReg(0), IntReg(1), dstOffset);
 	}
     }
 
