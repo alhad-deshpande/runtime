@@ -6210,14 +6210,36 @@ void CodeGen::genPushCalleeSavedRegisters()
         // SP = new SP
         GetEmitter()->emitIns_Mov(INS_mov, EA_PTRSIZE, REG_SPBASE, scratchReg, /* canSkip */ false);
     }
-    compiler->unwindAllocStack(totalFrameSize);
+    if (compiler->compLocallocUsed)
+    {
+        // genLclHeap moves SP down after the prolog, so "caller SP = SP + totalFrameSize" and a
+        // totalFrameSize-relative r31 slot are only true before the first localloc. The ELFv2
+        // backchain at 0(SP) always holds the real caller SP, and the saved r31 always lives at
+        // caller SP - 8, so describe the two prolog instructions via the backchain instead:
+        //   stdu SP, -N(SP)     <->  restore_sp_from_backchain  (R1 = *(R1))
+        //   std  r31, N-8(SP)   <->  restore_fp_from_backchain  (R31 = *(*(R1) - 8), R1 unchanged)
+        // Prolog unwind codes run in reverse emission order, so the r31 restore runs first (while R1 is
+        // still the callee SP) and the SP restore second.
+        compiler->unwindRestoreSPFromBackchain();
+    }
+    else
+    {
+        compiler->unwindAllocStack(totalFrameSize);
+    }
 
     // Save the incoming r31 at caller_SP - 8, expressed relative to the
     // established callee SP so the unwind offset is non-negative.
     const int FP_save_offset = totalFrameSize + FP_backchain_save_offset;
     assert(FP_save_offset >= 0);
     GetEmitter()->emitIns_R_R_I(INS_std, EA_PTRSIZE, REG_FP, REG_SPBASE, FP_save_offset);
-    compiler->unwindSaveReg(REG_FP, FP_save_offset);
+    if (compiler->compLocallocUsed)
+    {
+        compiler->unwindRestoreFPFromBackchain();
+    }
+    else
+    {
+        compiler->unwindSaveReg(REG_FP, FP_save_offset);
+    }
 
     GetEmitter()->emitIns_Mov(INS_mov, EA_PTRSIZE, REG_FP, REG_SPBASE, /* canSkip */ false);
 
@@ -7654,19 +7676,16 @@ void CodeGen::genFuncletProlog(BasicBlock* block)
     {
         if (isFilter && compiler->compLocallocUsed)
         {
-            // localloc relocates the main frame down, so the PSP (which holds the ORIGINAL
-            // CallerSP captured in the main prolog) no longer locates the live frame.
+            // localloc relocates the main frame down.  The unwinder describes the localloc prolog through
+            // the ELFv2 backchain, so r4 (the VM's CallerSP of the main frame) is the REAL original caller
+            // SP, not "live r1 + frameSize", and the live FP cannot be derived from it.
             //
-            // The VM's "CallerSP" in r4 comes from virtually unwinding the main frame from its
-            // CURRENT (post-localloc) r1 (see RtlpUnwindFunctionFull: caller SP = r1 + frame size),
-            // so r4 + CallerSP_to_FP_delta (= -frameSize) is exactly the live r1 == r31 of the
-            // main frame.  Derive FP from r4 directly, BEFORE r4 is overwritten with the PSP.
-            genInstrWithConstant(INS_addi, EA_PTRSIZE, REG_FPBASE, REG_R4,
-                                 genFuncletInfo.fiFunction_CallerSP_to_FP_delta, REG_R5, false);
+            // The VM (CallEHFilterFunclet) passes the main frame's live frame pointer in r5, captured before
+            // that frame was virtually unwound.  r5 is volatile and nothing in the funclet prolog reads it.
+            GetEmitter()->emitIns_Mov(INS_mov, EA_PTRSIZE, REG_FPBASE, REG_R5, /* canSkip */ false);
 
-            // Still record the (real) parent CallerSP as this funclet's PSP, read from the live frame.
-            genInstrWithConstant(INS_ld, EA_PTRSIZE, REG_R4, REG_R4, genFuncletInfo.fiCallerSP_to_PSP_slot_delta,
-                                 REG_R5, false);
+            // The PSP holds the main function's caller SP, which is the backchain word of the live frame.
+            GetEmitter()->emitIns_R_R_I(INS_ld, EA_PTRSIZE, REG_R4, REG_FPBASE, 0);
             regSet.verifyRegUsed(REG_R4);
 
             genInstrWithConstant(INS_std, EA_PTRSIZE, REG_R4, REG_SPBASE, genFuncletInfo.fiSP_to_PSP_slot_delta,
@@ -7700,8 +7719,18 @@ void CodeGen::genFuncletProlog(BasicBlock* block)
             //
             // r31 itself must remain unchanged because funclet body accesses to
             // parent-frame locals are FP-relative.
-            genInstrWithConstant(INS_addi, EA_PTRSIZE, REG_R5, REG_FPBASE,
-                                 -genFuncletInfo.fiFunction_CallerSP_to_FP_delta, REG_R0, false);
+            if (compiler->compLocallocUsed)
+            {
+                // After localloc "FP - fiFunction_CallerSP_to_FP_delta" is no longer the caller SP.
+                // The live frame's backchain at 0(FP) always holds the real caller SP (the same value
+                // the unwinder reports to the VM).
+                GetEmitter()->emitIns_R_R_I(INS_ld, EA_PTRSIZE, REG_R5, REG_FPBASE, 0);
+            }
+            else
+            {
+                genInstrWithConstant(INS_addi, EA_PTRSIZE, REG_R5, REG_FPBASE,
+                                     -genFuncletInfo.fiFunction_CallerSP_to_FP_delta, REG_R0, false);
+            }
 
             regSet.verifyRegUsed(REG_R5);
 
@@ -8071,7 +8100,6 @@ void CodeGen::genSetPSPSym(regNumber initReg, bool* pInitRegZeroed)
     // Use initReg as scratch register
     regNumber regTmp = initReg;
     *pInitRegZeroed = false;
-
     // Calculate caller's SP: addi regTmp, SP, SPtoCallerSPdelta
     genInstrWithConstant(INS_addi, EA_PTRSIZE, regTmp, REG_SPBASE, SPtoCallerSPdelta, regTmp, false);
 

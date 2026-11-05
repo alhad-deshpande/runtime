@@ -11,6 +11,8 @@
     <Optimize>true</Optimize>
     <!-- Generated shell script and corresponding assembly have different names -->
     <CLRTestTargetUnsupported Condition="'$(TargetOS)' == 'android'">true</CLRTestTargetUnsupported>
+    <!-- Crossgen2 is not supported on ppc64le -->
+    <CLRTestTargetUnsupported Condition="'$(TargetArchitecture)' == 'ppc64le'">true</CLRTestTargetUnsupported>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="BasicTestWithMcj.cs" />

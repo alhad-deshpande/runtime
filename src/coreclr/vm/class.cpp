@@ -1988,9 +1988,15 @@ EEClass::CheckForHFA()
     if (totalSize % elemSize != 0)
         return false;
 
+#if defined(TARGET_POWERPC64)
+    // The PPC64 ELFv2 ABI allows homogeneous floating-point aggregates with up to eight members.
+    if (totalSize / elemSize > 8)
+        return false;
+#else
     // On ARM, HFAs can have a maximum of four fields regardless of whether those are float or double.
     if (totalSize / elemSize > 4)
         return false;
+#endif
 
     // All the above tests passed. It's HFA(/HVA)!
 #if defined(FEATURE_HFA)

@@ -1,12 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <!-- Needed for CLRTestTargetUnsupported -->
-    <RequiresProcessIsolation>true</RequiresProcessIsolation>
-    <!-- Missing intrinsic support in CoreCLR interpreter -->
-    <CLRTestTargetUnsupported Condition="'$(TargetArchitecture)' == 's390x'">true</CLRTestTargetUnsupported>
-    <CLRTestTargetUnsupported Condition="'$(TargetArchitecture)' == 'ppc64le'">true</CLRTestTargetUnsupported>
-  </PropertyGroup>
-  <PropertyGroup>
     <DebugType>None</DebugType>
     <Optimize>True</Optimize>
   </PropertyGroup>

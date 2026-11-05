@@ -198,6 +198,11 @@ NESTED_END CallEHFunclet, _TEXT
 #   r4 = CallerSP of the dynamically containing frame
 #   r5 = filter funclet entry point
 #   r6 = address where this helper's SP is stored
+#   r7 = live frame pointer (r31) of the frame being filtered
+#
+# The filter funclet is entered with r3 = throwable, r4 = CallerSP and
+# r5 = live frame pointer.  After a localloc the frame pointer cannot be
+# derived from CallerSP, so the VM passes it explicitly.
 #
 # Returns:
 #   r3 = filter result
@@ -220,8 +225,10 @@ NESTED_ENTRY CallEHFilterFunclet, _TEXT, NoHandler
 
     # r3 remains throwable.
     # r4 remains CallerSP.
+    # r5 = live frame pointer of the filtered frame (from r7).
     # ELFv2 indirect-call target convention.
     mr      %r12, %r5
+    mr      %r5, %r7
     mtctr   %r12
     bctrl
 

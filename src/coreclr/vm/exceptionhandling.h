@@ -502,7 +502,12 @@ private:
                     EE_ILEXCEPTION_CLAUSE*  pEHClause,
                     MethodDesc*             pMD,
                     EHFuncletType           funcletType,
+#if defined(TARGET_POWERPC64)
+                    PT_CONTEXT              pContextRecord,
+                    TADDR                   uFilterFramePointer = 0);
+#else
                     PT_CONTEXT              pContextRecord);
+#endif
 
     inline static BOOL
         ClauseCoversPC(EE_ILEXCEPTION_CLAUSE* pEHClause,
