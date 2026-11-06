@@ -18923,9 +18923,7 @@ enter_msl_status gc_heap::trigger_gc_for_alloc (int gen_number, gc_reason gr,
     }
 #endif //MULTIPLE_HEAPS
 
-#if !defined(TARGET_POWERPC64)
     vm_heap->GarbageCollectGeneration (gen_number, gr);
-#endif
 
 #ifdef MULTIPLE_HEAPS
     if (!loh_p)
@@ -50233,9 +50231,6 @@ BOOL should_collect_optimized (dynamic_data* dd, BOOL low_memory_p)
 HRESULT
 GCHeap::GarbageCollect (int generation, bool low_memory_p, int mode)
 {
-#if defined(TARGET_POWERPC64)
-    return S_OK; // FIXME TARGET_POWERPC64
-#endif
 
 #if defined(HOST_64BIT)
     if (low_memory_p)
