@@ -3943,8 +3943,8 @@ void GCInfo::gcInfoBlockHdrSave(GcInfoEncoder* gcInfoEncoder, unsigned methodSiz
     {
         assert(compiler->lvaGSSecurityCookie != BAD_VAR_NUM);
 
-        int offset;
 #if defined(TARGET_POWERPC64)
+        int offset;
         if (compiler->compLocallocUsed)
         {
             // Encode relocated localloc cookies as positive offsets from the current R31.
@@ -3952,14 +3952,14 @@ void GCInfo::gcInfoBlockHdrSave(GcInfoEncoder* gcInfoEncoder, unsigned methodSiz
             assert(offset > 0);
         }
         else
-#endif
         {
             // Normally report the cookie relative to caller SP.
             offset = compiler->lvaGetCallerSPRelativeOffset(compiler->lvaGSSecurityCookie);
-#if defined(TARGET_POWERPC64)
             assert(offset < 0);
-#endif
         }
+#else
+        const int offset = compiler->lvaGetCallerSPRelativeOffset(compiler->lvaGSSecurityCookie);
+#endif
 
         // The code offset ranges assume that the GS Cookie slot is initialized in the prolog, and is valid
         // through the remainder of the method.  We will not query for the GS Cookie while we're in an epilog,
