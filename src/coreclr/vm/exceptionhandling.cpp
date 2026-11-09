@@ -243,7 +243,11 @@ void InitializeExceptionHandling()
 
     g_theTrackerAllocator.Init();
 
-    g_isNewExceptionHandlingEnabled = false; // FIXME-S390 and TARGET_POWERPC64 Configuration::GetKnobBooleanValue(W("System.Runtime.LegacyExceptionHandling"), CLRConfig::EXTERNAL_LegacyExceptionHandling ) == 0;
+#if defined(TARGET_POWERPC64)
+    g_isNewExceptionHandlingEnabled = false; // FIXME-TARGET_POWERPC64
+#else
+    g_isNewExceptionHandlingEnabled = Configuration::GetKnobBooleanValue(W("System.Runtime.LegacyExceptionHandling"), CLRConfig::EXTERNAL_LegacyExceptionHandling ) == 0;
+#endif
 
 #ifdef TARGET_UNIX
     // Register handler of hardware exceptions like null reference in PAL
@@ -5105,10 +5109,12 @@ VOID DECLSPEC_NORETURN DispatchManagedException(PAL_SEHException& ex, bool isHar
 
                 if (Thread::VirtualUnwindToFirstManagedCallFrame(&frameContext) == 0)
                 {
+#if defined(TARGET_POWERPC64)
                     if (NativeExceptionHolderBase::FindNextHolder(nullptr, (void*)currentSP, (void*)(intptr_t)-1) != nullptr)
                     {
                         break;
                     }
+#endif
                     // There are no managed frames on the stack, so the exception was not handled
                     LONG disposition = InternalUnhandledExceptionFilter_Worker(&ex.ExceptionPointers);
                     _ASSERTE(disposition == EXCEPTION_CONTINUE_SEARCH);
@@ -7769,8 +7775,6 @@ UINT_PTR GetEstablisherFrame(REGDISPLAY* pvRegDisplay, ExInfo* exInfo)
     return pvRegDisplay->SP;
 #elif defined(HOST_LOONGARCH64)
     return pvRegDisplay->SP;
-#elif defined(HOST_S390X)
-    return pvRegDisplay->SP;
 #elif defined(HOST_POWERPC64)
     return pvRegDisplay->SP;
 #endif
@@ -7995,8 +7999,6 @@ extern "C" void * QCALLTYPE CallCatchFunclet(QCall::ObjectHandleOnStack exceptio
 #define FIRST_ARG_REG R0
 #elif defined(HOST_RISCV64) || defined(HOST_LOONGARCH64)
 #define FIRST_ARG_REG A0
-#elif defined(HOST_S390X)
-#define FIRST_ARG_REG R2
 #elif defined(HOST_POWERPC64)
 #define FIRST_ARG_REG R3
 #endif
