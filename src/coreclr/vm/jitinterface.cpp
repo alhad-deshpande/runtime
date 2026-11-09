@@ -11229,7 +11229,7 @@ void CEEJitInfo::allocUnwindInfo (
 
     RUNTIME_FUNCTION__SetBeginAddress(pRuntimeFunction, currentCodeOffset + startOffset);
 
-#if defined(TARGET_AMD64) || defined(TARGET_S390X) || defined(TARGET_POWERPC64)
+#if defined(TARGET_AMD64) || defined(TARGET_POWERPC64)
     pRuntimeFunction->EndAddress        = currentCodeOffset + endOffset;
 #endif
 
