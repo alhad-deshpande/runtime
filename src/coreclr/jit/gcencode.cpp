@@ -3939,19 +3939,27 @@ void GCInfo::gcInfoBlockHdrSave(GcInfoEncoder* gcInfoEncoder, unsigned methodSiz
         gcInfoEncoderWithLog->SetGenericsInstContextStackSlot(offset, GENERIC_CONTEXTPARAM_THIS);
     }
 
-#if defined(TARGET_POWERPC64)
-    // On PPC64, genLclHeap relocates the whole frame (including the GS cookie) down by the localloc size,
-    // so the caller-SP-relative slot reported to the VM would point into the localloc buffer.
-    // The JIT-generated epilog cookie check still runs; just don't publish the slot to the stack walker.
-    if (compiler->getNeedsGSSecurityCookie() && !compiler->compLocallocUsed)
-#else
     if (compiler->getNeedsGSSecurityCookie())
-#endif
     {
         assert(compiler->lvaGSSecurityCookie != BAD_VAR_NUM);
 
-        // The lv offset is FP-relative, and the using code expects caller-sp relative, so translate.
-        const int offset = compiler->lvaGetCallerSPRelativeOffset(compiler->lvaGSSecurityCookie);
+        int offset;
+#if defined(TARGET_POWERPC64)
+        if (compiler->compLocallocUsed)
+        {
+            // Encode relocated localloc cookies as positive offsets from the current R31.
+            offset = compiler->lvaTable[compiler->lvaGSSecurityCookie].GetStackOffset();
+            assert(offset > 0);
+        }
+        else
+#endif
+        {
+            // Normally report the cookie relative to caller SP.
+            offset = compiler->lvaGetCallerSPRelativeOffset(compiler->lvaGSSecurityCookie);
+#if defined(TARGET_POWERPC64)
+            assert(offset < 0);
+#endif
+        }
 
         // The code offset ranges assume that the GS Cookie slot is initialized in the prolog, and is valid
         // through the remainder of the method.  We will not query for the GS Cookie while we're in an epilog,
