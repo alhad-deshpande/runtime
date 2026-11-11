@@ -397,47 +397,33 @@ inline ssize_t emitter::emitGetInsAmdAny(const instrDesc* id) const
     id->idReg2((regNumber)encodeMask); // Save in idReg2
 
 #elif defined(TARGET_POWERPC64)
-    assert(REGNUM_BITS >= 6);
+    assert(REGNUM_BITS >= 7);
     encodeMask = 0;
 
-    // PPC64LE callee-saved registers: R14-R31 (18 registers)
-    // Encode first 6 registers in idReg1
-    if ((regmask & RBM_R14) != RBM_NONE)
-        encodeMask |= 0x01;
-    if ((regmask & RBM_R15) != RBM_NONE)
-        encodeMask |= 0x02;
-    if ((regmask & RBM_R16) != RBM_NONE)
-        encodeMask |= 0x04;
-    if ((regmask & RBM_R17) != RBM_NONE)
-        encodeMask |= 0x08;
-    if ((regmask & RBM_R18) != RBM_NONE)
-        encodeMask |= 0x10;
-    if ((regmask & RBM_R19) != RBM_NONE)
-        encodeMask |= 0x20;
+    // PPC64LE callee-saved registers r14..r27 are encoded here, 7 per field.
+    // r28..r30 do not fit; emitNewInstrCallInd/Dir use the large call descriptor
+    // (which records the full register masks) when any of them holds a GC value.
+    assert((regmask & (RBM_R28 | RBM_R29 | RBM_R30)) == RBM_NONE);
+
+    // r14..r20 in idReg1
+    for (unsigned i = 0; i < 7; i++)
+    {
+        if ((regmask & genRegMask((regNumber)(REG_R14 + i))) != RBM_NONE)
+            encodeMask |= (1u << i);
+    }
 
     id->idReg1((regNumber)encodeMask); // Save in idReg1
 
     encodeMask = 0;
 
-    // Encode next 6 registers in idReg2
-    if ((regmask & RBM_R20) != RBM_NONE)
-        encodeMask |= 0x01;
-    if ((regmask & RBM_R21) != RBM_NONE)
-        encodeMask |= 0x02;
-    if ((regmask & RBM_R22) != RBM_NONE)
-        encodeMask |= 0x04;
-    if ((regmask & RBM_R23) != RBM_NONE)
-        encodeMask |= 0x08;
-    if ((regmask & RBM_R24) != RBM_NONE)
-        encodeMask |= 0x10;
-    if ((regmask & RBM_R25) != RBM_NONE)
-        encodeMask |= 0x20;
+    // r21..r27 in idReg2
+    for (unsigned i = 0; i < 7; i++)
+    {
+        if ((regmask & genRegMask((regNumber)(REG_R21 + i))) != RBM_NONE)
+            encodeMask |= (1u << i);
+    }
 
     id->idReg2((regNumber)encodeMask); // Save in idReg2
-
-    // Note: R26-R31 (6 more registers) would need additional storage if all are used
-    // For now, we encode the 12 most commonly used callee-saved registers
-    // If more are needed, additional fields would be required in instrDesc
 
 #else
     NYI("unknown target");
@@ -576,6 +562,27 @@ inline ssize_t emitter::emitGetInsAmdAny(const instrDesc* id) const
         regmask |= RBM_S7;
     if ((encodeMask & 0x08) != 0)
         regmask |= RBM_S8;
+
+#elif defined(TARGET_POWERPC64)
+    assert(REGNUM_BITS >= 7);
+
+    // r14..r20 in idReg1
+    encodeMask = id->idReg1();
+
+    for (unsigned i = 0; i < 7; i++)
+    {
+        if ((encodeMask & (1u << i)) != 0)
+            regmask |= genRegMask((regNumber)(REG_R14 + i));
+    }
+
+    // r21..r27 in idReg2
+    encodeMask = id->idReg2();
+
+    for (unsigned i = 0; i < 7; i++)
+    {
+        if ((encodeMask & (1u << i)) != 0)
+            regmask |= genRegMask((regNumber)(REG_R21 + i));
+    }
 
 #elif defined(TARGET_RISCV64)
     assert(REGNUM_BITS >= 6);
