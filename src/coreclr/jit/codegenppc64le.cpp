@@ -2556,6 +2556,13 @@ void CodeGen::genPutArgReg(GenTreeOp* tree)
     // If child node is not already in the register we need, move it
     inst_Mov(moveType, targetReg, op1->GetRegNum(), /* canSkip */ true);
 
+    // On PPC64LE, the ELFv2 ABI requires narrower-than-64-bit integer arguments to be
+    // sign- or zero-extended to the full 64-bit register width.
+    if (!varTypeIsFloating(targetType) && varTypeIsArithmetic(targetType))
+    {
+        genIntRegExtend(targetType, targetReg);
+    }
+
     genProduceReg(tree);
 }
 
