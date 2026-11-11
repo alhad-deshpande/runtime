@@ -29,8 +29,11 @@ static void UpdateWriteBarrierState(bool skipEphemeralCheck)
 	writeBarrierCodeStartRW = writeBarrierWriterHolder.GetRW();
     }
 
-    // TODO TARGET_POWERPC64
-    // JIT_UpdateWriteBarrierState(GCHeapUtilities::IsServerHeap(), writeBarrierCodeStartRW - writeBarrierCodeStart);
+    // Nothing to patch on PPC64LE: JIT_WriteBarrier / JIT_CheckedWriteBarrier / JIT_ByRefWriteBarrier read
+    // g_lowest_address, g_highest_address, g_ephemeral_low/high, g_card_table (and the card bundle / software
+    // write watch tables) directly from the globals updated in GCToEEInterface::StompWriteBarrier, and use the
+    // ephemeral range check only (equivalent to the "server" write barrier; region tables are not consulted).
+
 }
 
 void InitJITHelpers1()

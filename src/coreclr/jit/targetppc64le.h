@@ -89,13 +89,16 @@
   #define REG_VAR_ORDER_FLT        REG_F0, REG_F1, REG_F2, REG_F3, REG_F4, REG_F5, REG_F6, REG_F7, REG_F8, REG_F9, REG_F10, REG_F11, REG_F12, REG_F13,\
                                    REG_F14, REG_F15, REG_F16, REG_F17, REG_F18, REG_F19, REG_F20, REG_F21, REG_F22, REG_F23, \
                                    REG_F24, REG_F25, REG_F26, REG_F27, REG_F28, REG_F29, REG_F30, REG_F31
-  #define RBM_CALL_GC_REGS_ORDER   RBM_R3,RBM_R4,RBM_R5,RBM_R6,RBM_R7,RBM_R8,RBM_R9,RBM_R10
+  // Registers that can hold GC pointers across a call site, in the order they are encoded in the GC info:
+  // callee-saved r14..r30 (r31 is the frame pointer and never holds a GC pointer) followed by the return registers.
+  // The order here must match RBM_CALL_GC_REGS and CNT_CALL_GC_REGS.
+  #define RBM_CALL_GC_REGS_ORDER   RBM_R14,RBM_R15,RBM_R16,RBM_R17,RBM_R18,RBM_R19,RBM_R20,RBM_R21,RBM_R22,RBM_R23,RBM_R24,RBM_R25,RBM_R26,RBM_R27,RBM_R28,RBM_R29,RBM_R30,RBM_INTRET,RBM_INTRET_1
   #define RBM_CALL_GC_REGS         (RBM_INT_CALLEE_SAVED|RBM_INTRET|RBM_INTRET_1)
 
   #define CNT_CALLEE_SAVED        (18)
   #define CNT_CALLEE_TRASH        (11)
   #define CNT_CALLEE_ENREG        (CNT_CALLEE_SAVED-1)
-  #define CNT_CALL_GC_REGS        (CNT_CALLEE_SAVED+2)
+  #define CNT_CALL_GC_REGS        (17+2)   // r14..r30 + INTRET + INTRET_1; does not fit in 16 bits (see jitgcinfo.h)
 
   #define CNT_CALLEE_SAVED_FLOAT  (18)
   #define CNT_CALLEE_TRASH_FLOAT  (14)

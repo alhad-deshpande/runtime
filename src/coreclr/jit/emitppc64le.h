@@ -301,6 +301,12 @@ bool     emitInsIsVectorLong(instruction ins);
 bool     emitInsIsVectorNarrow(instruction ins);
 bool     emitInsIsVectorWide(instruction ins);
 bool     emitInsDestIsOp2(instruction ins);
+// Returns true if "ins" writes a general purpose register (idReg1) that might hold a GC pointer.
+// This may return false positives.
+bool emitInsMayWriteToGCReg(instruction ins);
+
+// Returns true if instruction "id->idIns()" stores to a local variable stack location.
+bool emitInsWritesToLclVarStackLoc(instrDesc* id);
 emitAttr emitInsTargetRegSize(instrDesc* id);
 emitAttr emitInsLoadStoreSize(instrDesc* id);
 bool IsRedundantMov(instruction ins, emitAttr size, regNumber dst, regNumber src, bool canSkip);
@@ -338,7 +344,8 @@ enum EmitCallType
     EC_INDIR_R,    // Indirect call via register
     EC_COUNT
 };
-
+// Output a call/tail-call instruction and record GC information for it.
+unsigned emitOutputCall(BYTE* dst, instrDesc* id);
 void emitIns_Call(EmitCallType          callType,
                   CORINFO_METHOD_HANDLE methHnd,
                   INDEBUG_LDISASM_COMMA(CORINFO_SIG_INFO* sigInfo) // used to report call sites to the EE

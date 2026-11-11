@@ -1094,8 +1094,12 @@ inline SingleTypeRegSet getSingleTypeRegMask(regNumber reg, var_types regType)
 extern const regMaskTP raRbmCalleeSaveOrder[CNT_CALL_GC_REGS];
 
 // This method takes a "compact" bitset of the callee-saved registers, and "expands" it to a full register mask.
+#ifdef TARGET_POWERPC64
+// CNT_CALL_GC_REGS does not fit in 16 bits on this target.
+regMaskTP genRegMaskFromCalleeSavedMask(unsigned);
+#else
 regMaskTP genRegMaskFromCalleeSavedMask(unsigned short);
-
+#endif
 /*****************************************************************************
  *
  *  Assumes that "reg" is of the given "type". Return the next unused reg number after "reg"

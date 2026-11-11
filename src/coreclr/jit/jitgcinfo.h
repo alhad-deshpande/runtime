@@ -185,9 +185,14 @@ public:
         unsigned short rpdIsThis : 1;                       // is it the 'this' pointer
         unsigned short rpdCall   : 1;                       // is this a true call site?
         unsigned short           : 1;                       // Padding bit, so next two start on a byte boundary
+#ifdef TARGET_POWERPC64
+        // CNT_CALL_GC_REGS is larger than 16 on this target.
+        unsigned rpdCallGCrefRegs : CNT_CALL_GC_REGS; // Callee-saved and return registers containing GC pointers.
+        unsigned rpdCallByrefRegs : CNT_CALL_GC_REGS; // Callee-saved and return registers containing byrefs.
+#else
         unsigned short rpdCallGCrefRegs : CNT_CALL_GC_REGS; // Callee-saved and return registers containing GC pointers.
         unsigned short rpdCallByrefRegs : CNT_CALL_GC_REGS; // Callee-saved and return registers containing byrefs.
-
+#endif
 #ifndef JIT32_GCENCODER
         bool rpdIsCallInstr()
         {

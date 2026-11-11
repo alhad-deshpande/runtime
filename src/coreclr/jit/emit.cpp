@@ -3550,6 +3550,10 @@ emitter::instrDesc* emitter::emitNewInstrCallInd(int              argCnt,
     emitAttr retSize = (retSizeIn != EA_UNKNOWN) ? retSizeIn : EA_PTRSIZE;
 
     bool gcRefRegsInScratch = ((gcrefRegs & RBM_CALLEE_TRASH) != 0);
+#ifdef TARGET_POWERPC64
+    // The small descriptor can only encode r14..r27; use the large descriptor if r28..r30 hold GC refs.
+    gcRefRegsInScratch = gcRefRegsInScratch || ((gcrefRegs & (RBM_R28 | RBM_R29 | RBM_R30)) != 0);
+#endif
 
     // Allocate a larger descriptor if any GC values need to be saved
     // or if we have an absurd number of arguments or a large address
@@ -3642,6 +3646,10 @@ emitter::instrDesc* emitter::emitNewInstrCallDir(int              argCnt,
     // register (RDX) is a GCRef or ByRef pointer.
 
     bool gcRefRegsInScratch = ((gcrefRegs & RBM_CALLEE_TRASH) != 0);
+#ifdef TARGET_POWERPC64
+    // The small descriptor can only encode r14..r27; use the large descriptor if r28..r30 hold GC refs.
+    gcRefRegsInScratch = gcRefRegsInScratch || ((gcrefRegs & (RBM_R28 | RBM_R29 | RBM_R30)) != 0);
+#endif
 
     if (!VarSetOps::IsEmpty(emitComp, GCvars) || // any frame GCvars live
         gcRefRegsInScratch ||                    // any register gc refs live in scratch regs
