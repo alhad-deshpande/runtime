@@ -7631,6 +7631,12 @@ void CodeGen::genCallPlaceRegArgs(GenTreeCall* call)
             regNumber argReg = abiInfo.Segment(0).GetRegister();
             genConsumeReg(argNode);
             inst_Mov(genActualType(argNode), argReg, argNode->GetRegNum(), /* canSkip */ true);
+#ifdef TARGET_POWERPC64
+            if (!varTypeIsFloating(argNode->TypeGet()) && varTypeIsArithmetic(argNode->TypeGet()))
+            {
+                genIntRegExtend(argNode->TypeGet(), argReg);
+            }
+#endif
             continue;
         }
 
