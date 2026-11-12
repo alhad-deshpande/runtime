@@ -2887,10 +2887,10 @@ void LinearScan::buildInitialParamDef(const LclVarDsc* varDsc, regNumber paramRe
 {
     assert(isCandidateVar(varDsc));
 
+#ifdef TARGET_POWERPC64
     Interval*       interval = getIntervalForLocalVar(varDsc->lvVarIndex);
     var_types       regType  = varDsc->GetRegisterType();
-    
-#ifdef TARGET_POWERPC64
+
     // For PPC64LE, HFA-like structs may have regType TYP_LONG but are passed in float registers.
     // Override the register type to match the actual register being used.
     if (regType == TYP_LONG && varDsc->lvIsParam && genIsValidFloatReg(paramReg))
@@ -2912,8 +2912,11 @@ void LinearScan::buildInitialParamDef(const LclVarDsc* varDsc, regNumber paramRe
             }
         }
     }
+#else
+    Interval*        interval = getIntervalForLocalVar(varDsc->lvVarIndex);
+    const var_types  regType  = varDsc->GetRegisterType();
 #endif
-    
+
     SingleTypeRegSet mask     = allRegs(regType);
     if ((paramReg != REG_NA) && !stressInitialParamReg())
     {
