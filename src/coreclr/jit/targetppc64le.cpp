@@ -79,8 +79,8 @@ bool IsPpc64leHfaLikeStruct(Compiler* comp, CORINFO_CLASS_HANDLE hClass, var_typ
 
 
 //-----------------------------------------------------------------------------
-// S390xClassifier:
-//   Construct a new instance of the S390X ABI classifier.
+// Ppc64leClassifier:
+//   Construct a new instance of the POWERPC64 ABI classifier.
 //
 // Parameters:
 //   info - Info about the method being classified.
