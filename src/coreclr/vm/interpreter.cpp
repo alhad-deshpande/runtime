@@ -6,7 +6,7 @@
 
 #ifdef FEATURE_INTERPRETER
 
-#if defined(__powerpc64__) || defined(TARGET_POWERPC64)
+#if defined(__powerpc64__)
 #define _I64_MIN LONG_MIN
 #define _I64_MAX LONG_MAX
 #define _UI64_MAX ULONG_MAX
@@ -40,7 +40,7 @@ static CorInfoType asCorInfoType(CORINFO_CLASS_HANDLE clsHnd)
     return CEEInfo::asCorInfoType(typeHnd.GetInternalCorElementType(), typeHnd, NULL);
 }
 
-#if defined(TARGET_POWERPC64) || defined(HOST_POWERPC64)
+#if defined(HOST_POWERPC64) 
 static bool isNativePrimitiveStructType(CEEInfo *info, CORINFO_CLASS_HANDLE clsHnd)
 {
     if (!info->isIntrinsicType(clsHnd))
@@ -57,7 +57,7 @@ static bool isNativePrimitiveStructType(CEEInfo *info, CORINFO_CLASS_HANDLE clsH
 
     return strcmp(typeName, "CLong") == 0 || strcmp(typeName, "CULong") == 0 || strcmp(typeName, "NFloat") == 0;
 }
-#endif // TARGET_POWERPC64 || HOST_POWERPC64
+#endif // HOST_POWERPC64
 
 InterpreterMethodInfo::InterpreterMethodInfo(CEEInfo* comp, CORINFO_METHOD_INFO* methInfo)
     : m_method(methInfo->ftn),
@@ -10960,7 +10960,7 @@ void Interpreter::CallI()
         // TODO: Investigate why HasRetBuffArg can't be used. pMD is a hacked up MD for the
         // calli because it belongs to the current method. Doing what the JIT does.
         hasRetBuffArg = (retTypeSz > sizeof(void*)) || ((retTypeSz & (retTypeSz - 1)) != 0);
-#elif defined(TARGET_POWERPC64) || defined(HOST_POWERPC64)
+#elif defined(HOST_POWERPC64)
         if (!isNativePrimitiveStructType(&m_interpCeeInfo, retTypeClsHnd))
         {
             hasRetBuffArg = true;
