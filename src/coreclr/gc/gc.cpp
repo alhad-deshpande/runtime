@@ -51711,6 +51711,9 @@ int GCHeap::StartNoGCRegion(uint64_t totalSize, bool lohSizeKnown, uint64_t lohS
     if (status == start_no_gc_success)
     {
         GarbageCollect (max_generation);
+#if defined(TARGET_POWERPC64)
+        pGenGCHeap->allocate_for_no_gc_after_gc();
+#endif
         status = gc_heap::get_start_no_gc_region_status();
     }
 
