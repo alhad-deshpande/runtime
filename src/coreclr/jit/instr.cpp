@@ -86,7 +86,7 @@ const char* CodeGen::genInsName(instruction ins)
         #define INST(id, nm, ldst, e1) nm,
         #include "instrs.h"
 
-#elif defined(TARGET_POWERPC64) //TODO POWERPC64 -> Vikas
+#elif defined(TARGET_POWERPC64) //TODO POWERPC64
 	#define INST(id, nm, ldst, fmt, e1 ) nm,
         #include "instrs.h"
 
