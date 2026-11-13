@@ -166,6 +166,7 @@ extern void notYetImplemented(const char* msg, const char* file, unsigned line);
 #define NYI_LOONGARCH64(msg) do { } while (0)
 #define NYI_RISCV64(msg) do { } while (0)
 #define NYI_POWERPC64(msg) do { } while (0)
+
 #elif defined(TARGET_X86)
 
 #define NYI_AMD64(msg)  do { } while (0)
@@ -220,7 +221,7 @@ extern void notYetImplemented(const char* msg, const char* file, unsigned line);
 #define NYI_ARM(msg)    do { } while (0)
 #define NYI_ARM64(msg)  do { } while (0)
 #define NYI_LOONGARCH64(msg) do { } while (0)
-#define NYI_RISCV64(msg)do { } while (0)
+#define NYI_RISCV64(msg) do { } while (0)
 #define NYI_POWERPC64(msg) NYIRAW("NYI_POWERPC64: " msg)
 #else
 

@@ -3272,6 +3272,7 @@ private:
 
     size_t emitSizeOfInsDsc(instrDesc* id) const;
 
+#if defined(TARGET_POWERPC64)
     // Describes which instrDesc subtype was allocated for an INS_addi instruction.
     // Each emitter function that emits INS_addi calls a different allocator, so the
     // concrete descriptor type cannot be recovered from the instruction opcode alone.
@@ -3299,6 +3300,7 @@ private:
     };
 
     static addiInsDscKind addiClassifyInsDsc(const instrDesc* id);
+#endif // TARGET_POWERPC64
 
     /************************************************************************/
     /*        The following keeps track of stack-based GC values            */
