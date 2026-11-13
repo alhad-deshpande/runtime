@@ -5897,17 +5897,9 @@ void CodeGen::genFnEpilog(BasicBlock* block)
     {
         paramSaveArea = compiler->compArgSize;
     }
+    // The callee-saved area must start above the end of all locals (including PSPSym/MonAcquired,
+    // which are already part of compLclFrameSize); otherwise it overlaps the last locals.
     int localFrameSize = LINKAGE_AREA_SIZE + paramSaveArea + compiler->compLclFrameSize;
-
-    if (compiler->lvaPSPSym != BAD_VAR_NUM)
-    {
-        localFrameSize -= TARGET_POINTER_SIZE;
-    }
-
-    if ((compiler->lvaMonAcquired != BAD_VAR_NUM) && !compiler->opts.IsOSR())
-    {
-        localFrameSize -= TARGET_POINTER_SIZE;
-    }
 
     constexpr int FP_backchain_save_offset = -8;
     constexpr int LR_save_offset = 16;
@@ -6151,17 +6143,9 @@ void CodeGen::genPushCalleeSavedRegisters()
         paramSaveArea = compiler->compArgSize;
     }
     
+    // The callee-saved area must start above the end of all locals (including PSPSym/MonAcquired,
+    // which are already part of compLclFrameSize); otherwise it overlaps the last locals.
     int localFrameSize = LINKAGE_AREA_SIZE + paramSaveArea + compiler->compLclFrameSize;
-
-    if (compiler->lvaPSPSym != BAD_VAR_NUM)
-    {
-        localFrameSize -= TARGET_POINTER_SIZE;
-    }
-
-    if ((compiler->lvaMonAcquired != BAD_VAR_NUM) && !compiler->opts.IsOSR())
-    {
-        localFrameSize -= TARGET_POINTER_SIZE;
-    }
 
 #ifdef DEBUG
     if (compiler->opts.disAsm)
