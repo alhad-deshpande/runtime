@@ -3278,7 +3278,6 @@ GenTree* Compiler::fgMorphMultiregStructArg(CallArg* arg)
                     }
                 }
                 else
-#endif
                 {
                     for (unsigned slotOffset = 0; slotOffset < seg.Size; slotOffset += TARGET_POINTER_SIZE)
                     {
@@ -3287,6 +3286,14 @@ GenTree* Compiler::fgMorphMultiregStructArg(CallArg* arg)
                         newArg->AddField(this, access, layoutOffset, access->TypeGet());
                     }
                 }
+#else
+                for (unsigned slotOffset = 0; slotOffset < seg.Size; slotOffset += TARGET_POINTER_SIZE)
+                {
+                    unsigned layoutOffset = seg.Offset + slotOffset;
+                    GenTree* access       = createSlotAccess(layoutOffset, TYP_UNDEF);
+                    newArg->AddField(this, access, layoutOffset, access->TypeGet());
+                }
+#endif // TARGET_POWERPC64
             }
         }
 

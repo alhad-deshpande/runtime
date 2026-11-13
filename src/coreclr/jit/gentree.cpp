@@ -274,11 +274,15 @@ void GenTree::InitNodeSize()
     // obtained from the child node.
     GenTree::s_gtNodeSizes[GT_PUTARG_STK]    = TREE_NODE_SZ_LARGE;
 #if FEATURE_ARG_SPLIT
+#ifdef TARGET_POWERPC64
     // Ensure GT_PUTARG_SPLIT has enough space for the actual structure size
     // On some platforms (e.g., PowerPC64 with MAX_REG_ARG=8), GenTreePutArgSplit
     // may be larger than TREE_NODE_SZ_LARGE.
     GenTree::s_gtNodeSizes[GT_PUTARG_SPLIT]  =
         (sizeof(GenTreePutArgSplit) > TREE_NODE_SZ_LARGE) ? sizeof(GenTreePutArgSplit) : TREE_NODE_SZ_LARGE;
+#else
+    GenTree::s_gtNodeSizes[GT_PUTARG_SPLIT]  = TREE_NODE_SZ_LARGE;
+#endif // TARGET_POWERPC64
 #endif // FEATURE_ARG_SPLIT
 #endif // FEATURE_PUT_STRUCT_ARG_STK
 
