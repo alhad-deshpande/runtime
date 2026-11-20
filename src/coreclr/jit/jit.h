@@ -221,7 +221,7 @@
 #error Cannot define both TARGET_ARM and TARGET_RISCV64
 #endif
 #if defined(TARGET_POWERPC64)
-#error Cannot define both TARGET_ARM64 and TARGET_POWERPC64
+#error Cannot define both TARGET_ARM and TARGET_POWERPC64
 #endif
 #elif defined(TARGET_ARM64)
 #if defined(TARGET_X86)
@@ -276,9 +276,6 @@
 #endif
 #if defined(TARGET_LOONGARCH64)
 #error Cannot define both TARGET_RISCV64 and TARGET_LOONGARCH64
-#endif
-#if defined(TARGET_POWERPC64)
-#error Cannot define both TARGET_RISCV64 and TARGET_POWERPC64
 #endif
 #if defined(TARGET_POWERPC64)
 #error Cannot define both TARGET_RISCV64 and TARGET_POWERPC64

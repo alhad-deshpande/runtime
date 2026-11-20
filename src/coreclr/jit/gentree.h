@@ -3674,7 +3674,11 @@ static const unsigned PACKED_GTF_SPILLED = 2;
 //
 inline GenTreeFlags GetMultiRegSpillFlagsByIdx(MultiRegSpillFlags flags, unsigned idx)
 {
+#ifdef TARGET_POWERPC64
     static_assert_no_msg(MAX_MULTIREG_COUNT * 2 <= sizeof(MultiRegSpillFlags) * BITS_PER_BYTE);
+#else
+    static_assert_no_msg(MAX_MULTIREG_COUNT * 2 <= sizeof(unsigned char) * BITS_PER_BYTE);
+#endif
     assert(idx < MAX_MULTIREG_COUNT);
 
     unsigned     bits       = flags >> (idx * 2); // It doesn't matter that we possibly leave other high bits here.
@@ -3706,7 +3710,11 @@ inline GenTreeFlags GetMultiRegSpillFlagsByIdx(MultiRegSpillFlags flags, unsigne
 //
 inline MultiRegSpillFlags SetMultiRegSpillFlagsByIdx(MultiRegSpillFlags oldFlags, GenTreeFlags flagsToSet, unsigned idx)
 {
+#ifdef TARGET_POWERPC64
     static_assert_no_msg(MAX_MULTIREG_COUNT * 2 <= sizeof(MultiRegSpillFlags) * BITS_PER_BYTE);
+#else
+    static_assert_no_msg(MAX_MULTIREG_COUNT * 2 <= sizeof(unsigned char) * BITS_PER_BYTE);
+#endif
     assert(idx < MAX_MULTIREG_COUNT);
 
     MultiRegSpillFlags newFlags = oldFlags;

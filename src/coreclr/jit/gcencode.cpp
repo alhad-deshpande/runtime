@@ -3786,7 +3786,7 @@ public:
             printf("Set WantsReportOnlyLeaf.\n");
         }
     }
-#elif defined(TARGET_ARMARCH) || defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64) || defined(TARGET_POWERPC64)
+#elif defined(TARGET_ARMARCH) || defined(TARGET_POWERPC64)
     void SetHasTailCalls()
     {
         m_gcInfoEncoder->SetHasTailCalls();
@@ -3943,6 +3943,7 @@ void GCInfo::gcInfoBlockHdrSave(GcInfoEncoder* gcInfoEncoder, unsigned methodSiz
     {
         assert(compiler->lvaGSSecurityCookie != BAD_VAR_NUM);
 
+        // The lv offset is FP-relative, and the using code expects caller-sp relative, so translate.
 #if defined(TARGET_POWERPC64)
         int offset;
         if (compiler->compLocallocUsed)
@@ -3989,12 +3990,12 @@ void GCInfo::gcInfoBlockHdrSave(GcInfoEncoder* gcInfoEncoder, unsigned methodSiz
     }
 #endif // TARGET_AMD64
 
-#if defined(TARGET_ARMARCH) || defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64) || defined(TARGET_POWERPC64)
+#if defined(TARGET_ARMARCH) || defined(TARGET_POWERPC64)
     if (compiler->codeGen->GetHasTailCalls())
     {
         gcInfoEncoderWithLog->SetHasTailCalls();
     }
-#endif // TARGET_ARMARCH || TARGET_LOONGARCH64 || TARGET_RISCV64 || TARGET_POWERPC64
+#endif // TARGET_ARMARCH || TARGET_POWERPC64
 
 #if FEATURE_FIXED_OUT_ARGS
     // outgoing stack area size
