@@ -14,6 +14,7 @@ set -- "${saved[@]}"
 jump="$2"
 prefix1="$3"
 prefix2="$4"
+arch="$(uname -m)"
 
 while read -r line; do
   # Skip empty lines and comment lines starting with semicolon
@@ -30,7 +31,9 @@ while read -r line; do
     line="${line//#/}"
     printf "LEAF_ENTRY %s%s, _TEXT\n" "$prefix1" "$line"
     printf "    %s EXTERNAL_C_FUNC(%s%s)\n" "$jump" "$prefix2" "$line"
-    printf "    nop\n"
+    if [[ "$arch" == "ppc64le" ]]; then
+      printf "    nop\n"
+    fi
     printf "LEAF_END %s%s, _TEXT\n\n" "$prefix1" "$line"
   fi
 done < "$1"
