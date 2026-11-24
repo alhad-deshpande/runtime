@@ -53,7 +53,11 @@ inline void Interpreter::LdFromMemAddr(void* addr, InterpreterType tp)
         {
             // Large struct case.
             void* ptr = LargeStructOperandStackPush(sz);
+#if defined(TARGET_POWERPC64)
             memmove(ptr, addr, sz);
+#else
+            memcpy(ptr, addr, sz);
+#endif
             OpStackSet<void*>(stackHt, ptr);
         }
         else
@@ -124,6 +128,7 @@ inline void Interpreter::LdLoc(int locNum)
     unsigned stackHt = m_curStackHt;
     GCX_FORBID();
 
+#if defined(TARGET_POWERPC64)
     // Small types might have been modified via a pointer handed out by LdLocA.
     // Ensure values are properly normalized when pushed to the stack.
     INT64 val = *FixedSizeLocalSlot(locNum);
@@ -143,16 +148,17 @@ inline void Interpreter::LdLoc(int locNum)
     case CORINFO_TYPE_CHAR:
         OpStackSet<UINT32>(stackHt, static_cast<UINT16>(val));
         break;
-#if defined(TARGET_POWERPC64)
     case CORINFO_TYPE_INT:
     case CORINFO_TYPE_FLOAT:
 	OpStackSet<INT32>(stackHt, static_cast<INT32>(val));
 	break;
-#endif
     default:
         OpStackSet<INT64>(stackHt, val);
         break;
     }
+#else
+    OpStackSet<INT64>(stackHt, *FixedSizeLocalSlot(locNum));
+#endif
 
     InterpreterType tp = m_methInfo->m_localDescs[locNum].m_typeStackNormal;
     OpStackTypeSet(stackHt, tp);
@@ -220,7 +226,11 @@ void Interpreter::StLoc(int locNum)
 
         // Now we can do the copy.
         void* srcAddr = OpStackGet<void*>(ind);
+#if defined(TARGET_POWERPC64)
         memmove(addr, srcAddr, sz);
+#else
+        memcpy(addr, srcAddr, sz);
+#endif
         LargeStructOperandStackPop(sz, srcAddr);
     }
     else
@@ -270,7 +280,11 @@ void Interpreter::StToLocalMemAddr(void* addr, InterpreterType tp)
         {
             // Large struct case.
             void* srcAddr = OpStackGet<void*>(m_curStackHt);
+#if defined(TARGET_POWERPC64)
             memmove(addr, srcAddr, sz);
+#else
+            memcpy(addr, srcAddr, sz);
+#endif
             LargeStructOperandStackPop(sz, srcAddr);
         }
         else
@@ -497,7 +511,9 @@ void Interpreter::ThrowOnInvalidPointer(void* ptr)
 
     EX_TRY
     {
+#if defined(TARGET_POWERPC64)
         CatchHardwareExceptionHolder __catchHardwareException;
+#endif
         AVInRuntimeImplOkayHolder AVOkay;
         good = *(BOOL*)ptr;
 

@@ -484,11 +484,18 @@ FCIMPL4(void, DebugStackTrace::GetStackFramesInternal,
                         if (debugDirectory != nullptr)
                         {
                             size_t nbytes = 0;
+#if defined(TARGET_POWERPC64)
                             while (nbytes < VAL32(debugDirectoryEntry->Size))
                             {
                                 if ((debugDirectory->Type == VAL32(IMAGE_DEBUG_TYPE_CODEVIEW)
                                      && debugDirectory->MinorVersion == VAL16(PORTABLE_PDB_MINOR_VERSION)) ||
                                     (debugDirectory->Type == VAL32(IMAGE_DEBUG_TYPE_EMBEDDED_PORTABLE_PDB)))
+#else
+                            while (nbytes < debugDirectoryEntry->Size)
+                            {
+                                if ((debugDirectory->Type == IMAGE_DEBUG_TYPE_CODEVIEW && debugDirectory->MinorVersion == PORTABLE_PDB_MINOR_VERSION) ||
+                                    (debugDirectory->Type == IMAGE_DEBUG_TYPE_EMBEDDED_PORTABLE_PDB))
+#endif
                                 {
                                     fPortablePDB = TRUE;
                                     break;

@@ -69,6 +69,7 @@ namespace
             UNREACHABLE_MSG("unexpected ILStubEHClause kind");
         }
         _ASSERTE(idx < nClauses);
+#if defined(TARGET_POWERPC64)
         COR_ILMETHOD_SECT_EH_CLAUSE_FAT* clause = (COR_ILMETHOD_SECT_EH_CLAUSE_FAT*)&pEHSect->Fat.Clauses[idx];
         clause->SetFlags(flags);
         clause->SetTryOffset(pClause->dwTryBeginOffset);
@@ -76,13 +77,26 @@ namespace
         clause->SetHandlerOffset(pClause->dwHandlerBeginOffset);
         clause->SetHandlerLength(pClause->cbHandlerLength);
         clause->SetClassToken(pClause->dwTypeToken);
+#else
+        pEHSect->Fat.Clauses[idx].Flags = flags;
+        pEHSect->Fat.Clauses[idx].TryOffset = pClause->dwTryBeginOffset;
+        pEHSect->Fat.Clauses[idx].TryLength = pClause->cbTryLength;
+        pEHSect->Fat.Clauses[idx].HandlerOffset = pClause->dwHandlerBeginOffset;
+        pEHSect->Fat.Clauses[idx].HandlerLength = pClause->cbHandlerLength;
+        pEHSect->Fat.Clauses[idx].ClassToken = pClause->dwTypeToken;
+#endif
     }
 
     VOID PopulateEHSect(COR_ILMETHOD_SECT_EH * pEHSect, int nClauses, ILStubEHClause * pOne, ILStubEHClause * pTwo)
     {
         LIMITED_METHOD_CONTRACT;
+#if defined(TARGET_POWERPC64)
         pEHSect->Fat.SetKind(CorILMethod_Sect_EHTable | CorILMethod_Sect_FatFormat);
         pEHSect->Fat.SetDataSize(COR_ILMETHOD_SECT_EH_FAT::Size(nClauses));
+#else
+        pEHSect->Fat.Kind       = (CorILMethod_Sect_EHTable | CorILMethod_Sect_FatFormat);
+        pEHSect->Fat.DataSize   = COR_ILMETHOD_SECT_EH_FAT::Size(nClauses);
+#endif
 
         int curIdx = 0;
         AppendEHClause(nClauses, pEHSect, pOne, &curIdx);

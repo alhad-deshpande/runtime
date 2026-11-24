@@ -1864,11 +1864,13 @@ EEClass::CheckForHFA()
         return true;
     }
 
+#if defined(TARGET_POWERPC64)
     if (GetMethodTable()->GetMDImport()->GetCustomAttributeByName(GetMethodTable()->GetCl(),
           "System.Runtime.CompilerServices.CompilerGeneratedAttribute", NULL, NULL) == S_OK)
     {
         return false;
     }
+#endif
 
     CorInfoHFAElemType hfaType = CORINFO_HFA_ELEM_NONE;
 

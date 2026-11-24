@@ -2023,6 +2023,26 @@ void * EECodeManager::GetGSCookieAddr(PREGDISPLAY     pContext,
     {
         if(relOffset >= gcInfoDecoder.GetGSCookieValidRangeStart())
         {
+#if defined(TARGET_POWERPC64)
+            if (spOffsetGSCookie > 0)
+            {
+                // Positive PPC64LE cookie offsets are relative to the active R31.
+                TADDR fp = (TADDR)pContext->pCurrentContext->R31;
+
+                // During localloc relocation, R31 temporarily holds caller SP.
+                // Check the frame base before unwinding through the backchain.
+                if (fp != pContext->SP)
+                {
+                    return nullptr;
+                }
+
+                TADDR callerSp = GetCallerSp(pContext);
+                TADDR ptr = fp + spOffsetGSCookie;
+
+                // The slot must lie within the active frame.
+                return (ptr >= pContext->SP && ptr < callerSp) ? (LPVOID)ptr : nullptr;
+            }
+#endif
             TADDR ptr = GetCallerSp(pContext) + spOffsetGSCookie;
 
             // Detect the end of GS cookie scope by comparing its address with SP

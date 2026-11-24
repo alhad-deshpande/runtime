@@ -609,11 +609,19 @@ ILStubLinker::LogILStubWorker(
     {
         if (pDumpILStubCode)
         {
+#if defined(TARGET_POWERPC64)
             pDumpILStubCode->AppendPrintf("IL_%04x:\n", (uint32_t)*pcbCode);
+#else
+            pDumpILStubCode->AppendPrintf("IL_%04zx:\n", *pcbCode);
+#endif
         }
         else
         {
+#if defined(TARGET_POWERPC64)
             LOG((LF_STUBS, LL_INFO1000, "IL_%04x:\n", (uint32_t)*pcbCode));
+#else
+            LOG((LF_STUBS, LL_INFO1000, "IL_%04zx:\n", *pcbCode));
+#endif
         }
     }
 }
@@ -2056,7 +2064,11 @@ FunctionSigBuilder::FunctionSigBuilder() :
     STANDARD_VM_CONTRACT;
     m_qbCallConvModOpts.Init();
     m_qbReturnSig.ReSizeThrows(1);
+#if defined(TARGET_POWERPC64)
     *(BYTE *)m_qbReturnSig.Ptr() = (BYTE)ELEMENT_TYPE_VOID;
+#else
+    *(CorElementType *)m_qbReturnSig.Ptr() = ELEMENT_TYPE_VOID;
+#endif
 }
 
 
@@ -2167,7 +2179,11 @@ FunctionSigBuilder::AddCallConvModOpt(mdToken token)
     int temp;
     ULONG len = CorSigCompressToken(token, &temp);
     m_qbCallConvModOpts.ReSizeThrows(m_qbCallConvModOpts.Size() + 1 + len);
+#if defined(TARGET_POWERPC64)
     *((BYTE*)m_qbCallConvModOpts.Ptr() + m_qbCallConvModOpts.Size() - len - 1) = (BYTE)ELEMENT_TYPE_CMOD_OPT;
+#else
+    SET_UNALIGNED_PTR((BYTE*)m_qbCallConvModOpts.Ptr() + m_qbCallConvModOpts.Size() - len - 1, (BYTE)ELEMENT_TYPE_CMOD_OPT);
+#endif
     memcpyNoGCRefs((BYTE*)m_qbCallConvModOpts.Ptr() + m_qbCallConvModOpts.Size() - len, &temp, len);
 }
 

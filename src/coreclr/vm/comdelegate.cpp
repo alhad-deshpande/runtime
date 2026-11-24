@@ -548,7 +548,6 @@ BOOL GenerateShuffleArrayPortable(MethodDesc* pMethodSrc, MethodDesc *pMethodDst
             // Link to the previous node in the graph (source of data for the current node)
             pGraphNodes[dstIndex].prev = srcIndex;
             pGraphNodes[dstIndex].ofs = entry.dstofs;
-
         }
 
         // Now that we've built the graph, clear the array, we will regenerate it from the graph ensuring a proper order of shuffling
