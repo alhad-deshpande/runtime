@@ -3,7 +3,7 @@
     <AssemblyName>HelloWorld</AssemblyName>
     <TargetFramework>net6.0</TargetFramework>
     <OutputType>Exe</OutputType>
-    <SelfContained>false</SelfContained>
+    <SelfContained>true</SelfContained>
     <AppendTargetFrameworkToOutputPath>true</AppendTargetFrameworkToOutputPath>
     <UseLocalTargetingRuntimePack>false</UseLocalTargetingRuntimePack>
 
