@@ -834,7 +834,9 @@ protected:
 #endif
     void genCodeForTreeNode(GenTree* treeNode);
     void genCodeForBinary(GenTreeOp* treeNode);
+#if defined(TARGET_POWERPC64)
     void genCodeForNOT(GenTreeOp* treeNode);
+#endif // TARGET_POWERPC64
 
 #if defined(TARGET_X86)
     void genCodeForLongUMod(GenTreeOp* node);
