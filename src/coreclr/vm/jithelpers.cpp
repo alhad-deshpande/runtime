@@ -4826,13 +4826,13 @@ NOINLINE static void JIT_ReversePInvokeEnterRare(ReversePInvokeFrame* frame, voi
     if (thread == NULL)
         CREATETHREAD_IF_NULL_FAILFAST(thread, W("Failed to setup new thread during reverse P/Invoke"));
 
+#ifdef TARGET_POWERPC64
     // On PPC64LE the interpreter runs in cooperative mode and may dispatch JIT-compiled
     // Reverse P/Invoke stubs directly.  If the thread is already in cooperative mode we
     // must not call ReversePInvokeBadTransition (false positive) and must not call
     // DisablePreemptiveGC() either — that fires !m_fPreemptiveGCDisabled (threads.h:1260).
     // Store the sentinel so the matching exit helpers know to skip the transition too,
     // preserving the cooperative mode the interpreter expects.
-#ifdef TARGET_POWERPC64
     if (thread->PreemptiveGCDisabled())
     {
         // Thread is already in cooperative mode — the interpreter dispatched this
@@ -4843,6 +4843,7 @@ NOINLINE static void JIT_ReversePInvokeEnterRare(ReversePInvokeFrame* frame, voi
     // Thread is in preemptive mode: correct for a true unmanaged→managed transition.
     // Fall through to disable preemptive GC below.
 #else
+    // Verify the current thread isn't in COOP mode.
     if (thread->PreemptiveGCDisabled())
         ReversePInvokeBadTransition();
 #endif // TARGET_POWERPC64

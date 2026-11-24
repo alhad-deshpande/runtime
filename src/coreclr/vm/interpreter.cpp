@@ -929,11 +929,6 @@ CorJitResult Interpreter::GenerateInterpreterStub(CEEInfo* comp,
     }
 #endif
 
-#if !defined(TARGET_POWERPC64)
-    // Used to initialize the arg offset information.
-    Stub* stub = NULL;
-#endif
-
 #if FEATURE_INTERPRETER_DEADSIMPLE_OPT
     unsigned offsetOfLd;
     if (IsDeadSimpleGetter(comp, methodDesc, &offsetOfLd))
@@ -949,6 +944,11 @@ CorJitResult Interpreter::GenerateInterpreterStub(CEEInfo* comp,
         }
     }
 #endif // FEATURE_INTERPRETER_DEADSIMPLE_OPT
+
+#if !defined(TARGET_POWERPC64)
+    // Used to initialize the arg offset information.
+    Stub* stub = NULL;
+#endif
 
     // We assume that the stack contains (with addresses growing upwards, assuming a downwards-growing stack):
     //
