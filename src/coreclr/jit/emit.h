@@ -1261,20 +1261,7 @@ protected:
             _idReg1 = reg;
             assert(reg == _idReg1);
         }
-
-#if defined(TARGET_POWERPC64)
-        GCtype idGCrefReg2() const
-        {
-            assert(!idIsSmallDsc());
-            return (GCtype)idAddr()->_idGCref2;
-        }
-        void idGCrefReg2(GCtype gctype)
-        {
-            assert(!idIsSmallDsc());
-            idAddr()->_idGCref2 = gctype;
-        }
-#endif // TARGET_POWERPC64
-#if defined (TARGET_ARM64)
+#if defined(TARGET_ARM64) || defined(TARGET_POWERPC64)
         GCtype idGCrefReg2() const
         {
             assert(!idIsSmallDsc());
