@@ -951,8 +951,11 @@ regNumber genRegArgNext(regNumber argReg)
  */
 
 const regMaskTP raRbmCalleeSaveOrder[] = {RBM_CALL_GC_REGS_ORDER};
-
+#ifdef TARGET_POWERPC64
+regMaskTP genRegMaskFromCalleeSavedMask(unsigned calleeSaveMask)
+#else
 regMaskTP genRegMaskFromCalleeSavedMask(unsigned short calleeSaveMask)
+#endif
 {
     regMaskTP res = 0;
     for (int i = 0; i < CNT_CALL_GC_REGS; i++)
