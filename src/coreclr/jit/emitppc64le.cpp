@@ -219,17 +219,122 @@ void emitter::emitInsSanityCheck(instrDesc* id)
 }
 #endif // DEBUG
 
-#if 0
-bool emitter::emitInsMayWriteToGCReg(instrDesc* id)
+//------------------------------------------------------------------------
+// emitInsMayWriteToGCReg: Returns true if the instruction writes its result to the
+//    general purpose register in idReg1() (which might therefore hold a GC pointer).
+//
+// Notes:
+//    This is an allow-list: stores, compares, branches, SPR moves, barriers and
+//    floating-point instructions never write a GC-capable register.
+//    This may return false positives.
+//
+bool emitter::emitInsMayWriteToGCReg(instruction ins)
 {
-    _ASSERTE(!"NYI");
+    switch (ins)
+    {
+        // Moves, immediates and address computation
+        case INS_mov:
+        case INS_mflr:
+        case INS_li:
+        case INS_lis:
+        case INS_addi:
+        case INS_ori:
+        case INS_oris:
+        case INS_andi:
+        case INS_xori:
+        case INS_xoris:
+
+        // Loads
+        case INS_lbz:
+        case INS_lhz:
+        case INS_lha:
+        case INS_lwz:
+        case INS_lwa:
+        case INS_ld:
+        case INS_lbzx:
+        case INS_lhzx:
+        case INS_lhax:
+        case INS_lwzx:
+        case INS_lwax:
+        case INS_ldx:
+
+        // Shifts and rotates
+        case INS_sldi:
+        case INS_srdi:
+        case INS_sld:
+        case INS_srd:
+        case INS_srad:
+        case INS_slw:
+        case INS_srw:
+        case INS_sraw:
+        case INS_sradi:
+        case INS_slwi:
+        case INS_srwi:
+        case INS_srawi:
+        case INS_rotrd:
+        case INS_rotrw:
+        case INS_rldcl:
+        case INS_rlwnm:
+
+        // Sign extension, arithmetic and logical
+        case INS_extsb:
+        case INS_extsh:
+        case INS_extsw:
+        case INS_neg:
+        case INS_add:
+        case INS_subf:
+        case INS_mulld:
+        case INS_mullw:
+        case INS_mulhdu:
+        case INS_mulhd:
+        case INS_mulhwu:
+        case INS_mulhw:
+        case INS_divd:
+        case INS_divdu:
+        case INS_divw:
+        case INS_divwu:
+        case INS_and_ins:
+        case INS_or_ins:
+        case INS_xor_ins:
+        case INS_nor:
+        case INS_nand:
+        case INS_andc:
+        case INS_orc:
+        case INS_cntlzw:
+        case INS_cntlzd:
+        case INS_brw:
+        case INS_brd:
+            return true;
+
+        default:
+            return false;
+    }
 }
+//------------------------------------------------------------------------
+// emitInsWritesToLclVarStackLoc: Returns true if the instruction stores a general
+//    purpose register to a local variable stack location.
+//
 
 bool emitter::emitInsWritesToLclVarStackLoc(instrDesc* id)
 {
-	    _ASSERTE(!"NYI");
+   if (!id->idIsLclVar())
+       return false;
+
+   // This list is related to the list of instructions used to store local vars in emitIn
+   // We don't accept writing to float local vars.
+   switch (id->idIns())
+   {
+       case INS_stb:
+       case INS_sth:
+       case INS_stw:
+       case INS_std:
+           return true;
+       default:
+           return false;
+   }
 }
 
+#if 0
 bool emitter::emitInsWritesToLclVarStackLocPair(instrDesc* id)
 {
 	    _ASSERTE(!"NYI");
@@ -2234,6 +2339,143 @@ void emitter::emitInsLoadStoreOp(instruction ins, emitAttr attr, regNumber dataR
         emitIns_R_R_I(ins, attr, dataReg, addr->GetRegNum(), 0);
     }
 }
+
+/*****************************************************************************
+ *
+ *  Output a call (bl / bctrl) or tail call (bctr) instruction and record the
+ *  GC information associated with it. The 4-byte instruction is written at 'dst';
+ *  returns the number of bytes written.
+ */
+unsigned emitter::emitOutputCall(BYTE* dst, instrDesc* id)
+{
+    const unsigned char callInstrSize = sizeof(uint32_t); // 4 bytes
+    regMaskTP           gcrefRegs;
+    regMaskTP           byrefRegs;
+
+    VARSET_TP GCvars(VarSetOps::UninitVal());
+
+    // Is this a "fat" call descriptor?
+    if (id->idIsLargeCall())
+    {
+        instrDescCGCA* idCall = (instrDescCGCA*)id;
+        gcrefRegs             = idCall->idcGcrefRegs;
+        byrefRegs             = idCall->idcByrefRegs;
+        VarSetOps::Assign(emitComp, GCvars, idCall->idcGCvars);
+    }
+    else
+    {
+        assert(!id->idIsLargeDsp());
+        assert(!id->idIsLargeCns());
+
+        gcrefRegs = emitDecodeCallGCregs(id);
+        byrefRegs = 0;
+        VarSetOps::AssignNoCopy(emitComp, GCvars, VarSetOps::MakeEmpty(emitComp));
+    }
+
+    /* We update the GC info before the call as the variables cannot be
+       used by the call. Killing variables before the call helps with
+       boundary conditions if the call is CORINFO_HELP_THROW - see bug 50029.
+       If we ever track aliased variables (which could be used by the
+       call), we would have to keep them alive past the call. */
+
+    emitUpdateLiveGCvars(GCvars, dst);
+
+#ifdef DEBUG
+    // Output any delta in GC variable info, corresponding to the before-call GC var updates done above.
+    if (EMIT_GC_VERBOSE || emitComp->opts.disasmWithGC)
+    {
+        emitDispGCVarDelta();
+    }
+#endif // DEBUG
+
+    // Now output the call instruction
+    BYTE* dstRW = dst + writeableOffset;
+    switch (id->idIns())
+    {
+        case INS_bctr:
+            // bctr - Branch to Count Register (tail call)
+            ppc_bcctr(dstRW, 20, 0);
+            break;
+
+        case INS_bctrl:
+            // bctrl - Branch to Count Register and Link
+            ppc_bcctrl(dstRW, 20, 0);
+            break;
+
+        case INS_bl:
+        {
+            // bl - Branch and Link (direct call within +/-32MB)
+            void* target = (void*)id->idAddr()->iiaAddr;
+            bool  outOfRange;
+            int   offset = getBranchOffset(dst, target, &outOfRange);
+
+            // genCallInstruction always emits a trampoline for out-of-range targets,
+            // so INS_bl should never be emitted for a target beyond +/-32MB.
+            assert(!outOfRange && "bl offset out of range - should use trampoline");
+
+            ppc_bl(dstRW, offset);
+            break;
+        }
+
+        default:
+            unreached();
+    }
+    dst += callInstrSize;
+
+    // If the method returns a GC ref, mark INTRET (R3) appropriately.
+    if (id->idGCref() == GCT_GCREF)
+    {
+        gcrefRegs |= RBM_INTRET;
+    }
+    else if (id->idGCref() == GCT_BYREF)
+    {
+        byrefRegs |= RBM_INTRET;
+    }
+
+    // If is a multi-register return method is called, mark INTRET_1 (R4) appropriately
+    if (id->idIsLargeCall())
+    {
+        instrDescCGCA* idCall = (instrDescCGCA*)id;
+        if (idCall->idSecondGCref() == GCT_GCREF)
+        {
+            gcrefRegs |= RBM_INTRET_1;
+        }
+        else if (idCall->idSecondGCref() == GCT_BYREF)
+        {
+            byrefRegs |= RBM_INTRET_1;
+        }
+    }
+
+    // If the GC register set has changed, report the new set.
+    if (gcrefRegs != emitThisGCrefRegs)
+    {
+        emitUpdateLiveGCregs(GCT_GCREF, gcrefRegs, dst);
+    }
+    // If the Byref register set has changed, report the new set.
+    if (byrefRegs != emitThisByrefRegs)
+    {
+        emitUpdateLiveGCregs(GCT_BYREF, byrefRegs, dst);
+    }
+
+    // Some helper calls (and tail calls) are marked as not requiring GC info to be recorded.
+    if (!id->idIsNoGC())
+    {
+        // As on ARM64/AMD64, we don't change the stack pointer to push/pop args, so we're not really
+        // doing a "stack pop" here (note that "args" is 0), but we use this mechanism to record the
+        // call for GC info purposes.
+        emitStackPop(dst, /*isCall*/ true, callInstrSize, /*args*/ 0);
+
+        // Do we need to record a call location for GC purposes?
+        if (!emitFullGCinfo)
+        {
+            emitRecordGCcall(dst, callInstrSize);
+        }
+    }
+
+    return callInstrSize;
+}
+
+
 /*****************************************************************************
  *
  *  Append the machine code corresponding to the given instruction descriptor
@@ -2434,27 +2676,27 @@ size_t emitter::emitOutputInstr(insGroup* ig, instrDesc* id, BYTE** dp)
            break;
 
        case INS_bctr:
-           // bctr - Branch to Count Register (unconditional)
-           ppc_bcctr (dstRW, 20, 0);
-           break;
 
        case INS_bctrl:
-           // bctrl - Branch to Count Register and Link
-           ppc_bcctrl (dstRW, 20, 0);
-           break;
 
        case INS_bl:
-           // bl instruction - Branch and Link (direct call within ±32MB)
+           // Calls created by emitIns_Call carry GC liveness information that must be
+           // recorded; bare bctr/bctrl emitted via emitIns() (e.g. switch jumps and
+           // finally calls) do not.
+           if (id->idIsCall())
            {
-               void* target = (void*)id->idAddr()->iiaAddr;
-               bool outOfRange;
-               int offset = getBranchOffset(dst, target, &outOfRange);
-
-               // genCallInstruction always emits a trampoline for out-of-range targets,
-               // so INS_bl should never be emitted for a target beyond ±32MB.
-               assert(!outOfRange && "bl offset out of range - should use trampoline");
-
-               ppc_bl(dstRW, offset);
+               dstRW += emitOutputCall(dst, id);
+           }
+           else if (ins == INS_bctr)
+           {
+               // bctr - Branch to Count Register (unconditional)
+               ppc_bcctr (dstRW, 20, 0);
+           }
+           else
+           {
+               assert(ins == INS_bctrl);
+               // bctrl - Branch to Count Register and Link
+               ppc_bcctrl (dstRW, 20, 0);
            }
            break;
        case INS_addi:
@@ -3131,6 +3373,55 @@ size_t emitter::emitOutputInstr(insGroup* ig, instrDesc* id, BYTE** dp)
     }
 
     dst = dstRW - writeableOffset;
+
+   // Determine if any registers now hold GC refs, or whether a register that was overwritten held a GC ref.
+   // We assume here that "id->idGCref()" is not GCT_NONE only if the instruction described by "id" writes a
+   // GC ref to register "id->idReg1()".  (It may also be set for stores, but we ignore those cases here.)
+   if (emitInsMayWriteToGCReg(ins)) // True if "ins" writes to a register that can hold a GC ref.
+   {
+       // idReg1 is the destination register for all of the instructions accepted above.
+       if (id->idGCref() != GCT_NONE)
+       {
+           emitGCregLiveUpd(id->idGCref(), id->idReg1(), dst);
+       }
+       else
+       {
+           emitGCregDeadUpd(id->idReg1(), dst);
+       }
+   }
+
+   // Now determine if the instruction has written to a (local variable) stack location, and either
+   // written a GC ref or overwritten one.
+   if (emitInsWritesToLclVarStackLoc(id))
+   {
+       int      varNum = id->idAddr()->iiaLclVar.lvaVarNum();
+       unsigned ofs    = AlignDown(id->idAddr()->iiaLclVar.lvaOffset(), TARGET_POINTER_SIZE);
+       bool     FPbased;
+       int      adr = emitComp->lvaFrameAddress(varNum, &FPbased);
+       if (id->idGCref() != GCT_NONE)
+       {
+           emitGCvarLiveUpd(adr + ofs, varNum, id->idGCref(), dst DEBUG_ARG(varNum));
+       }
+       else
+       {
+           // If the type of the local is a gc ref type, update the liveness.
+           var_types vt;
+           if (varNum >= 0)
+           {
+               // "Regular" (non-spill-temp) local.
+               vt = var_types(emitComp->lvaTable[varNum].lvType);
+           }
+           else
+           {
+               TempDsc* tmpDsc = codeGen->regSet.tmpFindNum(varNum);
+               vt              = tmpDsc->tdTempType();
+           }
+           if (vt == TYP_REF || vt == TYP_BYREF)
+           {
+               emitGCvarDeadUpd(adr + ofs, dst DEBUG_ARG(varNum));
+           }
+       }
+   }
     *dp = dst;
     return emitSizeOfInsDsc(id);
 }

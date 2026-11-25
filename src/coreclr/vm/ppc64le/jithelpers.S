@@ -94,6 +94,10 @@ LOCAL_LABEL(JIT_WriteBarrier_LocalEntry):
 	// Store the value
 	std %r4, 0(%r3)
 
+	// PPC64 is weakly ordered: make the reference store visible before any
+	// write watch / card table update below.
+	hwsync
+
 #ifdef WRITE_BARRIER_CHECK
 	// Update GC Shadow Heap if enabled
 	// Check if g_GCShadow is 0
@@ -262,6 +266,9 @@ LEAF_ENTRY JIT_ByRefWriteBarrier, _TEXT
 
 	// Store the value
 	std %r5, 0(%r3)
+
+	// Order the reference store before the write watch / card table update below.
+	hwsync
 
 #ifdef WRITE_BARRIER_CHECK
 	// Shadow heap update (same logic as JIT_WriteBarrier)

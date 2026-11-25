@@ -2135,6 +2135,126 @@ void GcInfoDecoder::ReportRegisterToGC(
 
     pCallBack(hCallBack, pObjRef, gcFlags DAC_ARG(DacSlotLocation(regNum, 0, false)));
 }
+#elif defined(TARGET_POWERPC64)
+
+#if defined(TARGET_UNIX) && !defined(FEATURE_NATIVEAOT)
+OBJECTREF* GcInfoDecoder::GetCapturedRegister(
+    int             regNum,
+    PREGDISPLAY     pRD
+    )
+{
+    _ASSERTE(regNum >= 0 && regNum <= 31);
+
+    // The fields of CONTEXT (R0..R31) are in the same order as
+    // the processor encoding numbers.
+
+    DWORD64 *pR0 = &pRD->pCurrentContext->R0;
+
+    return (OBJECTREF*)(pR0 + regNum);
+}
+#endif // TARGET_UNIX && !FEATURE_NATIVEAOT
+
+OBJECTREF* GcInfoDecoder::GetRegisterSlot(
+                        int             regNum,
+                        PREGDISPLAY     pRD
+                        )
+{
+    // r0 is a scratch/prolog register, r2 is the TOC pointer and r13 is the thread pointer:
+    // none of them can hold a GC reference.
+    _ASSERTE(regNum >= 0 && regNum <= 31);
+    _ASSERTE(regNum != 0 && regNum != 2 && regNum != 13);
+
+    if (regNum >= 14)
+    {
+        // Callee-saved registers r14..r31. The KNONVOLATILE_CONTEXT_POINTERS fields are in
+        // register order starting at R14.
+        return (OBJECTREF*)*(DWORD64**)(&pRD->pCurrentContextPointers->R14 + (regNum - 14));
+    }
+
+    // Volatile registers (r1, r3..r12): there are no volatile context pointers on this target.
+    // They are only valid to report for the active (leaf) frame, where they live in the current context.
+    return (OBJECTREF*)(&pRD->pCurrentContext->R0 + regNum);
+}
+
+bool GcInfoDecoder::IsScratchRegister(int regNum,  PREGDISPLAY pRD)
+{
+    _ASSERTE(regNum >= 0 && regNum <= 31);
+
+    // Volatile registers: r0, r3..r12 (r1 is SP, r2 is TOC, r13 is TLS).
+    return regNum <= 12;
+}
+
+bool GcInfoDecoder::IsScratchStackSlot(INT32 spOffset, GcStackSlotBase spBase, PREGDISPLAY     pRD)
+{
+#ifdef FIXED_STACK_PARAMETER_SCRATCH_AREA
+    _ASSERTE( m_Flags & DECODE_GC_LIFETIMES );
+
+    TADDR pSlot = (TADDR) GetStackSlot(spOffset, spBase, pRD);
+    _ASSERTE(pSlot >= pRD->SP);
+
+    return (pSlot < pRD->SP + m_SizeOfStackOutgoingAndScratchArea);
+#else
+    return FALSE;
+#endif
+}
+
+void GcInfoDecoder::ReportRegisterToGC(
+                                int             regNum,
+                                unsigned        gcFlags,
+                                PREGDISPLAY     pRD,
+                                unsigned        flags,
+                                GCEnumCallback  pCallBack,
+                                void *          hCallBack)
+{
+    GCINFODECODER_CONTRACT;
+
+    _ASSERTE(regNum > 0 && regNum <= 31);
+
+    LOG((LF_GCROOTS, LL_INFO1000, "Reporting " FMT_REG, regNum ));
+
+    OBJECTREF* pObjRef = GetRegisterSlot( regNum, pRD );
+#if defined(TARGET_UNIX) && !defined(FEATURE_NATIVEAOT) && !defined(SOS_TARGET_AMD64)
+
+    // On PAL, we don't always have the context pointers available due to
+    // a limitation of an unwinding library. In such case, the context
+    // pointers for some nonvolatile registers are NULL.
+    // In such case, we let the pObjRef point to the captured register
+    // value in the context and pin the object itself.
+    if (pObjRef == NULL)
+    {
+        // Report a pinned object to GC only in the promotion phase when the
+        // GC is scanning roots.
+        GCCONTEXT* pGCCtx = (GCCONTEXT*)(hCallBack);
+        if (!pGCCtx->sc->promotion)
+        {
+            return;
+        }
+
+        pObjRef = GetCapturedRegister(regNum, pRD);
+
+        gcFlags |= GC_CALL_PINNED;
+    }
+#endif // TARGET_UNIX && !FEATURE_NATIVEAOT && !SOS_TARGET_AMD64
+
+#ifdef _DEBUG
+    if(IsScratchRegister(regNum, pRD))
+    {
+        // Scratch registers cannot be reported for non-leaf frames
+        _ASSERTE(flags & ActiveStackFrame);
+    }
+
+    LOG((LF_GCROOTS, LL_INFO1000, /* Part Two */
+         "at" FMT_ADDR "as ", DBG_ADDR(pObjRef) ));
+
+    VALIDATE_ROOT((gcFlags & GC_CALL_INTERIOR), hCallBack, pObjRef);
+
+    LOG_PIPTR(pObjRef, gcFlags, hCallBack);
+#endif //_DEBUG
+
+    gcFlags |= CHECK_APP_DOMAIN;
+
+    pCallBack(hCallBack, pObjRef, gcFlags DAC_ARG(DacSlotLocation(regNum, 0, false)));
+}
 
 #else // Unknown platform
 
