@@ -4182,6 +4182,40 @@ void GCInfo::gcMakeRegPtrTable(
             {
                 stackSlotBase = GC_FRAMEREG_REL;
             }
+
+#if defined(TARGET_POWERPC64)
+            // On PPC64, the offset of a stack-passed parameter is relative to the caller's SP, while the
+            // frame register (r31) points at the bottom of this method's frame. lvaFrameAddress adds
+            // genTotalFrameSize() when generating code; the GC info must report the same address.
+            int slotOffset = varDsc->GetStackOffset();
+            if (varDsc->lvIsParam && !varDsc->lvIsRegArg && varDsc->lvFramePointerBased &&
+                !compiler->compLocallocUsed)
+            {
+                slotOffset += compiler->codeGen->genTotalFrameSize();
+            }
+
+            if (noTrackedGCSlots)
+            {
+                // No need to hash/lookup untracked GC refs; just grab a new Slot Id.
+                if (mode == MAKE_REG_PTR_MODE_ASSIGN_SLOTS)
+                {
+                    gcInfoEncoderWithLog->GetStackSlotId(slotOffset, flags, stackSlotBase);
+                }
+            }
+            else
+            {
+                StackSlotIdKey sskey(slotOffset, (stackSlotBase == GC_FRAMEREG_REL), flags);
+                GcSlotId       varSlotId;
+                if (mode == MAKE_REG_PTR_MODE_ASSIGN_SLOTS)
+                {
+                    if (!m_stackSlotMap->Lookup(sskey, &varSlotId))
+                    {
+                        varSlotId = gcInfoEncoderWithLog->GetStackSlotId(slotOffset, flags, stackSlotBase);
+                        m_stackSlotMap->Set(sskey, varSlotId);
+                    }
+                }
+            }
+#else  // !TARGET_POWERPC64
             if (noTrackedGCSlots)
             {
                 // No need to hash/lookup untracked GC refs; just grab a new Slot Id.
@@ -4204,6 +4238,7 @@ void GCInfo::gcMakeRegPtrTable(
                     }
                 }
             }
+#endif // !TARGET_POWERPC64
         }
 
         // If this is a TYP_STRUCT, handle its GC pointers.
@@ -4222,7 +4257,18 @@ void GCInfo::gcMakeRegPtrTable(
                 }
 
                 unsigned const fieldOffset = i * TARGET_POINTER_SIZE;
+#if defined(TARGET_POWERPC64)
+                // On PPC64 the address codegen uses for a parameter is not always GetStackOffset():
+                // stack-passed parameters are caller-SP relative, and a parameter split between registers and
+                // the stack (e.g. a 32-byte struct after a return buffer) lives in the caller's parameter save
+                // area. Ask lvaFrameAddress so the GC info reports the same address the code accesses.
+                bool fpBased = varDsc->lvFramePointerBased;
+                int  offset  = (varDsc->lvIsParam ? compiler->lvaFrameAddress((int)varNum, &fpBased)
+                                                  : varDsc->GetStackOffset()) +
+                              fieldOffset;
+#else
                 int const      offset      = varDsc->GetStackOffset() + fieldOffset;
+#endif
 
 #ifdef DEBUG
                 if (varDsc->lvPromoted)
