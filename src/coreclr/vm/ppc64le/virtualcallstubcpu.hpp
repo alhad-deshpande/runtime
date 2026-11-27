@@ -35,24 +35,26 @@ struct LookupHolder
  void Initialize(LookupHolder* pLookupHolderRX, PCODE resolveWorkerTarget, size_t dispatchToken) {
         // r12 points to _entryPoint[0] (stub base), set by the caller.
         //
-        // We must not use r9 (IFormatProvider / arg register) or any other argument
-        // register (r3-r10) as scratch. r0 cannot be a D-form load base (hardware
-        // reads it as 0). The safe approach is to load _token into r10 FIRST (while
-        // r12 is still the stub base), then overwrite r12 with _resolveWorkerTarget.
+        // We must not use any argument register (r3-r10) as scratch: r3-r10 all carry
+        // live arguments on PPC64LE (a 32-byte struct argument can occupy up to r10).
+        // The dispatch token is therefore passed in r0 (volatile, never an argument
+        // register, and fine as a load *destination*; it is only unusable as a base).
+        // Load _token into r0 FIRST (while r12 is still the stub base), then overwrite
+        // r12 with _resolveWorkerTarget.
         //
-        // [0] ld   r10, 32(r12)   ; _token → r10        (r12 = stub base)
+        // [0] ld   r0, 32(r12)    ; _token → r0         (r12 = stub base)
         // [1] ld   r12, 24(r12)   ; _resolveWorkerTarget → r12 (overwrites stub base)
         // [2] mtctr r12           ; CTR = resolveWorkerTarget
-        // [3] bctr                ; jump to resolveWorkerTarget(token=r10, ...)
+        // [3] bctr                ; jump to resolveWorkerTarget(token=r0, ...)
         // [4] nop
         // [5] nop
         //
         // Encoding:
-        //   ld r10,32(r12)  : RT=10 RA=12 DS=8(=32/4)  → 0xe94c0020
+        //   ld r0,32(r12)   : RT=0  RA=12 DS=8(=32/4)  → 0xe80c0020
         //   ld r12,24(r12)  : RT=12 RA=12 DS=6(=24/4)  → 0xe98c0018
         //   mtctr r12       :                           → 0x7d8903a6
         //   bctr            :                           → 0x4e800420
-        _stub._entryPoint[0] = 0xe94c0020; // ld   r10,32(r12)  ; _token → r10
+        _stub._entryPoint[0] = 0xe80c0020; // ld   r0,32(r12)   ; _token → r0
         _stub._entryPoint[1] = 0xe98c0018; // ld   r12,24(r12)  ; _resolveWorkerTarget → r12
         _stub._entryPoint[2] = 0x7d8903a6; // mtctr r12
         _stub._entryPoint[3] = 0x4e800420; // bctr
@@ -278,7 +280,8 @@ struct ResolveHolder
 	   // heap addresses are accessible.  The remaining slots are nops.
 	   //
 	   // r11 = VSD indirection cell (BACKPATCH_FLAG already set by failEntryPoint)
-	   // r10 = dispatch token (required by ResolveWorkerAsmStub/ChainLookup ABI)
+	   // r0  = dispatch token (required by ResolveWorkerAsmStub/ChainLookup ABI).
+	   //       r10 must NOT be used: it is the 8th integer argument register.
 	   //
 	   // r12 on entry to resolveEntryPoint has TWO possible values:
 	   //
@@ -297,7 +300,7 @@ struct ResolveHolder
 	   // correct from that normalised base.
 	   //
 	   //   addi r12,r12,-48: op=14 RT=12 RA=12 SI=-48(=0xFFD0) → 0x398cffd0
-	   //   ld   r10,168(r12): op=58 RT=10 RA=12 DS=42(=168/4)  → 0xe94c00a8
+	   //   ld   r0,168(r12):  op=58 RT=0  RA=12 DS=42(=168/4)  → 0xe80c00a8
 	   //   ld   r12,176(r12): op=58 RT=12 RA=12 DS=44(=176/4)  → 0xe98c00b0
 	   //   mtctr r12:         XFX SPR=9 RS=12 XO=467            → 0x7d8903a6
 	   //   bctr:                                                 → 0x4e800420
@@ -311,13 +314,13 @@ struct ResolveHolder
 	   // failEntryPoint[11] = addi r12,r12,48  (op=14 RT=12 RA=12 SI=48) → 0x398c0030
 	   //
 	   // [0]  addi r12,r12,-48   ; normalise r12 → struct base          → 0x398cffd0
-	   // [1]  ld   r10,168(r12)  ; r10 = _token                         → 0xe94c00a8
+	   // [1]  ld   r0,168(r12)   ; r0 = _token                          → 0xe80c00a8
 	   // [2]  ld   r12,176(r12)  ; r12 = _resolveWorkerTarget            → 0xe98c00b0
 	   // [3]  mtctr r12                                                  → 0x7d8903a6
 	   // [4]  bctr               ; tail-call ResolveWorkerChainLookup    → 0x4e800420
 	   // [5..25] nop × 21                                                → 0x60000000
 	       _stub._resolveEntryPoint[0]  = 0x398cffd0; // addi r12,r12,-48  ; normalise r12 → struct base
-	       _stub._resolveEntryPoint[1]  = 0xe94c00a8; // ld   r10,168(r12) ; _token → r10
+	       _stub._resolveEntryPoint[1]  = 0xe80c00a8; // ld   r0,168(r12)  ; _token → r0
 	       _stub._resolveEntryPoint[2]  = 0xe98c00b0; // ld   r12,176(r12) ; _resolveWorkerTarget → r12
 	       _stub._resolveEntryPoint[3]  = 0x7d8903a6; // mtctr r12
 	       _stub._resolveEntryPoint[4]  = 0x4e800420; // bctr

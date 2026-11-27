@@ -18,7 +18,9 @@
 // ResolveWorkerAsmStub
 // Inputs:
 //   r3:  object reference (this pointer)
-//   r10: dispatch token  (or ResolveCacheElem* when PROMOTE_CHAIN_FLAG set)
+//   r0:  dispatch token  (or ResolveCacheElem* when PROMOTE_CHAIN_FLAG set)
+//        (NOT r10: r3-r10 are all live argument registers, e.g. a 32-byte struct
+//         argument can occupy r8-r10, so the token must travel in a non-argument register)
 //   r11: indirection cell | flags  (VSD cell register — virtualStubParamInfo = REG_R11;
 //        set by the JIT and preserved unmodified through all dispatch stubs)
 // Output:
@@ -28,11 +30,12 @@
 // VSD_ResolveWorker(pTransitionBlock, siteAddr, token, flags):
 //   arg r3 = &TransitionBlock  (= new SP after stdu)
 //   arg r4 = indirection cell address  (r11 with low-2 flag bits cleared)
-//   arg r5 = dispatch token or ResolveCacheElem*  (from r10)
+//   arg r5 = dispatch token or ResolveCacheElem*  (from r0)
 //   arg r6 = flags  (low 2 bits of r11)
 //-----------------------------------------------------------------------------
 NESTED_ENTRY ResolveWorkerAsmStub, _TEXT, NoHandler
 	std %r2, 24(%r1)                             // save caller's r2 (may be JIT TOC)
+	std %r0, -16(%r1)                            // stash dispatch token (r0) in the red zone; mflr below clobbers r0
 	addis %r2, %r12, (.TOC.-ResolveWorkerAsmStub)@ha  // establish libcoreclr.so TOC
 	addi  %r2, %r2,  (.TOC.-ResolveWorkerAsmStub)@l
 	mflr %r0
@@ -45,6 +48,7 @@ NESTED_ENTRY ResolveWorkerAsmStub, _TEXT, NoHandler
 	mr %r31, %r1
 	.cfi_def_cfa_register 31
 
+	ld %r0, 480(%r1)                             // reload dispatch token (old SP-16 == new SP+480); r0 is not stored below
 	std %r3, 32(%r1)
 	std %r4, 40(%r1)
 	std %r5, 48(%r1)
@@ -110,7 +114,7 @@ NESTED_ENTRY ResolveWorkerAsmStub, _TEXT, NoHandler
 	mr      %r3, %r1                // arg1: pTransitionBlock = new SP
 	rldicl  %r6, %r11, 0, 62       // arg4: flags  = r11 & 3  (low 2 bits)
 	rldicr  %r4, %r11, 0, 61       // arg2: cell   = r11 & ~3 (flags stripped)
-	mr      %r5, %r10               // arg3: token  = r10
+	mr      %r5, %r0                // arg3: token  = r0
 
 	bl      C_FUNC(VSD_ResolveWorker) // r3 = target PC
 	mr      %r12, %r3                 // move target to r12 (r2 unchanged: intra-DSO bl)
@@ -195,7 +199,7 @@ NESTED_END ResolveWorkerAsmStub, _TEXT
 // Inputs:
 //   r3:      object reference ('this')  — must be preserved
 //   r4–r9:   live argument registers    — must ALL be preserved
-//   r10:     dispatch token
+//   r0:      dispatch token
 //   r11:     indirection cell | flags   (VSD cell register)
 //   r12:     address of this stub (set by ELFv2 bctr convention)
 //
