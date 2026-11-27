@@ -4798,6 +4798,12 @@ StackWalkAction SWCB_GetExecutionState(CrawlFrame *pCF, VOID *pData)
                         }
 #elif defined(TARGET_X86) || defined(TARGET_AMD64)
                         pES->m_ppvRetAddrPtr = (void **) (EECodeManager::GetCallerSp(pRDT) - sizeof(void*));
+#elif defined(TARGET_POWERPC64)
+                        // Return address hijacking is not implemented on PPC64LE: OnHijackTripThread
+                        // is a stub and HijackFrame cannot restore the caller context. Treat the
+                        // non-interruptible frame as not hijackable; thread suspension relies on
+                        // activation injection and on the thread reaching a GC safe point instead.
+                        notJittedCase = true;
 #else // TARGET_X86 || TARGET_AMD64
                         PORTABILITY_ASSERT("Platform NYI");
 #endif // _TARGET_???_

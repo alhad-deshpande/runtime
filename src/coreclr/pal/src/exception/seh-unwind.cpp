@@ -165,8 +165,13 @@ enum
     ASSIGN_REG(S10)        \
     ASSIGN_REG(S11)
 #elif (defined(HOST_UNIX) && defined(HOST_POWERPC64))
+// Link (LR) must be passed to the unwinder: when the PC is in a prolog before the return address
+// has been saved (e.g. a fault on the stdu of a function that allocates a frame), the caller's
+// address is only available in the LR register. unwContext is not initialized with unw_getcontext
+// on this path, so omitting it would leave libunwind reading stale stack memory.
 #define ASSIGN_UNWIND_REGS \
     ASSIGN_REG(Nip)        \
+    ASSIGN_REG(Link)       \
     ASSIGN_REG(R1)	   \
     ASSIGN_REG(R2)	   \
     ASSIGN_REG(R14)        \
