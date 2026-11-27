@@ -4051,7 +4051,7 @@ interface ICorDebugRegisterSet : IUnknown
         REGISTER_RISCV64_F28,
         REGISTER_RISCV64_F29,
         REGISTER_RISCV64_F30,
-        REGISTER_RISCV64_F31
+        REGISTER_RISCV64_F31,
 
 	// ppc64le registers
         REGISTER_PPC64LE_NIP = 0,     // Next Instruction Pointer (SRR0), equivalent to PC, Matches Linux kernel usage
