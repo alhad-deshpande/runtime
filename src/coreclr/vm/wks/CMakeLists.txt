@@ -49,7 +49,9 @@ add_dependencies(cee_wks_core precompiled_asm)
 add_dependencies(cee_wks precompiled_asm)
 add_dependencies(cee_wks_mergeable precompiled_asm)
 
-#target_compile_definitions(cee_wks_mergeable PUBLIC FEATURE_MERGE_JIT_AND_ENGINE)
+if(NOT CLR_CMAKE_HOST_ARCH_POWERPC64)
+target_compile_definitions(cee_wks_mergeable PUBLIC FEATURE_MERGE_JIT_AND_ENGINE)
+endif()
 target_compile_definitions(cee_wks_mergeable PUBLIC CORECLR_EMBEDDED)
 
 if (CLR_CMAKE_HOST_WIN32)

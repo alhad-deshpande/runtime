@@ -997,9 +997,6 @@ function check_cpu_architecture {
         riscv64)
             __arch=riscv64
             ;;
-        s390x)
-            __arch=s390x
-            ;;
 	ppc64le)
 	    __arch=ppc64le
 	    ;;
