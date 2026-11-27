@@ -1865,7 +1865,11 @@ EEClass::CheckForHFA()
     }
 
 #if defined(TARGET_POWERPC64)
-    if (GetMethodTable()->GetMDImport()->GetCustomAttributeByName(GetMethodTable()->GetCl(),
+    // Other compiler-generated types are not HFAs. C# fixed buffers (<X>e__FixedBuffer) are also
+    // compiler-generated, but they are marked UnsafeValueType and must be classified normally so
+    // that structs containing them (e.g. "fixed float Array[4]") are HFAs, as native compilers see them.
+    if (!IsUnsafeValueClass() &&
+        GetMethodTable()->GetMDImport()->GetCustomAttributeByName(GetMethodTable()->GetCl(),
           "System.Runtime.CompilerServices.CompilerGeneratedAttribute", NULL, NULL) == S_OK)
     {
         return false;
